@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'reportes_diarios',
     'estado_resultados',
     'libro_estado_resultados',
+    'configuraciones_usuario',
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
