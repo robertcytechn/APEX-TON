@@ -1,4 +1,5 @@
 from django.db import models
+from simple_history.models import HistoricalRecords
 from core.models import ModeloBase
 from sucursales.models import Sucursal
 from categoria_operativa.models import Concepto
@@ -115,6 +116,11 @@ class ReporteDiario(ModeloBase):
     def __str__(self):
         return f"Reporte {self.fecha_contable} – {self.sucursal.nombre} [{self.estado_reporte}]"
 
+    historial = HistoricalRecords(
+        verbose_name="Historial de Reporte Diario",
+        history_change_reason_field=models.TextField(null=True, blank=True),
+    )
+
     class Meta:
         verbose_name = "Reporte Diario"
         verbose_name_plural = "Reportes Diarios"
@@ -188,6 +194,11 @@ class MovimientoDiario(ModeloBase):
 
     def __str__(self):
         return f"{self.reporte.fecha_contable} | {self.concepto.nombre} – ${self.monto:,.2f}"
+
+    historial = HistoricalRecords(
+        verbose_name="Historial de Movimiento Diario",
+        history_change_reason_field=models.TextField(null=True, blank=True),
+    )
 
     class Meta:
         verbose_name = "Movimiento Diario"

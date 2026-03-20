@@ -1,9 +1,12 @@
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
+from core.permisos import VentanaHorariaPermiso, EsAdministrador
 from .models import ReporteDiario, MovimientoDiario
 from .serializers import (
     ReporteDiarioSerializer, ReporteDiarioListSerializer,
@@ -15,38 +18,55 @@ def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success"
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
-def _verificar_reporte_editable(reporte):
+def _dia_contable_actual():
     """
-    Valida que el reporte pueda ser modificado:
-    1. Debe estar en estado ABIERTO.
-    2. Debe estar dentro del horario permitido según HORARIO_APERTURA y HORARIO_CIERRE
-       configurados en ConfiguracionGlobal.
-    Retorna (True, None) si es editable, o (False, Response) si no lo es.
+    Retorna la fecha contable correcta: siempre el día anterior (T-1) a la fecha
+    del servidor en la zona horaria configurada.
+    El backend NO acepta la fecha del frontend; la calcula internamente.
     """
-    if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
-        return False, respuesta_estandar(
-            mensaje="El reporte ya está cerrado y no puede ser modificado.",
-            estado="error",
-            codigo=status.HTTP_403_FORBIDDEN
+    return timezone.localdate() - timezone.timedelta(days=1)
+
+
+def _obtener_o_crear_reporte_del_dia(sucursal_id):
+    """
+    Obtiene el ReporteDiario del día contable actual (T-1) para la sucursal dada.
+    Si no existe, lo crea automáticamente, encadenando el saldo_arrastre_inicio
+    desde el saldo_arrastre_fin del reporte anterior.
+    """
+    fecha = _dia_contable_actual()
+
+    with transaction.atomic():
+        reporte, creado = ReporteDiario.objects.select_for_update().get_or_create(
+            sucursal_id=sucursal_id,
+            fecha_contable=fecha,
+            defaults={'estado_reporte': ReporteDiario.EstadoReporte.ABIERTO}
         )
 
-    # Validación de horario usando ConfiguracionGlobal
-    try:
-        from configuraciones_globales.models import ConfiguracionGlobal
-        hora_apertura = ConfiguracionGlobal.objects.get(clave='HORARIO_APERTURA').valor_tipado
-        hora_cierre   = ConfiguracionGlobal.objects.get(clave='HORARIO_CIERRE').valor_tipado
-        ahora = timezone.localtime(timezone.now()).time()
-        if hora_apertura and hora_cierre:
-            if not (hora_apertura <= ahora <= hora_cierre):
-                return False, respuesta_estandar(
-                    mensaje=f"Fuera del horario de operación ({hora_apertura} – {hora_cierre}). No se permiten modificaciones.",
-                    estado="error",
-                    codigo=status.HTTP_403_FORBIDDEN
-                )
-    except ConfiguracionGlobal.DoesNotExist:
-        pass  # Si no están configurados los horarios, no se restringe
+        if creado:
+            # Encadenar saldo de arrastre desde el día anterior
+            anterior = ReporteDiario.objects.filter(
+                sucursal_id=sucursal_id,
+                fecha_contable__lt=fecha,
+            ).order_by('-fecha_contable').first()
 
-    return True, None
+            if anterior:
+                reporte.saldo_arrastre_inicio = anterior.saldo_arrastre_fin
+
+            # Snapshot del tipo de cambio actual
+            try:
+                from configuraciones_globales.models import ConfiguracionGlobal
+                tc_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
+                tc_eur = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_EUR').first()
+                if tc_usd:
+                    reporte.tipo_cambio_usd_snapshot = tc_usd.valor_tipado or 0
+                if tc_eur:
+                    reporte.tipo_cambio_eur_snapshot = tc_eur.valor_tipado or 0
+            except Exception:
+                pass
+
+            reporte.save()
+
+    return reporte, creado
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,11 +75,23 @@ def _verificar_reporte_editable(reporte):
 
 class ReporteDiarioViewSet(viewsets.ViewSet):
     """
-    CRUD para ReporteDiario con acciones de cierre de día.
-    Un reporte CERRADO no puede ser modificado.
-    El endpoint `cerrar` calcula totales, guarda el snapshot de tipo de cambio
-    y bloquea el registro permanentemente.
+    CRUD para ReporteDiario con acciones de cierre y reapertura.
+
+    Permisos:
+        - Lectura (GET): solo autenticación.
+        - Escritura (POST/PATCH/DELETE): requiere estar DENTRO del horario de operación.
+        - Reapertura: exclusivo para ADMINISTRADOR.
+        - Cierre: puede ejecutarlo cualquier usuario autenticado (la validación
+          de rol se delega a las reglas de negocio del frontend y a los roles).
     """
+
+    def get_permissions(self):
+        """Aplica VentanaHorariaPermiso solo a operaciones de escritura."""
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsAuthenticated(), VentanaHorariaPermiso()]
+        if self.action == 'reabrir':
+            return [IsAuthenticated(), EsAdministrador()]
+        return [IsAuthenticated()]
 
     def list(self, request):
         qs = ReporteDiario.objects.all()
@@ -69,95 +101,101 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         return respuesta_estandar(data=ReporteDiarioListSerializer(qs, many=True).data, mensaje="Reportes diarios obtenidos.")
 
     def create(self, request):
-        s = ReporteDiarioSerializer(data=request.data)
-        if s.is_valid():
-            reporte = s.save()
-            return respuesta_estandar(data=ReporteDiarioSerializer(reporte).data, mensaje="Reporte diario creado.", codigo=status.HTTP_201_CREATED)
-        return respuesta_estandar(data=s.errors, mensaje="Error al crear reporte.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
+        """Crea un ReporteDiario para una sucursal. La fecha contable es asignada automáticamente (T-1)."""
+        sucursal_id = request.data.get('sucursal')
+        if not sucursal_id:
+            return respuesta_estandar(mensaje="El campo 'sucursal' es obligatorio.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
+
+        reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id)
+        mensaje = "Reporte diario creado automáticamente." if creado else "Ya existe un reporte para el día contable actual."
+        codigo = status.HTTP_201_CREATED if creado else status.HTTP_200_OK
+        return respuesta_estandar(data=ReporteDiarioSerializer(reporte).data, mensaje=mensaje, codigo=codigo)
 
     def retrieve(self, request, pk=None):
         obj = get_object_or_404(ReporteDiario, pk=pk)
         return respuesta_estandar(data=ReporteDiarioSerializer(obj).data, mensaje="Reporte diario obtenido.")
 
-    def update(self, request, pk=None):
+    def partial_update(self, request, pk=None):
         reporte = get_object_or_404(ReporteDiario, pk=pk)
-        editable, error_response = _verificar_reporte_editable(reporte)
-        if not editable:
-            return error_response
-        s = ReporteDiarioSerializer(reporte, data=request.data)
+        if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+            return respuesta_estandar(mensaje="El reporte está cerrado. Use el flujo de reapertura si es necesario.", estado="error", codigo=status.HTTP_403_FORBIDDEN)
+        s = ReporteDiarioSerializer(reporte, data=request.data, partial=True)
         if s.is_valid():
             s.save()
             return respuesta_estandar(data=s.data, mensaje="Reporte actualizado.")
         return respuesta_estandar(data=s.errors, mensaje="Error al actualizar.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
-    def partial_update(self, request, pk=None):
-        reporte = get_object_or_404(ReporteDiario, pk=pk)
-        editable, error_response = _verificar_reporte_editable(reporte)
-        if not editable:
-            return error_response
-        s = ReporteDiarioSerializer(reporte, data=request.data, partial=True)
-        if s.is_valid():
-            s.save()
-            return respuesta_estandar(data=s.data, mensaje="Reporte actualizado parcialmente.")
-        return respuesta_estandar(data=s.errors, mensaje="Error.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
-
     def destroy(self, request, pk=None):
         reporte = get_object_or_404(ReporteDiario, pk=pk)
         if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
-            return respuesta_estandar(
-                mensaje="No se puede eliminar un reporte cerrado.",
-                estado="error", codigo=status.HTTP_403_FORBIDDEN
-            )
-        reporte.eliminar_logico(usuario=request.user if request.user.is_authenticated else None)
+            return respuesta_estandar(mensaje="No se puede eliminar un reporte cerrado.", estado="error", codigo=status.HTTP_403_FORBIDDEN)
+        reporte.eliminar_logico(usuario=request.user)
         return respuesta_estandar(mensaje="Reporte diario eliminado (baja lógica).")
 
     @action(detail=True, methods=['post'], url_path='cerrar')
     def cerrar(self, request, pk=None):
         """
-        Cierra el día contable:
-        1. Recalcula totales de ingresos y egresos desde los movimientos.
-        2. Guarda snapshot del tipo de cambio actual desde ConfiguracionGlobal.
-        3. Calcula saldo_arrastre_fin = saldo_arrastre_inicio + resultado_neto.
-        4. Cambia estado a CERRADO — ya no se puede modificar.
+        Cierre manual del día contable.
+        Usa transaction.atomic + select_for_update para evitar condiciones de carrera.
+        El cierre automático lo ejecuta la tarea Celery `cerrar_dia_contable`.
         """
-        reporte = get_object_or_404(ReporteDiario, pk=pk)
-        if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
-            return respuesta_estandar(mensaje="El reporte ya está cerrado.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
+        with transaction.atomic():
+            reporte = ReporteDiario.todos.select_for_update().get(pk=pk)
+            if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+                return respuesta_estandar(mensaje="El reporte ya está cerrado.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
-        # Calcular totales desde los movimientos del día
-        from django.db.models import Sum
-        movimientos = reporte.movimientos.filter(eliminado_en__isnull=True)
-        ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(total=Sum('monto'))['total'] or 0
-        egresos  = movimientos.filter(concepto__tipo='EGRESO').aggregate(total=Sum('monto'))['total'] or 0
-        neto = ingresos - egresos
+            from django.db.models import Sum
+            movimientos = reporte.movimientos.filter(eliminado_en__isnull=True)
+            ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
+            egresos  = movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'] or 0
+            neto = ingresos - egresos
 
-        # Snapshot de tipo de cambio actual
-        tipo_cambio_usd = reporte.tipo_cambio_usd_snapshot
-        tipo_cambio_eur = reporte.tipo_cambio_eur_snapshot
-        try:
-            from configuraciones_globales.models import ConfiguracionGlobal
-            tc_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
-            tc_eur = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_EUR').first()
-            if tc_usd:
-                tipo_cambio_usd = tc_usd.valor_tipado or reporte.tipo_cambio_usd_snapshot
-            if tc_eur:
-                tipo_cambio_eur = tc_eur.valor_tipado or reporte.tipo_cambio_eur_snapshot
-        except Exception:
-            pass
+            # Snapshot del tipo de cambio al momento del cierre
+            try:
+                from configuraciones_globales.models import ConfiguracionGlobal
+                tc_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
+                tc_eur = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_EUR').first()
+                if tc_usd and tc_usd.valor_tipado:
+                    reporte.tipo_cambio_usd_snapshot = tc_usd.valor_tipado
+                if tc_eur and tc_eur.valor_tipado:
+                    reporte.tipo_cambio_eur_snapshot = tc_eur.valor_tipado
+            except Exception:
+                pass
 
-        # Actualizar y cerrar
-        reporte.total_ingresos          = ingresos
-        reporte.total_egresos           = egresos
-        reporte.resultado_neto          = neto
-        reporte.saldo_arrastre_fin      = reporte.saldo_arrastre_inicio + neto
-        reporte.tipo_cambio_usd_snapshot = tipo_cambio_usd
-        reporte.tipo_cambio_eur_snapshot = tipo_cambio_eur
-        reporte.estado_reporte          = ReporteDiario.EstadoReporte.CERRADO
-        reporte.cerrado_en              = timezone.now()
-        reporte.cerrado_por             = request.user if request.user.is_authenticated else None
-        reporte.save()
+            reporte.total_ingresos     = ingresos
+            reporte.total_egresos      = egresos
+            reporte.resultado_neto     = neto
+            reporte.saldo_arrastre_fin = reporte.saldo_arrastre_inicio + neto
+            reporte.estado_reporte     = ReporteDiario.EstadoReporte.CERRADO
+            reporte.cerrado_en         = timezone.now()
+            reporte.cerrado_por        = request.user
+            reporte.save()
 
         return respuesta_estandar(data=ReporteDiarioSerializer(reporte).data, mensaje=f"Reporte del día {reporte.fecha_contable} cerrado correctamente.")
+
+    @action(detail=True, methods=['post'], url_path='reabrir')
+    def reabrir(self, request, pk=None):
+        """
+        Reabre un reporte cerrado. EXCLUSIVO para ADMINISTRADOR.
+        Deja rastro en el historial de simple_history (quién y cuándo reabrió).
+        Tras la reapertura, el día puede ser modificado nuevamente si el horario lo permite.
+        """
+        with transaction.atomic():
+            reporte = ReporteDiario.todos.select_for_update().get(pk=pk)
+            if reporte.estado_reporte != ReporteDiario.EstadoReporte.CERRADO:
+                return respuesta_estandar(mensaje="El reporte no está cerrado.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
+
+            reporte.estado_reporte = ReporteDiario.EstadoReporte.ABIERTO
+            reporte.cerrado_en     = None
+            reporte.cerrado_por    = None
+            # El motivo de reapertura queda en el history con el usuario autenticado
+            reporte._history_user  = request.user
+            reporte.save()
+
+        return respuesta_estandar(
+            data=ReporteDiarioSerializer(reporte).data,
+            mensaje=f"Reporte del día {reporte.fecha_contable} reabierto por {request.user.username}. Queda registrado en el historial."
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -166,38 +204,54 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
 
 class MovimientoDiarioViewSet(viewsets.ViewSet):
     """
-    CRUD de movimientos dentro de un ReporteDiario.
-    Solo se permiten modificaciones si el reporte está ABIERTO y dentro del horario.
+    CRUD de movimientos diarios.
+
+    Regla crítica de T-1: El backend IGNORA cualquier `reporte` o `fecha_contable`
+    enviada por el frontend. El reporte se asigna automáticamente por el backend
+    según la sucursal del movimiento y el día contable actual (T-1).
+
     Soporta filtrado por ?reporte_id= y ?categoria_id=
     """
 
-    def _get_reporte_valido(self, reporte_id):
-        """Obtiene el reporte y verifica que sea editable."""
-        reporte = get_object_or_404(ReporteDiario, pk=reporte_id)
-        editable, error_response = _verificar_reporte_editable(reporte)
-        return reporte, editable, error_response
+    def get_permissions(self):
+        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+            return [IsAuthenticated(), VentanaHorariaPermiso()]
+        return [IsAuthenticated()]
 
     def list(self, request):
         qs = MovimientoDiario.objects.all()
-        reporte_id   = request.query_params.get('reporte_id')
-        categoria_id = request.query_params.get('categoria_id')
-        if reporte_id:
+        if reporte_id := request.query_params.get('reporte_id'):
             qs = qs.filter(reporte_id=reporte_id)
-        if categoria_id:
+        if categoria_id := request.query_params.get('categoria_id'):
             qs = qs.filter(concepto__categoria_id=categoria_id)
         return respuesta_estandar(data=MovimientoDiarioListSerializer(qs, many=True).data, mensaje="Movimientos obtenidos.")
 
     def create(self, request):
-        reporte_id = request.data.get('reporte')
-        if reporte_id:
-            reporte = get_object_or_404(ReporteDiario, pk=reporte_id)
-            editable, error_response = _verificar_reporte_editable(reporte)
-            if not editable:
-                return error_response
-        s = MovimientoDiarioSerializer(data=request.data)
+        """
+        Registra un movimiento. El backend calcula automáticamente el ReporteDiario (T-1).
+        El frontend DEBE enviar: concepto, monto, sucursal_id (y opcionalmente: monto_divisa, tipo_divisa, detalles_snapshot, notas).
+        El campo 'reporte' que envíe el frontend es IGNORADO.
+        """
+        sucursal_id = request.data.get('sucursal_id')
+        if not sucursal_id:
+            return respuesta_estandar(mensaje="El campo 'sucursal_id' es obligatorio.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
+
+        reporte, _ = _obtener_o_crear_reporte_del_dia(sucursal_id)
+
+        if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+            return respuesta_estandar(
+                mensaje="El día contable ya fue cerrado. No se pueden agregar movimientos.",
+                estado="error", codigo=status.HTTP_403_FORBIDDEN
+            )
+
+        # Construir datos ignorando el 'reporte' del frontend y forzando el calculado
+        datos = {**request.data, 'reporte': reporte.pk}
+        datos.pop('sucursal_id', None)
+
+        s = MovimientoDiarioSerializer(data=datos)
         if s.is_valid():
-            s.save()
-            return respuesta_estandar(data=s.data, mensaje="Movimiento registrado.", codigo=status.HTTP_201_CREATED)
+            mov = s.save()
+            return respuesta_estandar(data=MovimientoDiarioSerializer(mov).data, mensaje="Movimiento registrado.", codigo=status.HTTP_201_CREATED)
         return respuesta_estandar(data=s.errors, mensaje="Error al registrar movimiento.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
     def retrieve(self, request, pk=None):
@@ -205,9 +259,8 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
 
     def update(self, request, pk=None):
         mov = get_object_or_404(MovimientoDiario, pk=pk)
-        editable, error_response = _verificar_reporte_editable(mov.reporte)
-        if not editable:
-            return error_response
+        if mov.reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+            return respuesta_estandar(mensaje="El día está cerrado. Edite dejando rastro en el historial mediante una reapertura.", estado="error", codigo=status.HTTP_403_FORBIDDEN)
         s = MovimientoDiarioSerializer(mov, data=request.data)
         if s.is_valid():
             s.save()
@@ -216,9 +269,8 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
 
     def partial_update(self, request, pk=None):
         mov = get_object_or_404(MovimientoDiario, pk=pk)
-        editable, error_response = _verificar_reporte_editable(mov.reporte)
-        if not editable:
-            return error_response
+        if mov.reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+            return respuesta_estandar(mensaje="El día está cerrado.", estado="error", codigo=status.HTTP_403_FORBIDDEN)
         s = MovimientoDiarioSerializer(mov, data=request.data, partial=True)
         if s.is_valid():
             s.save()
@@ -227,8 +279,12 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
 
     def destroy(self, request, pk=None):
         mov = get_object_or_404(MovimientoDiario, pk=pk)
-        editable, error_response = _verificar_reporte_editable(mov.reporte)
-        if not editable:
-            return error_response
-        mov.eliminar_logico(usuario=request.user if request.user.is_authenticated else None)
+        if mov.reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+            return respuesta_estandar(
+                mensaje="El día está cerrado. Para anular un movimiento contable use el flujo de contrapartida.",
+                estado="error", codigo=status.HTTP_403_FORBIDDEN
+            )
+        mov.eliminar_logico(usuario=request.user)
         return respuesta_estandar(mensaje="Movimiento eliminado (baja lógica).")
+
+

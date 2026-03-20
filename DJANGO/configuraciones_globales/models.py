@@ -1,4 +1,5 @@
 from django.db import models
+from simple_history.models import HistoricalRecords
 from core.models import ModeloBase
 
 class ConfiguracionGlobal(ModeloBase):

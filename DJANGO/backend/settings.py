@@ -43,6 +43,8 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # Librerías de terceros
     'rest_framework',
+    'simple_history',
+    'django_celery_beat',
     # Apps del proyecto
     'core',
     'configuraciones_globales',
@@ -150,3 +152,18 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# ── Celery ──────────────────────────────────────────────────────────────────
+# Broker: Redis. Asegúrate de tener Redis corriendo en localhost:6379.
+# Para iniciar rápido: docker run -d -p 6379:6379 redis
+CELERY_BROKER_URL         = 'redis://localhost:6379/0'
+CELERY_RESULT_BACKEND     = 'redis://localhost:6379/0'
+CELERY_TIMEZONE           = 'America/Mexico_City'
+CELERY_ENABLE_UTC         = False
+CELERY_ACCEPT_CONTENT     = ['json']
+CELERY_TASK_SERIALIZER    = 'json'
+CELERY_RESULT_SERIALIZER  = 'json'
+CELERY_BEAT_SCHEDULER     = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# ── django-simple-history ───────────────────────────────────────────────────
+HISTORY_USER_MODEL = AUTH_USER_MODEL
