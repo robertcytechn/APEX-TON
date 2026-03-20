@@ -50,6 +50,9 @@ INSTALLED_APPS = [
     'fondos_fijos',
     'usuarios',
     'categoria_operativa',
+    'reportes_diarios',
+    'estado_resultados',
+    'libro_estado_resultados',
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'

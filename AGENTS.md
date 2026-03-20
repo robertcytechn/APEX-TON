@@ -96,3 +96,13 @@ El principal objetivo funcional de estructurar pestañas, conceptos y rubros, es
 ### 7. Reglas de Negocio: Control historico
 - la tabla o app libro_estado_resultados es un registro historico de los movimientos que se han realizado en la sala de juegos por mes
 - si modificamos el cambio de divisas en configuracion global no se deben de modificar los registros historicos, ya que estos ya fueron guardados con el cambio de divisas que existia en el momento de la transaccion.
+
+### 8. Reglas de Negocio en comportamiento
+ - abra tipos de roles 
+          * CONTADOR: es el encargado de llenar los campos de las pestañas que requieren de un registro historico, como lo son las pestañas de "POR COMPROBAR", "MAQUINAS", "CAJA CHICA MORELIA", "PRESUPUESTO", "MAQUINEROS", "JUEGO VIVO" solo podra hacer esp
+          * GERENTE: tendra los mismos permisos que el contador (por ahora)
+          * DIRECTOR: solo podra ver resportes del estado de resultados y comparativos por dia semana mes y año o un filtro personalizado, no podra editar ningun campo de las pestañas historicas graficos y tablas, solo podra ver los datos y exportarlos en pdf o excel, ajustar algunos parametros ejemplo configuraciones globales, fondos fijos para cada casino
+          * ADMINISTRADOR: administracion total del sistema en este caso (yo)
+- el sistema debe de tener en configuraciones globales un campo "HORARIO_APERTURA" y "HORARIO_CIERRE" que seran las horas en las que se abriran y cerraran las pestañas, fuera de este horario no se podra modificar
+- el sistema debe de cerrar el dia creando o cerrando el historico diario y si es fin de mes cerrar el historico de estado de resultados
+- el dia contable es un dia anterior ejemplo si hoy es 20 de marzo el dia contable es 19 de marzo
