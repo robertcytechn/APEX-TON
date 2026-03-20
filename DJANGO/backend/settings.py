@@ -47,7 +47,11 @@ INSTALLED_APPS = [
     'core',
     'configuraciones_globales',
     'sucursales',
+    'fondos_fijos',
+    'usuarios',
 ]
+
+AUTH_USER_MODEL = 'usuarios.Usuario'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
