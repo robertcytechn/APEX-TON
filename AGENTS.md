@@ -51,6 +51,10 @@ El proyecto está dividido en un Backend robusto (API REST) y un Frontend reacti
   - `creado_por`, `actualizado_por`, `eliminado_por`
   - `valor_anterior`, `valor_actual`
 
+### 4.5. Flujo de Creación de Apps y Modelos
+- **Módulos DRF Completos:** Cada vez que se crea una nueva aplicación o modelo, es una regla estricta que deben programarse concurrentemente sus correspondientes Serializadores, Vistas (Views - preferentemente ViewSets de DRF) y enrutadores (URLs). No deben dejarse modelos huérfanos sin sus endpoints.
+- **Auto-documentación (help_text):** Es obligatorio agregar el atributo `help_text` a absolutamente todos y cada uno de los campos declarados dentro de cualquier modelo. Esto para el óptimo soporte y funcionamiento del esquema en el Django REST Framework.
+
 ## 5. Arquitectura Lógica de la Base de Datos
 
 ### 5.1. Tablas Globales Maestras
