@@ -94,5 +94,5 @@ El sistema organizará el flujo categorizando la información en divisiones cono
 El principal objetivo funcional de estructurar pestañas, conceptos y rubros, es la capacidad de generalizar y consolidar toda la operación de ingresos (fondos entrantes a sala o recaudo) frente a los egresos (salida a banco o pagos) en el **Estado de Resultados**, produciéndolo de forma autónoma, fidedigna y completamente en tiempo real a nivel sistémico.
 
 ### 7. Reglas de Negocio: Control historico
-- la tabla o app libro_estado_resultados es un registro historico de los movimientos que se han realizado en la sala de juegos.
+- la tabla o app libro_estado_resultados es un registro historico de los movimientos que se han realizado en la sala de juegos por mes
 - si modificamos el cambio de divisas en configuracion global no se deben de modificar los registros historicos, ya que estos ya fueron guardados con el cambio de divisas que existia en el momento de la transaccion.

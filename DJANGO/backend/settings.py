@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'sucursales',
     'fondos_fijos',
     'usuarios',
+    'categoria_operativa',
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
