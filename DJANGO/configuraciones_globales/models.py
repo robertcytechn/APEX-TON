@@ -54,7 +54,7 @@ class ConfiguracionGlobal(ModeloBase):
             elif self.tipo_valor == 'JSON':
                 return json.loads(self.valor)
         except (ValueError, TypeError, json.JSONDecodeError):
-            return None # O devolver el self.valor original si prefieres que no falle silenciosamente
+            return self.valor # o none para no retornar el valor en texto
 
         return str(self.valor)
 
