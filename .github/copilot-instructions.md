@@ -1,11 +1,6 @@
-# NEXUS: Guía Arquitectónica y Reglas de Negocio
-
-## 1. Propósito del Documento
-Este archivo funciona como la **Guía Maestra Core** para asistentes de Inteligencia Artificial (Copilot, Gemini, etc.). Su objetivo es garantizar que todo el código generado sea consistente, escalable y respete estrictamente la arquitectura, el stack tecnológico y la lógica de negocio del proyecto NEXUS.
-
 ## 2. Stack Tecnológico
 
-El proyecto está dividido en un Backend robusto (API REST) y un Frontend reactivo, orientado a un entorno móvil (APK a través de .NET MAUI).
+El proyecto está dividido en un Backend robusto (API REST) y un Frontend reactivo, orientado a un entorno móvil
 
 ### 2.1. Backend
 - **Lenguaje:** Python 3.13
@@ -56,6 +51,10 @@ El proyecto está dividido en un Backend robusto (API REST) y un Frontend reacti
   - `creado_por`, `actualizado_por`, `eliminado_por`
   - `valor_anterior`, `valor_actual`
 
+### 4.5. Flujo de Creación de Apps y Modelos
+- **Módulos DRF Completos:** Cada vez que se crea una nueva aplicación o modelo, es una regla estricta que deben programarse concurrentemente sus correspondientes Serializadores, Vistas (Views - preferentemente ViewSets de DRF) y enrutadores (URLs). No deben dejarse modelos huérfanos sin sus endpoints.
+- **Auto-documentación (help_text):** Es obligatorio agregar el atributo `help_text` a absolutamente todos y cada uno de los campos declarados dentro de cualquier modelo. Esto para el óptimo soporte y funcionamiento del esquema en el Django REST Framework.
+
 ## 5. Arquitectura Lógica de la Base de Datos
 
 ### 5.1. Tablas Globales Maestras
@@ -95,5 +94,23 @@ El sistema organizará el flujo categorizando la información en divisiones cono
 El principal objetivo funcional de estructurar pestañas, conceptos y rubros, es la capacidad de generalizar y consolidar toda la operación de ingresos (fondos entrantes a sala o recaudo) frente a los egresos (salida a banco o pagos) en el **Estado de Resultados**, produciéndolo de forma autónoma, fidedigna y completamente en tiempo real a nivel sistémico.
 
 ### 7. Reglas de Negocio: Control historico
-- la tabla o app libro_estado_resultados es un registro historico de los movimientos que se han realizado en la sala de juegos.
+- la tabla o app libro_estado_resultados es un registro historico de los movimientos que se han realizado en la sala de juegos por mes
 - si modificamos el cambio de divisas en configuracion global no se deben de modificar los registros historicos, ya que estos ya fueron guardados con el cambio de divisas que existia en el momento de la transaccion.
+
+### 8. Reglas de Negocio en comportamiento
+ - abra tipos de roles 
+          * CONTADOR: es el encargado de llenar los campos de las pestañas que requieren de un registro historico, como lo son las pestañas de "POR COMPROBAR", "MAQUINAS", "CAJA CHICA MORELIA", "PRESUPUESTO", "MAQUINEROS", "JUEGO VIVO" solo podra hacer esp
+          * GERENTE: tendra los mismos permisos que el contador (por ahora)
+          * DIRECTOR: solo podra ver resportes del estado de resultados y comparativos por dia semana mes y año o un filtro personalizado, no podra editar ningun campo de las pestañas historicas graficos y tablas, solo podra ver los datos y exportarlos en pdf o excel, ajustar algunos parametros ejemplo configuraciones globales, fondos fijos para cada casino
+          * ADMINISTRADOR: administracion total del sistema en este caso (yo)
+- el sistema debe de tener en configuraciones globales un campo "HORARIO_APERTURA" y "HORARIO_CIERRE" que seran las horas en las que se abriran y cerraran las pestañas, fuera de este horario no se podra modificar
+- el sistema debe de cerrar el dia creando o cerrando el historico diario y si es fin de mes cerrar el historico de estado de resultados
+- el dia contable es un dia anterior ejemplo si hoy es 20 de marzo el dia contable es 19 de marzo
+
+
+## reglas de estilo de frontend
+- siempre usar tailwind para estilos y los componentes mas nuevos de primevue v4 o el mas actual disponible
+- no modificar tailwind ni primevue, solo usar sus clases y componentes en caso de necesitar estilos personalizados crear una clase en el archivo style.css
+- mantener siempre un modo de trabajo movil first, es decir, que la interfaz se adapte primero a dispositivos moviles y luego a pantallas mas grandes pero manteniendo botones ordenados y accesibles, que no se deformen de tamaño ni se vean mal en ningun dispositivo
+- para campos de imput donde sea posible agruparlos o encerrarlos en su propio form para que se vean ordenados y accesibles y para que funcionen los accesos rapidos de teclado de forma nativa
+- acomodo de carpetas por rol ejemplo todo loq ue el administardor peude hacer o ver colocarlo en la carpeta admin, todo lo que el contador puede hacer o ver colocarlo en la carpeta contador, todo lo que el director puede hacer o ver colocarlo en la carpeta director ya te ire indicando en que carpeta lo haremos todo esto en la carpeta views

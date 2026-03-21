@@ -1,7 +1,11 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from django.contrib.auth import authenticate, login as iniciar_sesion_django, logout as cerrar_sesion_django
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.views.decorators.csrf import ensure_csrf_cookie
 from .models import Rol, Permiso, RolPermiso, Usuario, UsuarioRol
 from .serializers import (
     RolSerializer, PermisoSerializer, RolPermisoSerializer,
@@ -11,6 +15,35 @@ from .serializers import (
 
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
+
+
+def construir_datos_sesion(usuario):
+    """Estructura estandar para exponer datos de la sesion autenticada."""
+    roles = list(
+        usuario.usuario_roles.select_related('rol').values(
+            'rol__id',
+            'rol__nombre'
+        )
+    )
+    permisos = list(
+        Permiso.objects.filter(
+            rol_permisos__rol__usuario_roles__usuario=usuario
+        ).distinct().values('id', 'codigo', 'nombre', 'modulo')
+    )
+
+    return {
+        "usuario": {
+            "id": usuario.id,
+            "username": usuario.username,
+            "nombre": usuario.nombre,
+            "correo": usuario.correo,
+        },
+        "roles": [
+            {"id": rol['rol__id'], "nombre": rol['rol__nombre']}
+            for rol in roles
+        ],
+        "permisos": permisos,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -110,6 +143,77 @@ class RolViewSet(viewsets.ViewSet):
 # ─────────────────────────────────────────────────────────────────────────────
 class UsuarioViewSet(viewsets.ViewSet):
     """CRUD completo para Usuario con gestión de roles."""
+
+    @action(detail=False, methods=['get'], url_path='csrf', permission_classes=[AllowAny])
+    @ensure_csrf_cookie
+    def csrf(self, request):
+        """Inicializa la cookie CSRF para autenticacion por sesion."""
+        return respuesta_estandar(
+            data={"csrf_cookie": "ok"},
+            mensaje="Cookie CSRF configurada."
+        )
+
+    @action(detail=False, methods=['post'], url_path='iniciar-sesion', permission_classes=[AllowAny])
+    def iniciar_sesion(self, request):
+        """Autentica por username o correo y abre sesion nativa de Django."""
+        identificador = (request.data.get('identificador') or '').strip()
+        password = request.data.get('password')
+
+        if not identificador or not password:
+            return respuesta_estandar(
+                data={"identificador": ["El identificador es requerido."], "password": ["La contraseña es requerida."]},
+                mensaje="Credenciales incompletas.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        usuario_obj = Usuario.objects.filter(
+            Q(username__iexact=identificador) | Q(correo__iexact=identificador),
+            is_active=True
+        ).first()
+
+        if not usuario_obj:
+            return respuesta_estandar(
+                mensaje="Usuario o contraseña inválidos.",
+                estado="error",
+                codigo=status.HTTP_401_UNAUTHORIZED
+            )
+
+        usuario_autenticado = authenticate(request, username=usuario_obj.username, password=password)
+        if not usuario_autenticado:
+            return respuesta_estandar(
+                mensaje="Usuario o contraseña inválidos.",
+                estado="error",
+                codigo=status.HTTP_401_UNAUTHORIZED
+            )
+
+        iniciar_sesion_django(request, usuario_autenticado)
+        return respuesta_estandar(
+            data=construir_datos_sesion(usuario_autenticado),
+            mensaje="Sesión iniciada correctamente.",
+            codigo=status.HTTP_200_OK
+        )
+
+    @action(detail=False, methods=['post'], url_path='cerrar-sesion')
+    def cerrar_sesion(self, request):
+        """Cierra la sesion autenticada actual."""
+        cerrar_sesion_django(request)
+        return respuesta_estandar(mensaje="Sesión cerrada correctamente.")
+
+    @action(detail=False, methods=['get'], url_path='sesion-actual', permission_classes=[AllowAny])
+    def sesion_actual(self, request):
+        """Devuelve datos de la sesion actual o 401 si no hay autenticacion."""
+        if not request.user or not request.user.is_authenticated:
+            return respuesta_estandar(
+                mensaje="No hay sesión activa.",
+                estado="error",
+                codigo=status.HTTP_401_UNAUTHORIZED
+            )
+
+        return respuesta_estandar(
+            data=construir_datos_sesion(request.user),
+            mensaje="Sesión activa obtenida."
+        )
 
     def list(self, request):
         return respuesta_estandar(data=UsuarioListSerializer(Usuario.objects.all(), many=True).data, mensaje="Usuarios obtenidos.")
