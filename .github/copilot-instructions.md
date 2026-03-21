@@ -114,3 +114,10 @@ El principal objetivo funcional de estructurar pestañas, conceptos y rubros, es
 - mantener siempre un modo de trabajo movil first, es decir, que la interfaz se adapte primero a dispositivos moviles y luego a pantallas mas grandes pero manteniendo botones ordenados y accesibles, que no se deformen de tamaño ni se vean mal en ningun dispositivo
 - para campos de imput donde sea posible agruparlos o encerrarlos en su propio form para que se vean ordenados y accesibles y para que funcionen los accesos rapidos de teclado de forma nativa
 - acomodo de carpetas por rol ejemplo todo loq ue el administardor peude hacer o ver colocarlo en la carpeta admin, todo lo que el contador puede hacer o ver colocarlo en la carpeta contador, todo lo que el director puede hacer o ver colocarlo en la carpeta director ya te ire indicando en que carpeta lo haremos todo esto en la carpeta views
+- en cualquier formulario mostrar siempre indicador visual de campo requerido u opcional en la etiqueta (ejemplo: * obligatorio o texto opcional)
+- en inputs y selects agregar iconos semanticos y placeholder descriptivo en espanol para mejorar captura y legibilidad
+- todo campo monetario debe iniciar y capturarse en formato monetario explicito con 2 decimales (ejemplo: 0.00), no dejar campos vacios para montos
+- todo monto mostrado al usuario debe representarse con separador de miles y 2 decimales (ejemplo: 1,450,640.50)
+- todo monto mostrado al usuario debe usar segmentacion visual por colores para lectura rapida: cada bloque de miles con color distinto y la parte decimal con color diferenciado
+- para cualquier tabla, tarjeta, reporte o resumen que muestre dinero (movimientos, estado de resultados, fondos, ingresos, egresos), usar siempre el componente `MontoMonedaColoreado`
+- en formularios con campos monetarios, agregar vista previa coloreada del monto capturado para validar lectura antes de guardar
