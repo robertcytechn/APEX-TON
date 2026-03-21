@@ -21,7 +21,7 @@ El proyecto está dividido en un Backend robusto (API REST) y un Frontend reacti
 - **Lenguaje Obligatorio:** Todo el desarrollo (nombres de variables, funciones, clases, comentarios y documentación) DEBE estar exclusivamente en **Español de México**.
 - **Interfaz de Usuario:** Cualquier texto, alerta o elemento que el usuario final pueda ver debe escribirse en español.
 - **Control de Versiones:** Uso estricto de **Git** y **GitHub** para el manejo del código fuente.
-
+- **Revisión y ejecución:** Antes de cualquier cambio revisa backend y frontend para entender la lógica y el funcionamiento del sistema, si no entiendes algo pregunta antes de hacer cualquier cambio, no hagas cambios sin entender el impacto que pueden tener en el sistema. si modificas o actualizas backend asegurate tambien de alterar views y serializers correspondientes para que el sistema siga funcionando correctamente, si modificas o actualizas frontend asegurate de revisar que los cambios no afecten la experiencia del usuario y que no rompan la interfaz, revisa que los cambios sean consistentes con el diseño y la arquitectura del sistema tambien menu lateral y oruter
 ## 4. Estándares y Arquitectura de la API (Backend)
 
 ### 4.1. Modularidad
@@ -121,3 +121,5 @@ El principal objetivo funcional de estructurar pestañas, conceptos y rubros, es
 - todo monto mostrado al usuario debe usar segmentacion visual por colores para lectura rapida: cada bloque de miles con color distinto y la parte decimal con color diferenciado
 - para cualquier tabla, tarjeta, reporte o resumen que muestre dinero (movimientos, estado de resultados, fondos, ingresos, egresos), usar siempre el componente `MontoMonedaColoreado`
 - en formularios con campos monetarios, agregar vista previa coloreada del monto capturado para validar lectura antes de guardar
+  -a todas las datatables hay que agregar mas dise;o y configuracion ejemplo ver/ocultar columnas reacomodo o reordenamiento de columnas, seleccion de datos mostrados 10,20,50,todos etc
+- en todas las datatables, al dar clic en el encabezado de la columna se debe permitir ordenamiento ascendente/descendente, aplicando orden alfabetico o numerico segun corresponda al tipo de dato

@@ -1,5 +1,6 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -179,6 +180,20 @@ class ConfiguracionGlobalCabinaViewSet(BaseCabinaAdminViewSet):
 
 
 class RubroContableCabinaViewSet(BaseCabinaAdminViewSet):
+    @action(detail=False, methods=['get'], url_path='opciones')
+    def opciones(self, request):
+        campo_padre = RubroContable._meta.get_field('padre')
+        campo_tipo = RubroContable._meta.get_field('tipo')
+
+        opciones_padre = [{'label': etiqueta, 'value': valor} for valor, etiqueta in campo_padre.choices]
+        opciones_tipo = [{'label': etiqueta, 'value': valor} for valor, etiqueta in campo_tipo.choices]
+
+        data = {
+            'padres': opciones_padre,
+            'tipos': opciones_tipo,
+        }
+        return respuesta_estandar(data=data, mensaje='Opciones de rubro contable obtenidas.')
+
     def list(self, request):
         data = RubroContableCabinaSerializer(RubroContable.objects.all(), many=True).data
         return respuesta_estandar(data=data, mensaje='Rubros contables obtenidos.')
