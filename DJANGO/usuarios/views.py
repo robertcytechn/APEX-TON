@@ -4,8 +4,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.contrib.auth import authenticate, login as iniciar_sesion_django, logout as cerrar_sesion_django
 from django.db.models import Q
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
-from django.views.decorators.csrf import ensure_csrf_cookie
 from .models import Rol, Permiso, RolPermiso, Usuario, UsuarioRol
 from .serializers import (
     RolSerializer, PermisoSerializer, RolPermisoSerializer,
@@ -37,6 +37,8 @@ def construir_datos_sesion(usuario):
             "username": usuario.username,
             "nombre": usuario.nombre,
             "correo": usuario.correo,
+            "is_superuser": usuario.is_superuser,
+            "is_staff": usuario.is_staff,
         },
         "roles": [
             {"id": rol['rol__id'], "nombre": rol['rol__nombre']}
@@ -145,11 +147,11 @@ class UsuarioViewSet(viewsets.ViewSet):
     """CRUD completo para Usuario con gestión de roles."""
 
     @action(detail=False, methods=['get'], url_path='csrf', permission_classes=[AllowAny])
-    @ensure_csrf_cookie
     def csrf(self, request):
         """Inicializa la cookie CSRF para autenticacion por sesion."""
+        token = get_token(request)
         return respuesta_estandar(
-            data={"csrf_cookie": "ok"},
+            data={"csrf_cookie": "ok", "csrf_token": token},
             mensaje="Cookie CSRF configurada."
         )
 

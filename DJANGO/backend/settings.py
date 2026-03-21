@@ -29,7 +29,12 @@ SECRET_KEY = 'django-insecure-ndrl1!l22)rjr5+)4iv9n2ycu#)$q8+up1u+xkk#z-)0t@4=s!
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+
+CSRF_TRUSTED_ORIGINS = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+]
 
 
 # Application definition
@@ -56,6 +61,7 @@ INSTALLED_APPS = [
     'estado_resultados',
     'libro_estado_resultados',
     'configuraciones_usuario',
+    'cabina_arquitectura',
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
