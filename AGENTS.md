@@ -21,7 +21,8 @@ El proyecto está dividido en un Backend robusto (API REST) y un Frontend reacti
 - **Lenguaje Obligatorio:** Todo el desarrollo (nombres de variables, funciones, clases, comentarios y documentación) DEBE estar exclusivamente en **Español de México**.
 - **Interfaz de Usuario:** Cualquier texto, alerta o elemento que el usuario final pueda ver debe escribirse en español.
 - **Control de Versiones:** Uso estricto de **Git** y **GitHub** para el manejo del código fuente.
-- **Revisión y ejecución:** Antes de cualquier cambio revisa backend y frontend para entender la lógica y el funcionamiento del sistema, si no entiendes algo pregunta antes de hacer cualquier cambio, no hagas cambios sin entender el impacto que pueden tener en el sistema. si modificas o actualizas backend asegurate tambien de alterar views y serializers correspondientes para que el sistema siga funcionando correctamente, si modificas o actualizas frontend asegurate de revisar que los cambios no afecten la experiencia del usuario y que no rompan la interfaz, revisa que los cambios sean consistentes con el diseño y la arquitectura del sistema tambien menu lateral y oruter
+- **Revisión y ejecución:** Antes de cualquier cambio revisa backend y frontend para entender la lógica y el funcionamiento del sistema, no hagas cambios sin entender el impacto que pueden tener en el sistema. si modificas o actualizas backend asegurate tambien de alterar views y serializers correspondientes para que el sistema siga funcionando correctamente, si modificas o actualizas frontend asegurate de revisar que los cambios no afecten la experiencia del usuario y que no rompan la interfaz, revisa que los cambios sean consistentes con el diseño y la arquitectura del sistema tambien menu lateral y oruter
+
 ## 4. Estándares y Arquitectura de la API (Backend)
 
 ### 4.1. Modularidad

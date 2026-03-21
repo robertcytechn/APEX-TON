@@ -52,6 +52,7 @@ class SucursalCabinaSerializer(serializers.ModelSerializer):
         model = Sucursal
         fields = '__all__'
         read_only_fields = (
+            'fondos_fijos',
             'creado_en', 'actualizado_en', 'eliminado_en',
             'creado_por', 'actualizado_por', 'eliminado_por',
             'valor_anterior', 'valor_actual',

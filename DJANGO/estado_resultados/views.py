@@ -116,15 +116,18 @@ class EstadoResultadosAPIView(APIView):
         for mov in movimientos:
             cat   = mov.concepto.categoria
             rubro = mov.concepto.rubro_contable
+            rubro_id = rubro.id if rubro else 'SIN_RUBRO_CONTABLE'
+            rubro_nombre = rubro.nombre if rubro else 'SIN RUBRO CONTABLE'
+            rubro_tipo = rubro.tipo if rubro else 'NO_CONTABLE'
 
             if cat.id not in por_categoria:
                 por_categoria[cat.id] = {"categoria_id": cat.id, "categoria_nombre": cat.nombre, "categoria_clave": cat.clave, "tipo": cat.tipo, "total_ingresos": 0, "total_egresos": 0, "resultado_neto": 0}
-            if rubro.id not in por_rubro:
-                por_rubro[rubro.id] = {"rubro_id": rubro.id, "rubro_nombre": rubro.nombre, "rubro_tipo": rubro.tipo, "total_ingresos": 0, "total_egresos": 0, "resultado_neto": 0}
+            if rubro_id not in por_rubro:
+                por_rubro[rubro_id] = {"rubro_id": rubro_id, "rubro_nombre": rubro_nombre, "rubro_tipo": rubro_tipo, "total_ingresos": 0, "total_egresos": 0, "resultado_neto": 0}
 
             campo = 'total_ingresos' if mov.concepto.tipo == 'INGRESO' else 'total_egresos'
             por_categoria[cat.id][campo] += float(mov.monto)
-            por_rubro[rubro.id][campo]   += float(mov.monto)
+            por_rubro[rubro_id][campo] += float(mov.monto)
 
         for d in list(por_categoria.values()) + list(por_rubro.values()):
             d['resultado_neto'] = d['total_ingresos'] - d['total_egresos']

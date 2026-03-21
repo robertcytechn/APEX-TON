@@ -93,7 +93,7 @@ class LibroEstadoResultadosViewSet(viewsets.ViewSet):
         # Desglose por rubro como snapshot JSON
         desglose = {}
         for mov in movimientos:
-            rubro_nombre = mov.concepto.rubro_contable.nombre
+            rubro_nombre = mov.concepto.rubro_contable.nombre if mov.concepto.rubro_contable else 'SIN RUBRO CONTABLE'
             if rubro_nombre not in desglose:
                 desglose[rubro_nombre] = {"ingresos": 0, "egresos": 0, "neto": 0}
             if mov.concepto.tipo == 'INGRESO':

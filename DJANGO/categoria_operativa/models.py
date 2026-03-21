@@ -80,9 +80,11 @@ class Concepto(ModeloBase):
     rubro_contable = models.ForeignKey(
         RubroContable,
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name='conceptos',
         verbose_name="Rubro Contable",
-        help_text="Rubro contable global al que se conecta este concepto para la consolidación del Estado de Resultados."
+        help_text="Rubro contable global opcional para consolidación del Estado de Resultados. Puede omitirse en conceptos no contables."
     )
     nombre = models.CharField(
         max_length=150,

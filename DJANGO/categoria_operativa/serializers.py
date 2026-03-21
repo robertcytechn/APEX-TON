@@ -18,7 +18,7 @@ class DetalleParametrizadoSerializer(serializers.ModelSerializer):
 class ConceptoSerializer(serializers.ModelSerializer):
     """Serializador completo para Concepto."""
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
-    rubro_nombre = serializers.CharField(source='rubro_contable.nombre', read_only=True)
+    rubro_nombre = serializers.CharField(source='rubro_contable.nombre', read_only=True, allow_null=True)
 
     class Meta:
         model = Concepto
@@ -33,7 +33,7 @@ class ConceptoSerializer(serializers.ModelSerializer):
 class ConceptoListSerializer(serializers.ModelSerializer):
     """Serializador reducido de Concepto para listados."""
     categoria_nombre = serializers.CharField(source='categoria.nombre', read_only=True)
-    rubro_nombre = serializers.CharField(source='rubro_contable.nombre', read_only=True)
+    rubro_nombre = serializers.CharField(source='rubro_contable.nombre', read_only=True, allow_null=True)
 
     class Meta:
         model = Concepto

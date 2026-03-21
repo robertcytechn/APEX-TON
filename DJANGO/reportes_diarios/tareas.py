@@ -140,7 +140,7 @@ def _cerrar_mes_automatico(sucursal, anio, mes, tc_usd, tc_eur):
             # Desglose JSON por rubro
             desglose = {}
             for mov in movimientos:
-                rubro = mov.concepto.rubro_contable.nombre
+                rubro = mov.concepto.rubro_contable.nombre if mov.concepto.rubro_contable else 'SIN RUBRO CONTABLE'
                 if rubro not in desglose:
                     desglose[rubro] = {"ingresos": 0, "egresos": 0, "neto": 0}
                 if mov.concepto.tipo == 'INGRESO':

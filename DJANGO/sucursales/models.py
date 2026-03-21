@@ -61,6 +61,13 @@ class Sucursal(ModeloBase):
         verbose_name="Fondo Inicial",
         help_text="Monto inicial asignado al fondo fijo de la sucursal en moneda nacional (MXN)."
     )
+    fondos_fijos = models.ManyToManyField(
+        'fondos_fijos.FondoFijo',
+        through='fondos_fijos.SucursalFondoFijo',
+        related_name='sucursales',
+        verbose_name="Fondos fijos",
+        help_text="Fondos fijos asignados a la sucursal mediante la tabla intermedia con monto por sucursal."
+    )
 
     def __str__(self):
         return f"{self.clave} – {self.nombre}"
