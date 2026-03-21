@@ -106,3 +106,11 @@ El principal objetivo funcional de estructurar pestañas, conceptos y rubros, es
 - el sistema debe de tener en configuraciones globales un campo "HORARIO_APERTURA" y "HORARIO_CIERRE" que seran las horas en las que se abriran y cerraran las pestañas, fuera de este horario no se podra modificar
 - el sistema debe de cerrar el dia creando o cerrando el historico diario y si es fin de mes cerrar el historico de estado de resultados
 - el dia contable es un dia anterior ejemplo si hoy es 20 de marzo el dia contable es 19 de marzo
+
+
+## reglas de estilo de frontend
+- siempre usar tailwind para estilos y los componentes mas nuevos de primevue v4 o el mas actual disponible
+- no modificar tailwind ni primevue, solo usar sus clases y componentes en caso de necesitar estilos personalizados crear una clase en el archivo style.css
+- mantener siempre un modo de trabajo movil first, es decir, que la interfaz se adapte primero a dispositivos moviles y luego a pantallas mas grandes pero manteniendo botones ordenados y accesibles, que no se deformen de tamaño ni se vean mal en ningun dispositivo
+- para campos de imput donde sea posible agruparlos o encerrarlos en su propio form para que se vean ordenados y accesibles y para que funcionen los accesos rapidos de teclado de forma nativa
+- acomodo de carpetas por rol ejemplo todo loq ue el administardor peude hacer o ver colocarlo en la carpeta admin, todo lo que el contador puede hacer o ver colocarlo en la carpeta contador, todo lo que el director puede hacer o ver colocarlo en la carpeta director ya te ire indicando en que carpeta lo haremos todo esto en la carpeta views
