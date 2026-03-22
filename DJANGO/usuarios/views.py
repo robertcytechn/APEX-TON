@@ -37,6 +37,8 @@ def construir_datos_sesion(usuario):
             "username": usuario.username,
             "nombre": usuario.nombre,
             "correo": usuario.correo,
+            "sucursal_id": usuario.sucursal_id,
+            "sucursal_nombre": usuario.sucursal.nombre if usuario.sucursal else None,
             "is_superuser": usuario.is_superuser,
             "is_staff": usuario.is_staff,
         },

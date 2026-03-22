@@ -124,3 +124,4 @@ El principal objetivo funcional de estructurar pestañas, conceptos y rubros, es
 - en formularios con campos monetarios, agregar vista previa coloreada del monto capturado para validar lectura antes de guardar
 -a todas las datatables hay que agregar mas dise;o y configuracion ejemplo ver/ocultar columnas reacomodo o reordenamiento de columnas, seleccion de datos mostrados 10,20,50,todos etc
 - en todas las datatables, al dar clic en el encabezado de la columna se debe permitir ordenamiento ascendente/descendente, aplicando orden alfabetico o numerico segun corresponda al tipo de dato
+- en todos los campos de seleccion de formularios (Select, MultiSelect o equivalentes), habilitar siempre buscador/autocompletado para facilitar la captura y evitar listas largas sin filtro

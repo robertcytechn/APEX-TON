@@ -96,9 +96,53 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
     def list(self, request):
         qs = ReporteDiario.objects.all()
         sucursal_id = request.query_params.get('sucursal_id')
+        anio = request.query_params.get('anio')
+        mes = request.query_params.get('mes')
+        dia = request.query_params.get('dia')
+
         if sucursal_id:
             qs = qs.filter(sucursal_id=sucursal_id)
+
+        try:
+            if anio not in (None, ''):
+                qs = qs.filter(fecha_contable__year=int(anio))
+            if mes not in (None, ''):
+                mes_valor = int(mes)
+                if mes_valor < 1 or mes_valor > 12:
+                    raise ValueError('mes fuera de rango')
+                qs = qs.filter(fecha_contable__month=mes_valor)
+            if dia not in (None, ''):
+                dia_valor = int(dia)
+                if dia_valor < 1 or dia_valor > 31:
+                    raise ValueError('dia fuera de rango')
+                qs = qs.filter(fecha_contable__day=dia_valor)
+        except ValueError:
+            return respuesta_estandar(
+                mensaje="Los parámetros 'anio', 'mes' y 'dia' deben ser enteros válidos.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
         return respuesta_estandar(data=ReporteDiarioListSerializer(qs, many=True).data, mensaje="Reportes diarios obtenidos.")
+
+    @action(detail=False, methods=['get'], url_path='actual')
+    def actual(self, request):
+        """
+        Obtiene (o crea) el reporte del día contable actual (T-1) para la sucursal indicada.
+        """
+        sucursal_id = request.query_params.get('sucursal_id')
+        if not sucursal_id:
+            return respuesta_estandar(
+                mensaje="El parámetro 'sucursal_id' es obligatorio.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id)
+        return respuesta_estandar(
+            data=ReporteDiarioSerializer(reporte).data,
+            mensaje="Reporte del día contable creado automáticamente." if creado else "Reporte del día contable obtenido."
+        )
 
     def create(self, request):
         """Crea un ReporteDiario para una sucursal. La fecha contable es asignada automáticamente (T-1)."""
@@ -253,6 +297,64 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
             mov = s.save()
             return respuesta_estandar(data=MovimientoDiarioSerializer(mov).data, mensaje="Movimiento registrado.", codigo=status.HTTP_201_CREATED)
         return respuesta_estandar(data=s.errors, mensaje="Error al registrar movimiento.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'], url_path='captura-rapida')
+    def captura_rapida(self, request):
+        """
+        Crea o actualiza automáticamente el movimiento del día contable para un concepto.
+        Se usa para capturas por tabla con autoguardado en frontend.
+        """
+        sucursal_id = request.data.get('sucursal_id')
+        concepto_id = request.data.get('concepto')
+
+        if not sucursal_id or not concepto_id:
+            return respuesta_estandar(
+                mensaje="Los campos 'sucursal_id' y 'concepto' son obligatorios.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        reporte, _ = _obtener_o_crear_reporte_del_dia(sucursal_id)
+        if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+            return respuesta_estandar(
+                mensaje="El día contable ya fue cerrado. No se pueden registrar cambios.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
+
+        with transaction.atomic():
+            movimiento_existente = MovimientoDiario.objects.filter(
+                reporte_id=reporte.id,
+                concepto_id=concepto_id
+            ).first()
+
+            datos = {
+                **request.data,
+                'reporte': reporte.id,
+            }
+            datos.pop('sucursal_id', None)
+
+            if movimiento_existente:
+                serializador = MovimientoDiarioSerializer(movimiento_existente, data=datos, partial=True)
+            else:
+                serializador = MovimientoDiarioSerializer(data=datos)
+
+            if not serializador.is_valid():
+                return respuesta_estandar(
+                    data=serializador.errors,
+                    mensaje="Error al guardar captura rápida.",
+                    estado="error",
+                    codigo=status.HTTP_400_BAD_REQUEST
+                )
+
+            movimiento = serializador.save()
+
+        mensaje = "Movimiento actualizado en captura rápida." if movimiento_existente else "Movimiento creado en captura rápida."
+        return respuesta_estandar(
+            data=MovimientoDiarioSerializer(movimiento).data,
+            mensaje=mensaje,
+            codigo=status.HTTP_200_OK if movimiento_existente else status.HTTP_201_CREATED
+        )
 
     def retrieve(self, request, pk=None):
         return respuesta_estandar(data=MovimientoDiarioSerializer(get_object_or_404(MovimientoDiario, pk=pk)).data, mensaje="Movimiento obtenido.")

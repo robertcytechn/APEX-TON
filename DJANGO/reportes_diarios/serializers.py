@@ -26,7 +26,20 @@ class MovimientoDiarioListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = MovimientoDiario
-        fields = ('id', 'concepto', 'concepto_nombre', 'categoria_nombre', 'tipo', 'monto', 'monto_divisa', 'tipo_divisa', 'notas')
+        fields = (
+            'id',
+            'concepto',
+            'concepto_nombre',
+            'categoria_nombre',
+            'tipo',
+            'monto',
+            'monto_divisa',
+            'tipo_divisa',
+            'detalles_snapshot',
+            'notas',
+            'creado_en',
+            'actualizado_en',
+        )
 
 
 class ReporteDiarioSerializer(serializers.ModelSerializer):
