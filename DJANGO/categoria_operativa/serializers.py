@@ -37,7 +37,7 @@ class ConceptoListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Concepto
-        fields = ('id', 'categoria', 'clave', 'nombre', 'tipo', 'descripcion', 'es_recurrente', 'categoria_nombre', 'rubro_nombre', 'estado')
+        fields = ('id', 'categoria', 'clave', 'nombre', 'tipo', 'descripcion', 'es_recurrente', 'requiere_imagen', 'categoria_nombre', 'rubro_nombre', 'estado')
 
 
 class CategoriaOperativaSerializer(serializers.ModelSerializer):

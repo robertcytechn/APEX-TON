@@ -108,7 +108,9 @@ class LibroEstadoResultadosViewSet(viewsets.ViewSet):
         tc_eur = libro.tipo_cambio_eur_snapshot
         try:
             from configuraciones_globales.models import ConfiguracionGlobal
-            cfg_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
+            cfg_usd = ConfiguracionGlobal.objects.filter(clave='TASA_CAMBIO_DOLARES').first()
+            if not cfg_usd:
+                cfg_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
             cfg_eur = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_EUR').first()
             if cfg_usd:
                 tc_usd = cfg_usd.valor_tipado or tc_usd

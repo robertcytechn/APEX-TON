@@ -1,3 +1,5 @@
+import json
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import viewsets, status
@@ -27,6 +29,19 @@ def _dia_contable_actual():
     return timezone.localdate() - timezone.timedelta(days=1)
 
 
+def _obtener_tasa_cambio_por_claves(claves):
+    from configuraciones_globales.models import ConfiguracionGlobal
+
+    for clave in claves:
+        configuracion = ConfiguracionGlobal.objects.filter(clave=clave).first()
+        if not configuracion:
+            continue
+        valor = configuracion.valor_tipado
+        if valor not in (None, ''):
+            return valor
+    return None
+
+
 def _obtener_o_crear_reporte_del_dia(sucursal_id):
     """
     Obtiene el ReporteDiario del día contable actual (T-1) para la sucursal dada.
@@ -54,19 +69,58 @@ def _obtener_o_crear_reporte_del_dia(sucursal_id):
 
             # Snapshot del tipo de cambio actual
             try:
-                from configuraciones_globales.models import ConfiguracionGlobal
-                tc_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
-                tc_eur = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_EUR').first()
-                if tc_usd:
-                    reporte.tipo_cambio_usd_snapshot = tc_usd.valor_tipado or 0
-                if tc_eur:
-                    reporte.tipo_cambio_eur_snapshot = tc_eur.valor_tipado or 0
+                tasa_usd = _obtener_tasa_cambio_por_claves(['TASA_CAMBIO_DOLARES', 'TIPO_CAMBIO_USD'])
+                tasa_eur = _obtener_tasa_cambio_por_claves(['TIPO_CAMBIO_EUR'])
+                if tasa_usd is not None:
+                    reporte.tipo_cambio_usd_snapshot = tasa_usd
+                if tasa_eur is not None:
+                    reporte.tipo_cambio_eur_snapshot = tasa_eur
             except Exception:
                 pass
 
             reporte.save()
 
     return reporte, creado
+
+
+def _normalizar_texto_decimal(valor):
+    if not isinstance(valor, str):
+        return valor
+
+    texto = valor.strip()
+    if not texto:
+        return texto
+
+    if ',' in texto and '.' in texto:
+        if texto.rfind(',') > texto.rfind('.'):
+            return texto.replace('.', '').replace(',', '.')
+        return texto.replace(',', '')
+
+    if ',' in texto:
+        return texto.replace('.', '').replace(',', '.')
+
+    return texto
+
+
+def _construir_datos_movimiento(request, reporte_id):
+    datos = request.data.copy()
+    datos['reporte'] = reporte_id
+    datos.pop('sucursal_id', None)
+
+    if 'monto' in datos:
+        datos['monto'] = _normalizar_texto_decimal(datos.get('monto'))
+    if 'monto_divisa' in datos:
+        datos['monto_divisa'] = _normalizar_texto_decimal(datos.get('monto_divisa'))
+
+    detalles = datos.get('detalles_snapshot')
+    if isinstance(detalles, str):
+        try:
+            detalles_parseados = json.loads(detalles)
+        except json.JSONDecodeError:
+            detalles_parseados = {}
+        datos['detalles_snapshot'] = detalles_parseados if isinstance(detalles_parseados, dict) else {}
+
+    return datos
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -123,7 +177,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 codigo=status.HTTP_400_BAD_REQUEST
             )
 
-        return respuesta_estandar(data=ReporteDiarioListSerializer(qs, many=True).data, mensaje="Reportes diarios obtenidos.")
+        return respuesta_estandar(data=ReporteDiarioListSerializer(qs, many=True, context={'request': request}).data, mensaje="Reportes diarios obtenidos.")
 
     @action(detail=False, methods=['get'], url_path='actual')
     def actual(self, request):
@@ -140,7 +194,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
 
         reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id)
         return respuesta_estandar(
-            data=ReporteDiarioSerializer(reporte).data,
+            data=ReporteDiarioSerializer(reporte, context={'request': request}).data,
             mensaje="Reporte del día contable creado automáticamente." if creado else "Reporte del día contable obtenido."
         )
 
@@ -153,11 +207,11 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id)
         mensaje = "Reporte diario creado automáticamente." if creado else "Ya existe un reporte para el día contable actual."
         codigo = status.HTTP_201_CREATED if creado else status.HTTP_200_OK
-        return respuesta_estandar(data=ReporteDiarioSerializer(reporte).data, mensaje=mensaje, codigo=codigo)
+        return respuesta_estandar(data=ReporteDiarioSerializer(reporte, context={'request': request}).data, mensaje=mensaje, codigo=codigo)
 
     def retrieve(self, request, pk=None):
         obj = get_object_or_404(ReporteDiario, pk=pk)
-        return respuesta_estandar(data=ReporteDiarioSerializer(obj).data, mensaje="Reporte diario obtenido.")
+        return respuesta_estandar(data=ReporteDiarioSerializer(obj, context={'request': request}).data, mensaje="Reporte diario obtenido.")
 
     def partial_update(self, request, pk=None):
         reporte = get_object_or_404(ReporteDiario, pk=pk)
@@ -166,7 +220,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         s = ReporteDiarioSerializer(reporte, data=request.data, partial=True)
         if s.is_valid():
             s.save()
-            return respuesta_estandar(data=s.data, mensaje="Reporte actualizado.")
+            return respuesta_estandar(data=ReporteDiarioSerializer(reporte, context={'request': request}).data, mensaje="Reporte actualizado.")
         return respuesta_estandar(data=s.errors, mensaje="Error al actualizar.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, pk=None):
@@ -196,13 +250,12 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
 
             # Snapshot del tipo de cambio al momento del cierre
             try:
-                from configuraciones_globales.models import ConfiguracionGlobal
-                tc_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
-                tc_eur = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_EUR').first()
-                if tc_usd and tc_usd.valor_tipado:
-                    reporte.tipo_cambio_usd_snapshot = tc_usd.valor_tipado
-                if tc_eur and tc_eur.valor_tipado:
-                    reporte.tipo_cambio_eur_snapshot = tc_eur.valor_tipado
+                tasa_usd = _obtener_tasa_cambio_por_claves(['TASA_CAMBIO_DOLARES', 'TIPO_CAMBIO_USD'])
+                tasa_eur = _obtener_tasa_cambio_por_claves(['TIPO_CAMBIO_EUR'])
+                if tasa_usd is not None:
+                    reporte.tipo_cambio_usd_snapshot = tasa_usd
+                if tasa_eur is not None:
+                    reporte.tipo_cambio_eur_snapshot = tasa_eur
             except Exception:
                 pass
 
@@ -215,7 +268,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             reporte.cerrado_por        = request.user
             reporte.save()
 
-        return respuesta_estandar(data=ReporteDiarioSerializer(reporte).data, mensaje=f"Reporte del día {reporte.fecha_contable} cerrado correctamente.")
+        return respuesta_estandar(data=ReporteDiarioSerializer(reporte, context={'request': request}).data, mensaje=f"Reporte del día {reporte.fecha_contable} cerrado correctamente.")
 
     @action(detail=True, methods=['post'], url_path='reabrir')
     def reabrir(self, request, pk=None):
@@ -237,7 +290,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             reporte.save()
 
         return respuesta_estandar(
-            data=ReporteDiarioSerializer(reporte).data,
+            data=ReporteDiarioSerializer(reporte, context={'request': request}).data,
             mensaje=f"Reporte del día {reporte.fecha_contable} reabierto por {request.user.username}. Queda registrado en el historial."
         )
 
@@ -268,7 +321,7 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
             qs = qs.filter(reporte_id=reporte_id)
         if categoria_id := request.query_params.get('categoria_id'):
             qs = qs.filter(concepto__categoria_id=categoria_id)
-        return respuesta_estandar(data=MovimientoDiarioListSerializer(qs, many=True).data, mensaje="Movimientos obtenidos.")
+        return respuesta_estandar(data=MovimientoDiarioListSerializer(qs, many=True, context={'request': request}).data, mensaje="Movimientos obtenidos.")
 
     def create(self, request):
         """
@@ -289,13 +342,12 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
             )
 
         # Construir datos ignorando el 'reporte' del frontend y forzando el calculado
-        datos = {**request.data, 'reporte': reporte.pk}
-        datos.pop('sucursal_id', None)
+        datos = _construir_datos_movimiento(request, reporte.pk)
 
         s = MovimientoDiarioSerializer(data=datos)
         if s.is_valid():
             mov = s.save()
-            return respuesta_estandar(data=MovimientoDiarioSerializer(mov).data, mensaje="Movimiento registrado.", codigo=status.HTTP_201_CREATED)
+            return respuesta_estandar(data=MovimientoDiarioSerializer(mov, context={'request': request}).data, mensaje="Movimiento registrado.", codigo=status.HTTP_201_CREATED)
         return respuesta_estandar(data=s.errors, mensaje="Error al registrar movimiento.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['post'], url_path='captura-rapida')
@@ -328,11 +380,7 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
                 concepto_id=concepto_id
             ).first()
 
-            datos = {
-                **request.data,
-                'reporte': reporte.id,
-            }
-            datos.pop('sucursal_id', None)
+            datos = _construir_datos_movimiento(request, reporte.id)
 
             if movimiento_existente:
                 serializador = MovimientoDiarioSerializer(movimiento_existente, data=datos, partial=True)
@@ -351,13 +399,13 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
 
         mensaje = "Movimiento actualizado en captura rápida." if movimiento_existente else "Movimiento creado en captura rápida."
         return respuesta_estandar(
-            data=MovimientoDiarioSerializer(movimiento).data,
+            data=MovimientoDiarioSerializer(movimiento, context={'request': request}).data,
             mensaje=mensaje,
             codigo=status.HTTP_200_OK if movimiento_existente else status.HTTP_201_CREATED
         )
 
     def retrieve(self, request, pk=None):
-        return respuesta_estandar(data=MovimientoDiarioSerializer(get_object_or_404(MovimientoDiario, pk=pk)).data, mensaje="Movimiento obtenido.")
+        return respuesta_estandar(data=MovimientoDiarioSerializer(get_object_or_404(MovimientoDiario, pk=pk), context={'request': request}).data, mensaje="Movimiento obtenido.")
 
     def update(self, request, pk=None):
         mov = get_object_or_404(MovimientoDiario, pk=pk)
@@ -366,7 +414,7 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
         s = MovimientoDiarioSerializer(mov, data=request.data)
         if s.is_valid():
             s.save()
-            return respuesta_estandar(data=s.data, mensaje="Movimiento actualizado.")
+            return respuesta_estandar(data=MovimientoDiarioSerializer(mov, context={'request': request}).data, mensaje="Movimiento actualizado.")
         return respuesta_estandar(data=s.errors, mensaje="Error al actualizar.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
     def partial_update(self, request, pk=None):
@@ -376,7 +424,7 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
         s = MovimientoDiarioSerializer(mov, data=request.data, partial=True)
         if s.is_valid():
             s.save()
-            return respuesta_estandar(data=s.data, mensaje="Movimiento actualizado parcialmente.")
+            return respuesta_estandar(data=MovimientoDiarioSerializer(mov, context={'request': request}).data, mensaje="Movimiento actualizado parcialmente.")
         return respuesta_estandar(data=s.errors, mensaje="Error.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
     def destroy(self, request, pk=None):

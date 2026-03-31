@@ -40,7 +40,9 @@ def cerrar_dia_contable(self):
     tc_usd = 0
     tc_eur = 0
     try:
-        cfg_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
+        cfg_usd = ConfiguracionGlobal.objects.filter(clave='TASA_CAMBIO_DOLARES').first()
+        if not cfg_usd:
+            cfg_usd = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_USD').first()
         cfg_eur = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_EUR').first()
         if cfg_usd and cfg_usd.valor_tipado:
             tc_usd = cfg_usd.valor_tipado

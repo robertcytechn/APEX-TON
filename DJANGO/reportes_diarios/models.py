@@ -1,8 +1,49 @@
+import os
+import uuid
+from datetime import timedelta
+
 from django.db import models
+from django.utils import timezone
+from django.utils.text import slugify
 from simple_history.models import HistoricalRecords
 from core.models import ModeloBase
 from sucursales.models import Sucursal
 from categoria_operativa.models import Concepto
+
+
+def _normalizar_segmento_carpeta(valor, respaldo):
+    texto = (str(valor or '')).strip()
+    texto_normalizado = slugify(texto, allow_unicode=False).replace('-', '_')
+    return texto_normalizado or respaldo
+
+
+def construir_ruta_archivo_respaldo(instancia, nombre_archivo):
+    """
+    Organiza los comprobantes en carpetas por:
+    1) sucursal
+    2) categoria operativa
+    3) fecha contable
+    y renombra el archivo con un identificador único para evitar sobreescritura.
+    """
+    sucursal_nombre = getattr(getattr(instancia, 'reporte', None), 'sucursal', None)
+    sucursal_segmento = _normalizar_segmento_carpeta(getattr(sucursal_nombre, 'nombre', ''), 'sin_sucursal')
+
+    categoria_obj = getattr(getattr(instancia, 'concepto', None), 'categoria', None)
+    categoria_base = getattr(categoria_obj, 'clave', '') or getattr(categoria_obj, 'nombre', '')
+    categoria_segmento = _normalizar_segmento_carpeta(categoria_base, 'sin_categoria')
+
+    fecha_contable = getattr(getattr(instancia, 'reporte', None), 'fecha_contable', None)
+    if not fecha_contable:
+        fecha_contable = timezone.localdate() - timedelta(days=1)
+    fecha_segmento = fecha_contable.strftime('%Y-%m-%d')
+
+    nombre_base, extension = os.path.splitext(nombre_archivo or '')
+    nombre_segmento = _normalizar_segmento_carpeta(nombre_base, 'archivo')
+    extension_segmento = (extension or '').lower()
+    identificador_unico = uuid.uuid4().hex
+    nombre_final = f"{nombre_segmento}_{identificador_unico}{extension_segmento}"
+
+    return f"comprobantes/{sucursal_segmento}/{categoria_segmento}/{fecha_segmento}/{nombre_final}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -190,6 +231,14 @@ class MovimientoDiario(ModeloBase):
         null=True, blank=True,
         verbose_name="Notas",
         help_text="Observaciones o aclaraciones específicas de este movimiento."
+    )
+    archivo_respaldo = models.FileField(
+        upload_to=construir_ruta_archivo_respaldo,
+        max_length=500,
+        null=True,
+        blank=True,
+        verbose_name="Archivo de Respaldo",
+        help_text="Comprobante opcional del movimiento (imagen, PDF u otro archivo permitido)."
     )
 
     def __str__(self):

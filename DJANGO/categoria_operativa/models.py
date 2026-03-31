@@ -113,6 +113,11 @@ class Concepto(ModeloBase):
         verbose_name="¿Es Recurrente?",
         help_text="Indica si este concepto es recurrente (se repite periódicamente o diariamente)."
     )
+    requiere_imagen = models.BooleanField(
+        default=False,
+        verbose_name="¿Requiere Imagen?",
+        help_text="Indica si este concepto solicita evidencia opcional en imagen o archivo (ej. recibo de pago o comprobante bancario)."
+    )
 
     def __str__(self):
         return f"[{self.categoria.clave}] {self.nombre}"

@@ -118,6 +118,8 @@ class ConfiguracionGlobalCabinaSerializer(serializers.ModelSerializer):
 
 
 class RubroContableCabinaSerializer(serializers.ModelSerializer):
+    nombre = serializers.CharField(trim_whitespace=True)
+
     class Meta:
         model = RubroContable
         fields = '__all__'
@@ -126,3 +128,17 @@ class RubroContableCabinaSerializer(serializers.ModelSerializer):
             'creado_por', 'actualizado_por', 'eliminado_por',
             'valor_anterior', 'valor_actual',
         )
+
+    def validate_nombre(self, value):
+        nombre_limpio = (value or '').strip()
+        if not nombre_limpio:
+            raise serializers.ValidationError('El nombre del rubro es obligatorio.')
+
+        queryset = RubroContable.objects.filter(nombre__iexact=nombre_limpio)
+        if self.instance is not None:
+            queryset = queryset.exclude(pk=self.instance.pk)
+
+        if queryset.exists():
+            raise serializers.ValidationError('Ya existe un rubro contable con este nombre.')
+
+        return nombre_limpio
