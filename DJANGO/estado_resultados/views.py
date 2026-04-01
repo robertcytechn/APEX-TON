@@ -9,10 +9,18 @@ from configuraciones_globales.models import RubroContable
 from reportes_diarios.models import ReporteDiario, MovimientoDiario
 
 
+# 1) Para qué sirve: estandarizar salidas JSON del endpoint de estado de resultados.
+# 2) Cómo funciona: encapsula payload, mensaje y estado HTTP en formato común.
+# 3) Qué hace: facilita integración de frontend y manejo uniforme de errores.
+# 4) Cómo editarla: ajusta aquí si cambia el contrato global de respuestas API.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
+# 1) Para qué sirve: construir estado de resultados mensual o diario según filtros.
+# 2) Cómo funciona: prioriza snapshot histórico cerrado y cae a cálculo en tiempo real.
+# 3) Qué hace: entrega métricas por rubro/categoría para análisis ejecutivo.
+# 4) Cómo editarla: amplía lógica de agregación en get y _construir_rubros_base si cambian reportes.
 class EstadoResultadosAPIView(APIView):
     """
     Endpoint de Estado de Resultados con modo dual:

@@ -6,6 +6,10 @@ from django.utils import timezone
 from rest_framework.permissions import BasePermission
 
 
+# 1) Para qué sirve: centraliza la lectura de horarios de operación desde configuración global.
+# 2) Cómo funciona: consulta las claves HORARIO_APERTURA y HORARIO_CIERRE y devuelve objetos time.
+# 3) Qué hace: entrega una tupla (hora_apertura, hora_cierre) o (None, None) si faltan datos.
+# 4) Cómo editarla: si cambian las claves de configuración, actualiza los filtros por clave en esta función.
 def obtener_ventana_horaria():
     """
     Lee HORARIO_APERTURA y HORARIO_CIERRE desde ConfiguracionGlobal.
@@ -23,6 +27,10 @@ def obtener_ventana_horaria():
         return None, None
 
 
+# 1) Para qué sirve: validar si el sistema está dentro de la ventana permitida para capturas.
+# 2) Cómo funciona: compara la hora local actual del servidor contra apertura y cierre configurados.
+# 3) Qué hace: retorna (esta_dentro, hora_apertura, hora_cierre) para reutilizar en permisos.
+# 4) Cómo editarla: modifica la regla de comparación si en el futuro se requiere horario cruzado (noche-madrugada).
 def sistema_dentro_de_horario():
     """
     Verifica si la hora actual del servidor está dentro de la ventana de operación.
@@ -37,6 +45,10 @@ def sistema_dentro_de_horario():
     return dentro, hora_apertura, hora_cierre
 
 
+# 1) Para qué sirve: impedir escrituras fuera del horario operativo definido por negocio.
+# 2) Cómo funciona: permite lectura siempre y evalúa horario solo para POST/PUT/PATCH/DELETE.
+# 3) Qué hace: bloquea la petición con mensaje claro cuando está fuera de horario.
+# 4) Cómo editarla: agrega/quita métodos en METODOS_ESCRITURA o ajusta el texto de self.message.
 class VentanaHorariaPermiso(BasePermission):
     """
     Permission DRF que bloquea operaciones de ESCRITURA (POST, PUT, PATCH, DELETE)
@@ -69,6 +81,10 @@ class VentanaHorariaPermiso(BasePermission):
         return True
 
 
+# 1) Para qué sirve: reservar acciones sensibles únicamente para rol ADMINISTRADOR.
+# 2) Cómo funciona: valida autenticación y consulta relación usuario_roles contra nombre de rol.
+# 3) Qué hace: devuelve True para administradores o superusuarios; False para cualquier otro caso.
+# 4) Cómo editarla: si cambia el nombre del rol maestro, actualiza el filtro rol__nombre__iexact.
 class EsAdministrador(BasePermission):
     """
     Permiso que valida que el usuario autenticado tenga el rol ADMINISTRADOR.

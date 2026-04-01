@@ -6,6 +6,10 @@ from configuraciones_globales.models import ConfiguracionGlobal
 from .models import ReporteDiario, MovimientoDiario
 
 
+# 1) Para qué sirve: detectar si un concepto pertenece a la categoría operativa DOLARES.
+# 2) Cómo funciona: evalúa clave/nombre de categoría en mayúsculas para tolerar variantes.
+# 3) Qué hace: habilita lógica de conversión automática USD->MXN en validación del serializer.
+# 4) Cómo editarla: ajusta condiciones si se agregan claves equivalentes para categorías de divisa.
 def _es_categoria_dolares(concepto):
     if not concepto or not getattr(concepto, 'categoria', None):
         return False
@@ -15,6 +19,10 @@ def _es_categoria_dolares(concepto):
     return clave == 'DOLARES' or nombre == 'DOLARES'
 
 
+# 1) Para qué sirve: resolver tipo de cambio USD vigente desde configuración global.
+# 2) Cómo funciona: intenta claves prioritarias y convierte el valor a Decimal seguro.
+# 3) Qué hace: entrega una tasa utilizable para calcular monto en MXN.
+# 4) Cómo editarla: incorpora nuevas claves/fuentes de tasa en el arreglo `claves`.
 def _obtener_tasa_cambio_dolares():
     # Prioriza la clave nueva solicitada por negocio y mantiene compatibilidad.
     claves = ['TASA_CAMBIO_DOLARES', 'TIPO_CAMBIO_USD']
@@ -32,6 +40,10 @@ def _obtener_tasa_cambio_dolares():
     return None
 
 
+# 1) Para qué sirve: validar y serializar el detalle completo de un movimiento diario.
+# 2) Cómo funciona: incluye campos derivados y en validate aplica reglas especiales para DOLARES.
+# 3) Qué hace: normaliza monto_divisa, tipo_divisa y monto convertido con tasa actual.
+# 4) Cómo editarla: agrega nuevas validaciones en validate sin romper campos read_only.
 class MovimientoDiarioSerializer(serializers.ModelSerializer):
     """Serializador completo para MovimientoDiario."""
     concepto_nombre = serializers.CharField(source='concepto.nombre', read_only=True)
@@ -82,6 +94,10 @@ class MovimientoDiarioSerializer(serializers.ModelSerializer):
         return attrs
 
 
+# 1) Para qué sirve: representar movimientos en listados con payload ligero.
+# 2) Cómo funciona: expone datos de concepto/categoría y URL de respaldo mediante método.
+# 3) Qué hace: optimiza respuesta para tablas de captura y consulta.
+# 4) Cómo editarla: agrega/quita columnas en Meta.fields según necesidades de UI.
 class MovimientoDiarioListSerializer(serializers.ModelSerializer):
     """Serializador reducido para listado de movimientos."""
     concepto_nombre  = serializers.CharField(source='concepto.nombre', read_only=True)
@@ -119,6 +135,10 @@ class MovimientoDiarioListSerializer(serializers.ModelSerializer):
         return obj.archivo_respaldo.url
 
 
+# 1) Para qué sirve: serializar un reporte diario completo junto con movimientos anidados.
+# 2) Cómo funciona: combina campos del encabezado y relación `movimientos` en modo read-only.
+# 3) Qué hace: entrega vista integral del día contable para detalle y cierre.
+# 4) Cómo editarla: agrega campos calculados nuevos en serializers read_only si el reporte evoluciona.
 class ReporteDiarioSerializer(serializers.ModelSerializer):
     """Serializador completo para ReporteDiario, incluye movimientos anidados."""
     movimientos   = MovimientoDiarioListSerializer(many=True, read_only=True)
@@ -136,6 +156,10 @@ class ReporteDiarioSerializer(serializers.ModelSerializer):
         )
 
 
+# 1) Para qué sirve: exponer resumen de reportes diarios para listas y filtros.
+# 2) Cómo funciona: incluye solo campos de cabecera y métricas principales.
+# 3) Qué hace: reduce tamaño de respuesta en vistas de consulta masiva.
+# 4) Cómo editarla: modifica Meta.fields si cambian columnas visibles en frontend.
 class ReporteDiarioListSerializer(serializers.ModelSerializer):
     """Serializador reducido para listado de reportes."""
     sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)

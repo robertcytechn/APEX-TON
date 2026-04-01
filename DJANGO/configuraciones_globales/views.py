@@ -5,6 +5,10 @@ from .models import ConfiguracionGlobal, RubroContable
 from .serializers import ConfiguracionGlobalSerializer, RubroContableSerializer
 
 
+# 1) Para qué sirve: aplicar formato estándar de respuesta para configuraciones globales.
+# 2) Cómo funciona: retorna status/message/data con código HTTP configurable.
+# 3) Qué hace: uniforma contratos de éxito y error de este módulo.
+# 4) Cómo editarla: ajusta estructura aquí si cambia la convención global de API.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     """Genera una respuesta JSON estandarizada conforme a las reglas del proyecto."""
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
@@ -14,6 +18,10 @@ def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success"
 #  CONFIGURACIÓN GLOBAL
 # ─────────────────────────────────────────────
 
+# 1) Para qué sirve: administrar variables globales consumidas por todo el sistema.
+# 2) Cómo funciona: expone CRUD directo del modelo ConfiguracionGlobal.
+# 3) Qué hace: permite alta/edición de parámetros como tipos de cambio u horarios.
+# 4) Cómo editarla: agrega validaciones de negocio en create/update si se vuelven obligatorias.
 class ConfiguracionGlobalViewSet(viewsets.ViewSet):
     """
     CRUD completo para ConfiguracionGlobal.
@@ -87,6 +95,10 @@ class ConfiguracionGlobalViewSet(viewsets.ViewSet):
 #  RUBRO CONTABLE
 # ─────────────────────────────────────────────
 
+# 1) Para qué sirve: administrar catálogo global de rubros contables.
+# 2) Cómo funciona: provee CRUD para el modelo RubroContable.
+# 3) Qué hace: habilita clasificación contable para consolidación de resultados.
+# 4) Cómo editarla: integra reglas jerárquicas de padre/tipo dentro de create/update.
 class RubroContableViewSet(viewsets.ViewSet):
     """
     CRUD completo para RubroContable.

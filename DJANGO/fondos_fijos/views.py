@@ -5,10 +5,18 @@ from .models import FondoFijo, SucursalFondoFijo
 from .serializers import FondoFijoSerializer, SucursalFondoFijoSerializer
 
 
+# 1) Para qué sirve: unificar respuestas JSON del módulo de fondos fijos.
+# 2) Cómo funciona: retorna estructura status/message/data con código configurable.
+# 3) Qué hace: estandariza respuestas para altas, consultas y errores.
+# 4) Cómo editarla: actualiza formato aquí si cambia la norma de contrato API.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
+# 1) Para qué sirve: administrar catálogo de fondos fijos disponibles.
+# 2) Cómo funciona: implementa CRUD del modelo FondoFijo con baja lógica.
+# 3) Qué hace: permite crear y mantener fondos base para asignación por sucursal.
+# 4) Cómo editarla: incluye validaciones de negocio en create/update según reglas financieras.
 class FondoFijoViewSet(viewsets.ViewSet):
     """CRUD completo para FondoFijo."""
 
@@ -52,6 +60,10 @@ class FondoFijoViewSet(viewsets.ViewSet):
         return respuesta_estandar(data=None, mensaje="Fondo fijo eliminado correctamente (baja lógica).")
 
 
+# 1) Para qué sirve: administrar asignaciones de fondos fijos por sucursal.
+# 2) Cómo funciona: CRUD de la relación SucursalFondoFijo con datos relacionados.
+# 3) Qué hace: define qué fondo aplica a cada sucursal y en qué monto/configuración.
+# 4) Cómo editarla: agrega reglas de unicidad o vigencia en create/update según operación.
 class SucursalFondoFijoViewSet(viewsets.ViewSet):
     """CRUD completo para la asignación de fondos fijos por sucursal."""
 

@@ -11,6 +11,10 @@ from .serializers import (
 )
 
 
+# 1) Para qué sirve: homologar respuestas del módulo de categorías operativas.
+# 2) Cómo funciona: genera objeto JSON estándar con status, message y data.
+# 3) Qué hace: normaliza éxito/error para consumo de frontend administrativo.
+# 4) Cómo editarla: cambia estructura aquí si el contrato API corporativo evoluciona.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
@@ -19,6 +23,10 @@ def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success"
 #  CATEGORÍA OPERATIVA
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 1) Para qué sirve: administrar pestañas/categorías que agrupan el flujo operativo.
+# 2) Cómo funciona: expone CRUD y transiciones de estado (activar/desactivar/bloquear).
+# 3) Qué hace: mantiene catálogo maestro de categorías para captura diaria.
+# 4) Cómo editarla: agrega nuevas acciones de ciclo de vida como métodos @action.
 class CategoriaOperativaViewSet(viewsets.ViewSet):
     """
     CRUD completo para CategoriaOperativa (Pestañas).
@@ -84,6 +92,10 @@ class CategoriaOperativaViewSet(viewsets.ViewSet):
 #  CONCEPTO
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 1) Para qué sirve: administrar conceptos transaccionales asociados a categoría.
+# 2) Cómo funciona: CRUD con filtrado opcional por categoria_id en query params.
+# 3) Qué hace: define unidades operativas de captura (ingreso/egreso).
+# 4) Cómo editarla: incorpora validaciones por tipo o rubro antes de guardar.
 class ConceptoViewSet(viewsets.ViewSet):
     """
     CRUD completo para Concepto.
@@ -130,6 +142,10 @@ class ConceptoViewSet(viewsets.ViewSet):
 #  DETALLE PARAMETRIZADO
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 1) Para qué sirve: administrar campos dinámicos por categoría operativa.
+# 2) Cómo funciona: CRUD con filtro por categoria_id para carga contextual.
+# 3) Qué hace: permite extender captura sin alterar esquema fijo de movimientos.
+# 4) Cómo editarla: agrega validaciones de compatibilidad de tipos en create/update.
 class DetalleParametrizadoViewSet(viewsets.ViewSet):
     """
     CRUD completo para DetalleParametrizado.

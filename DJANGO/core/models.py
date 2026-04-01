@@ -2,12 +2,20 @@ from django.db import models
 from django.conf import settings
 from django.utils import timezone
 
+# 1) Para qué sirve: exponer un manager por defecto que omite registros eliminados lógicamente.
+# 2) Cómo funciona: sobreescribe get_queryset para filtrar eliminado_en__isnull=True.
+# 3) Qué hace: garantiza que consultas normales solo vean datos vigentes.
+# 4) Cómo editarla: cambia el filtro de visibilidad aquí si negocio requiere incluir ciertos eliminados.
 class ModeloBaseManager(models.Manager):
     """Manager por defecto que excluye registros físicamente eliminados y los eliminados lógicamente."""
     def get_queryset(self):
         return super().get_queryset().filter(eliminado_en__isnull=True)
 
 
+# 1) Para qué sirve: estandarizar auditoría, estado y soft-delete en todos los modelos transaccionales.
+# 2) Cómo funciona: define campos comunes, managers y métodos de ciclo de vida reutilizables.
+# 3) Qué hace: permite activar/desactivar/bloquear/eliminar lógicamente con trazabilidad de usuario y fecha.
+# 4) Cómo editarla: cualquier campo o regla nueva debe agregarse aquí para heredarse en apps dependientes.
 class ModeloBase(models.Model):
     """
     Clase abstracta que provee campos de auditoría y máquina de estados

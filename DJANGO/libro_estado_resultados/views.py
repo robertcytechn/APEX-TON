@@ -10,10 +10,18 @@ from .serializers import LibroEstadoResultadosSerializer, LibroEstadoResultadosL
 from reportes_diarios.models import ReporteDiario, MovimientoDiario
 
 
+# 1) Para qué sirve: mantener salida estándar en endpoints del libro histórico mensual.
+# 2) Cómo funciona: empaqueta resultado en estructura status/message/data.
+# 3) Qué hace: evita inconsistencias entre respuestas de operaciones del libro.
+# 4) Cómo editarla: modifica esta función al cambiar el contrato transversal de API.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
+# 1) Para qué sirve: administrar apertura, consulta y cierre del libro mensual por sucursal.
+# 2) Cómo funciona: expone CRUD controlado y acción cerrar_mes con agregación de movimientos.
+# 3) Qué hace: genera snapshot histórico inmutable del estado de resultados mensual.
+# 4) Cómo editarla: integra nuevas reglas de cierre en cerrar_mes preservando validación de estado.
 class LibroEstadoResultadosViewSet(viewsets.ViewSet):
     """
     Gestión del Libro de Estado de Resultados mensual (snapshot histórico).

@@ -13,6 +13,10 @@ import calendar
 logger = logging.getLogger(__name__)
 
 
+# 1) Para qué sirve: automatizar el cierre diario contable para todas las sucursales activas.
+# 2) Cómo funciona: recorre sucursales en transacción, calcula neto, snapshot y cambia estado a CERRADO.
+# 3) Qué hace: consolida resultados del día T-1 y dispara cierre mensual cuando corresponde.
+# 4) Cómo editarla: ajusta secuencia de cálculo o reglas de cierre sin romper atomicidad por sucursal.
 @shared_task(bind=True, name='reportes_diarios.cerrar_dia_contable', max_retries=3)
 def cerrar_dia_contable(self):
     """
@@ -109,6 +113,10 @@ def cerrar_dia_contable(self):
     return resumen
 
 
+# 1) Para qué sirve: consolidar y cerrar el libro mensual de estado de resultados.
+# 2) Cómo funciona: agrega movimientos del mes, genera desglose por rubro y persiste snapshots.
+# 3) Qué hace: marca el mes como CERRADO para proteger integridad histórica.
+# 4) Cómo editarla: modifica aquí la lógica de desglose o saldos si cambian reglas financieras.
 def _cerrar_mes_automatico(sucursal, anio, mes, tc_usd, tc_eur):
     """
     Genera o actualiza el LibroEstadoResultados del mes al detectar el último día.

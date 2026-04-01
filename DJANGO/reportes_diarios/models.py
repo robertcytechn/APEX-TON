@@ -11,12 +11,20 @@ from sucursales.models import Sucursal
 from categoria_operativa.models import Concepto
 
 
+# 1) Para qué sirve: limpiar segmentos de ruta para nombres de carpeta seguros.
+# 2) Cómo funciona: aplica slugify y reemplaza guiones por guion bajo.
+# 3) Qué hace: devuelve texto normalizado o un valor de respaldo cuando viene vacío.
+# 4) Cómo editarla: ajusta reglas de normalización si se permiten más caracteres en rutas.
 def _normalizar_segmento_carpeta(valor, respaldo):
     texto = (str(valor or '')).strip()
     texto_normalizado = slugify(texto, allow_unicode=False).replace('-', '_')
     return texto_normalizado or respaldo
 
 
+# 1) Para qué sirve: construir ruta jerárquica para comprobantes de movimiento diario.
+# 2) Cómo funciona: arma segmentos por sucursal/categoría/fecha y agrega UUID al nombre.
+# 3) Qué hace: evita sobreescrituras y facilita trazabilidad de archivos de respaldo.
+# 4) Cómo editarla: modifica la estructura de carpetas aquí si cambia la política documental.
 def construir_ruta_archivo_respaldo(instancia, nombre_archivo):
     """
     Organiza los comprobantes en carpetas por:
@@ -50,6 +58,10 @@ def construir_ruta_archivo_respaldo(instancia, nombre_archivo):
 #  REPORTE DIARIO  (Encabezado / Foto del día)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 1) Para qué sirve: almacenar el encabezado histórico del día contable por sucursal.
+# 2) Cómo funciona: concentra estados, snapshots, saldos y totales de cierre.
+# 3) Qué hace: actúa como entidad principal para agrupar movimientos diarios.
+# 4) Cómo editarla: incorpora nuevos campos históricos en este modelo para preservar trazabilidad.
 class ReporteDiario(ModeloBase):
     """
     Encabezado del reporte histórico diario por sucursal.
@@ -174,6 +186,10 @@ class ReporteDiario(ModeloBase):
 #  MOVIMIENTO DIARIO  (Líneas del Reporte)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 1) Para qué sirve: registrar cada movimiento individual asociado a un reporte diario.
+# 2) Cómo funciona: vincula concepto/reporte y guarda monto, detalles snapshot y respaldo.
+# 3) Qué hace: representa la unidad transaccional base para cálculos de ingresos/egresos.
+# 4) Cómo editarla: agrega campos de captura nuevos manteniendo compatibilidad de historial.
 class MovimientoDiario(ModeloBase):
     """
     Registro individual de un movimiento dentro de un ReporteDiario.

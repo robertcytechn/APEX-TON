@@ -16,10 +16,18 @@ from .serializers import (
 )
 
 
+# 1) Para qué sirve: homologar la estructura JSON de salida de este módulo.
+# 2) Cómo funciona: encapsula datos, mensaje, estado y código HTTP en un Response DRF.
+# 3) Qué hace: evita respuestas inconsistentes entre endpoints del mismo ViewSet.
+# 4) Cómo editarla: si cambia el contrato API global, ajusta este helper y propaga el mismo patrón.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
+# 1) Para qué sirve: calcular el día contable oficial conforme a regla T-1 del negocio.
+# 2) Cómo funciona: usa la zona horaria del servidor y resta un día a la fecha local.
+# 3) Qué hace: devuelve la fecha que se usa para abrir/cerrar reportes y registrar movimientos.
+# 4) Cómo editarla: si el negocio cambia la regla de día contable, modifica esta función central.
 def _dia_contable_actual():
     """
     Retorna la fecha contable correcta: siempre el día anterior (T-1) a la fecha
@@ -29,6 +37,10 @@ def _dia_contable_actual():
     return timezone.localdate() - timezone.timedelta(days=1)
 
 
+# 1) Para qué sirve: obtener una tasa de cambio válida buscando varias claves configurables.
+# 2) Cómo funciona: recorre una lista de claves y devuelve el primer valor tipado disponible.
+# 3) Qué hace: abstrae fallback de configuración para USD/EUR u otras variantes.
+# 4) Cómo editarla: agrega nuevas claves al arreglo de entrada sin tocar lógica de consumo.
 def _obtener_tasa_cambio_por_claves(claves):
     from configuraciones_globales.models import ConfiguracionGlobal
 
@@ -42,6 +54,10 @@ def _obtener_tasa_cambio_por_claves(claves):
     return None
 
 
+# 1) Para qué sirve: asegurar que cada sucursal tenga reporte diario para el día contable.
+# 2) Cómo funciona: usa get_or_create con bloqueo transaccional y encadena saldos del reporte previo.
+# 3) Qué hace: devuelve el reporte del día y un indicador de creación para flujo de API.
+# 4) Cómo editarla: si cambian snapshots o reglas de arrastre, ajusta defaults y cálculo aquí.
 def _obtener_o_crear_reporte_del_dia(sucursal_id):
     """
     Obtiene el ReporteDiario del día contable actual (T-1) para la sucursal dada.
@@ -83,6 +99,10 @@ def _obtener_o_crear_reporte_del_dia(sucursal_id):
     return reporte, creado
 
 
+# 1) Para qué sirve: normalizar texto numérico capturado desde UI con coma/punto mixto.
+# 2) Cómo funciona: detecta patrón decimal y transforma a formato interpretable por Decimal.
+# 3) Qué hace: previene errores por separadores regionales en monto y monto_divisa.
+# 4) Cómo editarla: añade nuevas reglas de parsing si se soportan otros formatos locales.
 def _normalizar_texto_decimal(valor):
     if not isinstance(valor, str):
         return valor
@@ -102,6 +122,10 @@ def _normalizar_texto_decimal(valor):
     return texto
 
 
+# 1) Para qué sirve: construir payload seguro para serializador de movimientos.
+# 2) Cómo funciona: clona request.data, fuerza reporte_id del backend y normaliza campos numéricos/JSON.
+# 3) Qué hace: elimina dependencia de datos sensibles enviados por frontend.
+# 4) Cómo editarla: agrega aquí cualquier campo nuevo que requiera limpieza previa a validación.
 def _construir_datos_movimiento(request, reporte_id):
     datos = request.data.copy()
     datos['reporte'] = reporte_id
@@ -127,6 +151,10 @@ def _construir_datos_movimiento(request, reporte_id):
 #  REPORTE DIARIO
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 1) Para qué sirve: exponer API de encabezado del día contable (reporte diario).
+# 2) Cómo funciona: combina permisos, filtros, cierres y reaperturas sobre ReporteDiario.
+# 3) Qué hace: gobierna ciclo de vida ABIERTO/CERRADO de cada jornada por sucursal.
+# 4) Cómo editarla: agrega nuevas acciones de negocio como métodos @action en este ViewSet.
 class ReporteDiarioViewSet(viewsets.ViewSet):
     """
     CRUD para ReporteDiario con acciones de cierre y reapertura.
@@ -176,7 +204,6 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 estado="error",
                 codigo=status.HTTP_400_BAD_REQUEST
             )
-
         return respuesta_estandar(data=ReporteDiarioListSerializer(qs, many=True, context={'request': request}).data, mensaje="Reportes diarios obtenidos.")
 
     @action(detail=False, methods=['get'], url_path='actual')
@@ -191,7 +218,6 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 estado="error",
                 codigo=status.HTTP_400_BAD_REQUEST
             )
-
         reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id)
         return respuesta_estandar(
             data=ReporteDiarioSerializer(reporte, context={'request': request}).data,
@@ -299,6 +325,10 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
 #  MOVIMIENTO DIARIO
 # ─────────────────────────────────────────────────────────────────────────────
 
+# 1) Para qué sirve: exponer API de líneas de captura operativa del día.
+# 2) Cómo funciona: vincula concepto+sucursal al reporte T-1 y aplica restricciones de cierre/horario.
+# 3) Qué hace: crea, actualiza, lista y elimina movimientos con validación de estado contable.
+# 4) Cómo editarla: integra nuevas reglas de captura en create/captura_rapida antes del serializer.
 class MovimientoDiarioViewSet(viewsets.ViewSet):
     """
     CRUD de movimientos diarios.

@@ -7,11 +7,19 @@ from .models import Sucursal
 from .serializers import SucursalSerializer, SucursalListSerializer
 
 
+# 1) Para qué sirve: mantener formato de respuesta consistente en módulo de sucursales.
+# 2) Cómo funciona: encapsula resultado en estructura status/message/data.
+# 3) Qué hace: homologa la comunicación API para frontend administrativo.
+# 4) Cómo editarla: cambia aquí la envoltura de respuesta si el contrato corporativo cambia.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     """Genera una respuesta JSON estandarizada conforme a las reglas del proyecto."""
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
+# 1) Para qué sirve: administrar sucursales y su ciclo de vida operativo.
+# 2) Cómo funciona: provee CRUD y acciones explícitas activar/desactivar/bloquear.
+# 3) Qué hace: controla alta, actualización y baja lógica de sucursales.
+# 4) Cómo editarla: incorpora nuevas transiciones de estado como métodos @action.
 class SucursalViewSet(viewsets.ViewSet):
     """
     CRUD completo para Sucursal con acciones de ciclo de vida.

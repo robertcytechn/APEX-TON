@@ -13,10 +13,18 @@ from .serializers import (
 )
 
 
+# 1) Para qué sirve: mantener un formato único de respuesta para toda la app de usuarios.
+# 2) Cómo funciona: empaqueta estado, mensaje y datos en la estructura estándar del proyecto.
+# 3) Qué hace: simplifica control de errores y parsing consistente en frontend.
+# 4) Cómo editarla: si el contrato global cambia, actualiza esta función y reutiliza en todo el módulo.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
+# 1) Para qué sirve: armar el payload completo de sesión autenticada.
+# 2) Cómo funciona: consulta roles/permisos del usuario y los serializa en estructura plana.
+# 3) Qué hace: entrega información necesaria para control de acceso en cliente.
+# 4) Cómo editarla: agrega campos nuevos de usuario, rol o permiso en el diccionario de retorno.
 def construir_datos_sesion(usuario):
     """Estructura estandar para exponer datos de la sesion autenticada."""
     roles = list(
@@ -53,6 +61,10 @@ def construir_datos_sesion(usuario):
 # ─────────────────────────────────────────────────────────────────────────────
 #  PERMISOS
 # ─────────────────────────────────────────────────────────────────────────────
+# 1) Para qué sirve: administrar catálogo de permisos granulares del sistema.
+# 2) Cómo funciona: expone CRUD directo sobre Permiso con serializador DRF.
+# 3) Qué hace: permite alta, consulta, actualización y baja lógica de permisos.
+# 4) Cómo editarla: incorpora validaciones adicionales en create/update si cambian reglas de seguridad.
 class PermisoViewSet(viewsets.ViewSet):
     """CRUD completo para Permiso."""
 
@@ -91,6 +103,10 @@ class PermisoViewSet(viewsets.ViewSet):
 # ─────────────────────────────────────────────────────────────────────────────
 #  ROLES
 # ─────────────────────────────────────────────────────────────────────────────
+# 1) Para qué sirve: administrar roles y sus asignaciones de permisos.
+# 2) Cómo funciona: combina CRUD de Rol con acciones @action para asignar/quitar permisos.
+# 3) Qué hace: centraliza autorización basada en rol según arquitectura del proyecto.
+# 4) Cómo editarla: agrega nuevas acciones de gestión de permisos manteniendo respuesta_estandar.
 class RolViewSet(viewsets.ViewSet):
     """CRUD completo para Rol con acciones para gestionar sus permisos."""
 
@@ -145,6 +161,10 @@ class RolViewSet(viewsets.ViewSet):
 # ─────────────────────────────────────────────────────────────────────────────
 #  USUARIOS
 # ─────────────────────────────────────────────────────────────────────────────
+# 1) Para qué sirve: administrar usuarios y autenticación por sesión de Django.
+# 2) Cómo funciona: expone endpoints de login/logout/sesión y CRUD de usuario/roles.
+# 3) Qué hace: coordina identidad, estado activo y asignación de roles por usuario.
+# 4) Cómo editarla: si cambian credenciales o flujo de sesión, ajusta acciones csrf/iniciar/cerrar/sesion_actual.
 class UsuarioViewSet(viewsets.ViewSet):
     """CRUD completo para Usuario con gestión de roles."""
 
@@ -272,6 +292,10 @@ class UsuarioViewSet(viewsets.ViewSet):
 # ─────────────────────────────────────────────────────────────────────────────
 #  ROL ↔ PERMISO  (tabla intermedia — CRUD directo)
 # ─────────────────────────────────────────────────────────────────────────────
+# 1) Para qué sirve: administrar relaciones explícitas entre rol y permiso.
+# 2) Cómo funciona: CRUD sobre la tabla intermedia RolPermiso.
+# 3) Qué hace: ofrece control fino cuando se requiere operar la relación directamente.
+# 4) Cómo editarla: agrega validaciones de duplicidad o auditoría adicional en create/destroy.
 class RolPermisoViewSet(viewsets.ViewSet):
     """CRUD directo sobre la tabla intermedia Rol ↔ Permiso."""
 
@@ -297,6 +321,10 @@ class RolPermisoViewSet(viewsets.ViewSet):
 # ─────────────────────────────────────────────────────────────────────────────
 #  USUARIO ↔ ROL  (tabla intermedia — CRUD directo)
 # ─────────────────────────────────────────────────────────────────────────────
+# 1) Para qué sirve: administrar asignaciones directas de roles a usuarios.
+# 2) Cómo funciona: CRUD sobre UsuarioRol para alta/baja y consulta puntual.
+# 3) Qué hace: complementa acciones del UsuarioViewSet para administración masiva.
+# 4) Cómo editarla: agrega reglas de negocio por rol sensible antes de permitir create/destroy.
 class UsuarioRolViewSet(viewsets.ViewSet):
     """CRUD directo sobre la tabla intermedia Usuario ↔ Rol."""
 

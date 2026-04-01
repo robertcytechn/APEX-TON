@@ -7,10 +7,18 @@ from .models import ConfiguracionUsuario
 from .serializers import ConfiguracionUsuarioSerializer
 
 
+# 1) Para qué sirve: devolver respuestas homogéneas en configuración de usuario.
+# 2) Cómo funciona: encapsula data/mensaje/estado en formato estándar.
+# 3) Qué hace: simplifica consumo del frontend de preferencias.
+# 4) Cómo editarla: ajusta el contrato de salida aquí cuando se redefine estándar API.
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
+# 1) Para qué sirve: administrar preferencias visuales y de experiencia por usuario.
+# 2) Cómo funciona: ofrece endpoints para ver, actualizar y restablecer configuración propia.
+# 3) Qué hace: separa permisos de autoservicio y consulta administrativa.
+# 4) Cómo editarla: agrega nuevas preferencias en serializer/modelo y ajusta flujo mi_configuracion.
 class ConfiguracionUsuarioViewSet(viewsets.ViewSet):
     """
     ViewSet para las preferencias de interfaz del usuario autenticado.
@@ -126,6 +134,10 @@ class ConfiguracionUsuarioViewSet(viewsets.ViewSet):
         )
 
 
+# 1) Para qué sirve: validar de forma reusable si un usuario posee rol ADMINISTRADOR.
+# 2) Cómo funciona: consulta relación usuario_roles con comparación case-insensitive.
+# 3) Qué hace: devuelve bool para autorizar endpoints administrativos.
+# 4) Cómo editarla: cambia el criterio aquí si la estrategia de roles evoluciona.
 def _es_administrador(usuario):
     """Verifica si el usuario tiene el rol ADMINISTRADOR."""
     try:
