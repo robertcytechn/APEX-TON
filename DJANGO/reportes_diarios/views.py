@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timedelta
+from calendar import monthrange
 
 from django.db import transaction
 from django.utils import timezone
@@ -37,6 +39,32 @@ def _dia_contable_actual():
     return timezone.localdate() - timezone.timedelta(days=1)
 
 
+# 1) Para qué sirve: parsear la fecha contable enviada por query/body en formato ISO.
+# 2) Cómo funciona: intenta convertir texto YYYY-MM-DD a objeto date y valida vacíos.
+# 3) Qué hace: estandariza la lectura de fecha_contable para endpoints de captura/calendario.
+# 4) Cómo editarla: ajusta el formato permitido aquí si negocio habilita otros formatos de entrada.
+def _parsear_fecha_contable(valor_fecha):
+    if valor_fecha in (None, ''):
+        return None
+
+    if hasattr(valor_fecha, 'year') and hasattr(valor_fecha, 'month') and hasattr(valor_fecha, 'day'):
+        return valor_fecha
+
+    try:
+        return datetime.strptime(str(valor_fecha), '%Y-%m-%d').date()
+    except (TypeError, ValueError):
+        raise ValueError("La fecha_contable debe estar en formato YYYY-MM-DD.")
+
+
+# 1) Para qué sirve: determinar si una fecha contable excede el límite operativo de captura.
+# 2) Cómo funciona: compara contra el día contable actual menos 5 días naturales.
+# 3) Qué hace: devuelve True cuando el día queda bloqueado por antigüedad.
+# 4) Cómo editarla: ajusta los días de tolerancia si cambia la regla de negocio.
+def _fecha_contable_bloqueada_por_antiguedad(fecha_contable):
+    limite_minimo = _dia_contable_actual() - timedelta(days=5)
+    return fecha_contable < limite_minimo
+
+
 # 1) Para qué sirve: obtener una tasa de cambio válida buscando varias claves configurables.
 # 2) Cómo funciona: recorre una lista de claves y devuelve el primer valor tipado disponible.
 # 3) Qué hace: abstrae fallback de configuración para USD/EUR u otras variantes.
@@ -58,13 +86,13 @@ def _obtener_tasa_cambio_por_claves(claves):
 # 2) Cómo funciona: usa get_or_create con bloqueo transaccional y encadena saldos del reporte previo.
 # 3) Qué hace: devuelve el reporte del día y un indicador de creación para flujo de API.
 # 4) Cómo editarla: si cambian snapshots o reglas de arrastre, ajusta defaults y cálculo aquí.
-def _obtener_o_crear_reporte_del_dia(sucursal_id):
+def _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_contable=None):
     """
     Obtiene el ReporteDiario del día contable actual (T-1) para la sucursal dada.
     Si no existe, lo crea automáticamente, encadenando el saldo_arrastre_inicio
     desde el saldo_arrastre_fin del reporte anterior.
     """
-    fecha = _dia_contable_actual()
+    fecha = fecha_contable or _dia_contable_actual()
 
     with transaction.atomic():
         reporte, creado = ReporteDiario.objects.select_for_update().get_or_create(
@@ -218,10 +246,142 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 estado="error",
                 codigo=status.HTTP_400_BAD_REQUEST
             )
-        reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id)
+        try:
+            fecha_contable = _parsear_fecha_contable(request.query_params.get('fecha_contable'))
+        except ValueError as error:
+            return respuesta_estandar(
+                mensaje=str(error),
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        fecha_objetivo = fecha_contable or _dia_contable_actual()
+        if fecha_objetivo > _dia_contable_actual():
+            return respuesta_estandar(
+                mensaje="No se permite capturar en fechas contables futuras.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+        if _fecha_contable_bloqueada_por_antiguedad(fecha_objetivo):
+            return respuesta_estandar(
+                mensaje="No se permite crear ni editar capturas en fechas contables con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
+
+        reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_objetivo)
         return respuesta_estandar(
             data=ReporteDiarioSerializer(reporte, context={'request': request}).data,
             mensaje="Reporte del día contable creado automáticamente." if creado else "Reporte del día contable obtenido."
+        )
+
+    @action(detail=False, methods=['get'], url_path='calendario-mensual')
+    def calendario_mensual(self, request):
+        sucursal_id = request.query_params.get('sucursal_id')
+        anio = request.query_params.get('anio')
+        mes = request.query_params.get('mes')
+
+        if not sucursal_id or anio in (None, '') or mes in (None, ''):
+            return respuesta_estandar(
+                mensaje="Los parámetros 'sucursal_id', 'anio' y 'mes' son obligatorios.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            anio_valor = int(anio)
+            mes_valor = int(mes)
+            if mes_valor < 1 or mes_valor > 12:
+                raise ValueError('Mes fuera de rango')
+        except ValueError:
+            return respuesta_estandar(
+                mensaje="Los parámetros 'anio' y 'mes' deben ser enteros válidos.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        dia_actual_contable = _dia_contable_actual()
+        total_dias_mes = monthrange(anio_valor, mes_valor)[1]
+        fecha_inicio = datetime(anio_valor, mes_valor, 1).date()
+        fecha_fin = datetime(anio_valor, mes_valor, total_dias_mes).date()
+
+        reportes_mes = ReporteDiario.objects.filter(
+            sucursal_id=sucursal_id,
+            fecha_contable__range=(fecha_inicio, fecha_fin)
+        ).prefetch_related('movimientos')
+
+        reportes_por_fecha = {reporte.fecha_contable: reporte for reporte in reportes_mes}
+        dias = []
+
+        for dia in range(1, total_dias_mes + 1):
+            fecha = datetime(anio_valor, mes_valor, dia).date()
+            reporte = reportes_por_fecha.get(fecha)
+
+            if fecha > dia_actual_contable:
+                codigo_estado = 'FUTURO_BLOQUEADO'
+                color = 'azul'
+                mensaje_estado = 'Dia futuro: aun no capturable'
+            elif not reporte:
+                if _fecha_contable_bloqueada_por_antiguedad(fecha):
+                    codigo_estado = 'CERRADO_POR_ANTIGUEDAD'
+                    color = 'rojo'
+                    mensaje_estado = 'Dia cerrado por antiguedad (mas de 5 dias)'
+                else:
+                    codigo_estado = 'VENCIDO_SIN_CAPTURA' if fecha < dia_actual_contable else 'ABIERTO_SIN_CAPTURA'
+                    color = 'rojo' if fecha < dia_actual_contable else 'verde'
+                    mensaje_estado = 'Dia pasado sin captura' if fecha < dia_actual_contable else 'Dia actual disponible para captura'
+            elif reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+                fecha_cierre_local = timezone.localtime(reporte.cerrado_en).date() if reporte.cerrado_en else fecha
+                fecha_cierre_en_tiempo = fecha + timedelta(days=1)
+                if fecha_cierre_local <= fecha_cierre_en_tiempo:
+                    codigo_estado = 'CERRADO_EN_TIEMPO'
+                    color = 'verde'
+                    mensaje_estado = 'Cerrado en tiempo'
+                else:
+                    codigo_estado = 'CERRADO_TARDIO'
+                    color = 'morado'
+                    mensaje_estado = 'Cerrado tardio'
+            else:
+                if _fecha_contable_bloqueada_por_antiguedad(fecha):
+                    codigo_estado = 'CERRADO_POR_ANTIGUEDAD'
+                    color = 'rojo'
+                    mensaje_estado = 'Dia cerrado por antiguedad (mas de 5 dias)'
+                elif fecha < dia_actual_contable:
+                    codigo_estado = 'ABIERTO_TARDIO'
+                    color = 'morado'
+                    mensaje_estado = 'Abierto fuera de tiempo'
+                else:
+                    codigo_estado = 'ABIERTO_SIN_CAPTURA'
+                    color = 'verde'
+                    mensaje_estado = 'Dia actual abierto para captura'
+
+            dias.append({
+                'fecha_contable': fecha.isoformat(),
+                'dia': dia,
+                'codigo_estado': codigo_estado,
+                'color': color,
+                'mensaje_estado': mensaje_estado,
+                'editable': bool(
+                    fecha <= dia_actual_contable
+                    and not _fecha_contable_bloqueada_por_antiguedad(fecha)
+                    and (not reporte or reporte.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO)
+                ),
+                'reporte_id': reporte.id if reporte else None,
+                'estado_reporte': reporte.estado_reporte if reporte else None,
+                'total_ingresos': reporte.total_ingresos if reporte else 0,
+                'total_egresos': reporte.total_egresos if reporte else 0,
+                'resultado_neto': reporte.resultado_neto if reporte else 0,
+            })
+
+        return respuesta_estandar(
+            data={
+                'sucursal_id': int(sucursal_id),
+                'anio': anio_valor,
+                'mes': mes_valor,
+                'dia_contable_actual': dia_actual_contable.isoformat(),
+                'dias': dias,
+            },
+            mensaje='Calendario mensual de dias contables obtenido.'
         )
 
     def create(self, request):
@@ -230,7 +390,26 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         if not sucursal_id:
             return respuesta_estandar(mensaje="El campo 'sucursal' es obligatorio.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
-        reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id)
+        try:
+            fecha_contable = _parsear_fecha_contable(request.data.get('fecha_contable'))
+        except ValueError as error:
+            return respuesta_estandar(mensaje=str(error), estado="error", codigo=status.HTTP_400_BAD_REQUEST)
+
+        fecha_objetivo = fecha_contable or _dia_contable_actual()
+        if fecha_objetivo > _dia_contable_actual():
+            return respuesta_estandar(
+                mensaje="No se permite crear reportes para fechas contables futuras.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+        if _fecha_contable_bloqueada_por_antiguedad(fecha_objetivo):
+            return respuesta_estandar(
+                mensaje="No se permite crear ni editar capturas en fechas contables con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
+
+        reporte, creado = _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_objetivo)
         mensaje = "Reporte diario creado automáticamente." if creado else "Ya existe un reporte para el día contable actual."
         codigo = status.HTTP_201_CREATED if creado else status.HTTP_200_OK
         return respuesta_estandar(data=ReporteDiarioSerializer(reporte, context={'request': request}).data, mensaje=mensaje, codigo=codigo)
@@ -241,6 +420,12 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
 
     def partial_update(self, request, pk=None):
         reporte = get_object_or_404(ReporteDiario, pk=pk)
+        if _fecha_contable_bloqueada_por_antiguedad(reporte.fecha_contable):
+            return respuesta_estandar(
+                mensaje="No se permite editar reportes con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
         if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
             return respuesta_estandar(mensaje="El reporte está cerrado. Use el flujo de reapertura si es necesario.", estado="error", codigo=status.HTTP_403_FORBIDDEN)
         s = ReporteDiarioSerializer(reporte, data=request.data, partial=True)
@@ -251,6 +436,12 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
 
     def destroy(self, request, pk=None):
         reporte = get_object_or_404(ReporteDiario, pk=pk)
+        if _fecha_contable_bloqueada_por_antiguedad(reporte.fecha_contable):
+            return respuesta_estandar(
+                mensaje="No se permite eliminar reportes con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
         if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
             return respuesta_estandar(mensaje="No se puede eliminar un reporte cerrado.", estado="error", codigo=status.HTTP_403_FORBIDDEN)
         reporte.eliminar_logico(usuario=request.user)
@@ -305,6 +496,12 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         """
         with transaction.atomic():
             reporte = ReporteDiario.todos.select_for_update().get(pk=pk)
+            if _fecha_contable_bloqueada_por_antiguedad(reporte.fecha_contable):
+                return respuesta_estandar(
+                    mensaje="No se permite reabrir reportes con más de 5 días de antigüedad.",
+                    estado="error",
+                    codigo=status.HTTP_403_FORBIDDEN
+                )
             if reporte.estado_reporte != ReporteDiario.EstadoReporte.CERRADO:
                 return respuesta_estandar(mensaje="El reporte no está cerrado.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
@@ -363,7 +560,26 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
         if not sucursal_id:
             return respuesta_estandar(mensaje="El campo 'sucursal_id' es obligatorio.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
-        reporte, _ = _obtener_o_crear_reporte_del_dia(sucursal_id)
+        try:
+            fecha_contable = _parsear_fecha_contable(request.data.get('fecha_contable'))
+        except ValueError as error:
+            return respuesta_estandar(mensaje=str(error), estado="error", codigo=status.HTTP_400_BAD_REQUEST)
+
+        fecha_objetivo = fecha_contable or _dia_contable_actual()
+        if fecha_objetivo > _dia_contable_actual():
+            return respuesta_estandar(
+                mensaje="No se permite capturar en fechas contables futuras.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+        if _fecha_contable_bloqueada_por_antiguedad(fecha_objetivo):
+            return respuesta_estandar(
+                mensaje="No se permite crear ni editar capturas en fechas contables con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
+
+        reporte, _ = _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_objetivo)
 
         if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
             return respuesta_estandar(
@@ -396,7 +612,30 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
                 codigo=status.HTTP_400_BAD_REQUEST
             )
 
-        reporte, _ = _obtener_o_crear_reporte_del_dia(sucursal_id)
+        try:
+            fecha_contable = _parsear_fecha_contable(request.data.get('fecha_contable'))
+        except ValueError as error:
+            return respuesta_estandar(
+                mensaje=str(error),
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        fecha_objetivo = fecha_contable or _dia_contable_actual()
+        if fecha_objetivo > _dia_contable_actual():
+            return respuesta_estandar(
+                mensaje="No se permite capturar en fechas contables futuras.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+        if _fecha_contable_bloqueada_por_antiguedad(fecha_objetivo):
+            return respuesta_estandar(
+                mensaje="No se permite crear ni editar capturas en fechas contables con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
+
+        reporte, _ = _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_objetivo)
         if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
             return respuesta_estandar(
                 mensaje="El día contable ya fue cerrado. No se pueden registrar cambios.",
@@ -439,6 +678,12 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
 
     def update(self, request, pk=None):
         mov = get_object_or_404(MovimientoDiario, pk=pk)
+        if _fecha_contable_bloqueada_por_antiguedad(mov.reporte.fecha_contable):
+            return respuesta_estandar(
+                mensaje="No se permite editar movimientos con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
         if mov.reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
             return respuesta_estandar(mensaje="El día está cerrado. Edite dejando rastro en el historial mediante una reapertura.", estado="error", codigo=status.HTTP_403_FORBIDDEN)
         s = MovimientoDiarioSerializer(mov, data=request.data)
@@ -449,6 +694,12 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
 
     def partial_update(self, request, pk=None):
         mov = get_object_or_404(MovimientoDiario, pk=pk)
+        if _fecha_contable_bloqueada_por_antiguedad(mov.reporte.fecha_contable):
+            return respuesta_estandar(
+                mensaje="No se permite editar movimientos con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
         if mov.reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
             return respuesta_estandar(mensaje="El día está cerrado.", estado="error", codigo=status.HTTP_403_FORBIDDEN)
         s = MovimientoDiarioSerializer(mov, data=request.data, partial=True)
@@ -459,6 +710,12 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
 
     def destroy(self, request, pk=None):
         mov = get_object_or_404(MovimientoDiario, pk=pk)
+        if _fecha_contable_bloqueada_por_antiguedad(mov.reporte.fecha_contable):
+            return respuesta_estandar(
+                mensaje="No se permite eliminar movimientos con más de 5 días de antigüedad.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
         if mov.reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
             return respuesta_estandar(
                 mensaje="El día está cerrado. Para anular un movimiento contable use el flujo de contrapartida.",

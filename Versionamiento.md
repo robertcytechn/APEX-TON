@@ -1,6 +1,16 @@
-Version del sistema: 2.4.0
+Version del sistema: 2.5.1
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-02
+- Version: 2.5.1
+- Autor: Cy tamayo
+- Descripcion: Se endurecio la regla de dia contable para considerar cerrado por antiguedad todo dia que exceda 5 dias al pasado, bloqueando creacion y edicion de reportes y movimientos; ademas se limito el DatePicker de captura al rango permitido y se aclaro la leyenda del calendario de dias contables.
+
+- Fecha: 2026-04-03
+- Version: 2.5.0
+- Autor: Cy tamayo
+- Descripcion: Se implemento el control profesional de dia contable con selector DatePicker en captura operativa (por defecto T-1), bloqueo de fechas futuras y de dias cerrados, soporte backend para capturar por fecha_contable, y una nueva vista de Dias Contables con calendario mensual y semaforizacion operativa (verde, morado, azul, rojo).
 
 - Fecha: 2026-04-02
 - Version: 2.4.0
