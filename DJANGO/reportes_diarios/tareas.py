@@ -141,37 +141,65 @@ def _cerrar_mes_automatico(sucursal, anio, mes, tc_usd, tc_eur):
                 reporte__fecha_contable__year=anio,
                 reporte__fecha_contable__month=mes,
                 eliminado_en__isnull=True,
-            ).select_related('concepto__rubro_contable')
+            ).select_related('concepto__rubro_contable__padre')
 
-            ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
-            egresos  = movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'] or 0
-            neto = ingresos - egresos
-
-            # Desglose JSON por rubro
+            # Desglose JSON por rubro con estructura detallada para estado de resultados historico.
             desglose = {}
             for mov in movimientos:
-                rubro = mov.concepto.rubro_contable.nombre if mov.concepto.rubro_contable else 'SIN RUBRO CONTABLE'
-                if rubro not in desglose:
-                    desglose[rubro] = {"ingresos": 0, "egresos": 0, "neto": 0}
-                if mov.concepto.tipo == 'INGRESO':
-                    desglose[rubro]['ingresos'] += float(mov.monto)
-                else:
-                    desglose[rubro]['egresos'] += float(mov.monto)
-            for k in desglose:
-                desglose[k]['neto'] = desglose[k]['ingresos'] - desglose[k]['egresos']
+                rubro = mov.concepto.rubro_contable
+                rubro_id = rubro.id if rubro else 'SIN_RUBRO_CONTABLE'
+                rubro_nombre = rubro.nombre if rubro else 'SIN RUBRO CONTABLE'
+                rubro_tipo = rubro.tipo if rubro else 'NO_CONTABLE'
+                rubro_padre = rubro.padre.nombre if rubro and rubro.padre else 'SIN GRUPO'
+                rubro_padre_clave = rubro.padre.clave if rubro and rubro.padre else None
+                rubro_padre_considerar = bool(rubro.padre.considerar_en_estado_resultados) if rubro and rubro.padre else True
 
-            libro.total_ingresos          = ingresos
-            libro.total_egresos           = egresos
-            libro.resultado_neto          = neto
-            libro.saldo_arrastre_fin      = libro.saldo_arrastre_inicio + neto
-            libro.desglose_por_rubro      = desglose
+                if rubro_id not in desglose:
+                    desglose[rubro_id] = {
+                        "rubro_id": rubro_id,
+                        "rubro_nombre": rubro_nombre,
+                        "rubro_tipo": rubro_tipo,
+                        "rubro_padre": rubro_padre,
+                        "rubro_padre_clave": rubro_padre_clave,
+                        "rubro_padre_considerar_en_estado_resultados": rubro_padre_considerar,
+                        "total_ingresos": 0.0,
+                        "total_egresos": 0.0,
+                        "resultado_neto": 0.0,
+                    }
+
+                if mov.concepto.tipo == 'INGRESO':
+                    desglose[rubro_id]['total_ingresos'] += float(mov.monto)
+                else:
+                    desglose[rubro_id]['total_egresos'] += float(mov.monto)
+
+            for rubro_id in desglose:
+                desglose[rubro_id]['resultado_neto'] = desglose[rubro_id]['total_ingresos'] - desglose[rubro_id]['total_egresos']
+
+            rubros_ordenados = sorted(
+                list(desglose.values()),
+                key=lambda rubro_item: ((rubro_item.get('rubro_padre') or ''), (rubro_item.get('rubro_nombre') or '')),
+            )
+
+            rubros_considerados = [
+                rubro_item for rubro_item in rubros_ordenados
+                if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+            ]
+            total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
+            total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)
+            resultado_neto_considerado = total_ingresos_considerados - total_egresos_considerados
+
+            libro.total_ingresos          = total_ingresos_considerados
+            libro.total_egresos           = total_egresos_considerados
+            libro.resultado_neto          = resultado_neto_considerado
+            libro.saldo_arrastre_fin      = libro.saldo_arrastre_inicio + resultado_neto_considerado
+            libro.desglose_por_rubro      = rubros_ordenados
             libro.tipo_cambio_usd_snapshot = tc_usd
             libro.tipo_cambio_eur_snapshot = tc_eur
             libro.estado_mes              = LibroEstadoResultados.EstadoMes.CERRADO
             libro.cerrado_en              = timezone.now()
             libro.save()
 
-            logger.info(f"[CIERRE MES] {sucursal.nombre} {anio}/{mes:02d}: LibroEstadoResultados cerrado. Neto: ${neto:,.2f}")
+            logger.info(f"[CIERRE MES] {sucursal.nombre} {anio}/{mes:02d}: LibroEstadoResultados cerrado. Neto considerado: ${resultado_neto_considerado:,.2f}")
 
     except Exception as exc:
         logger.error(f"[CIERRE MES] Error al cerrar libro {sucursal.nombre} {anio}/{mes:02d}: {exc}")

@@ -4,13 +4,14 @@ from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from configuraciones_globales.models import ConfiguracionGlobal, RubroContable
+from configuraciones_globales.models import ConfiguracionGlobal, PadreRubroContable, RubroContable
 from core.permisos import EsAdministrador
 from sucursales.models import Sucursal
 from usuarios.models import Rol, Usuario
 
 from .serializers import (
     ConfiguracionGlobalCabinaSerializer,
+    PadreRubroContableCabinaSerializer,
     RolCabinaSerializer,
     RubroContableCabinaSerializer,
     SucursalCabinaSerializer,
@@ -182,10 +183,18 @@ class ConfiguracionGlobalCabinaViewSet(BaseCabinaAdminViewSet):
 class RubroContableCabinaViewSet(BaseCabinaAdminViewSet):
     @action(detail=False, methods=['get'], url_path='opciones')
     def opciones(self, request):
-        campo_padre = RubroContable._meta.get_field('padre')
         campo_tipo = RubroContable._meta.get_field('tipo')
 
-        opciones_padre = [{'label': etiqueta, 'value': valor} for valor, etiqueta in campo_padre.choices]
+        opciones_padre = [
+            {
+                'id': padre.id,
+                'label': padre.nombre,
+                'value': padre.id,
+                'clave': padre.clave,
+                'nombre': padre.nombre,
+            }
+            for padre in PadreRubroContable.objects.all().order_by('nombre')
+        ]
         opciones_tipo = [{'label': etiqueta, 'value': valor} for valor, etiqueta in campo_tipo.choices]
 
         data = {
@@ -229,3 +238,49 @@ class RubroContableCabinaViewSet(BaseCabinaAdminViewSet):
         obj = get_object_or_404(RubroContable, pk=pk)
         obj.eliminar_logico(usuario=request.user)
         return respuesta_estandar(mensaje='Rubro contable eliminado (baja logica).')
+
+
+class PadreRubroContableCabinaViewSet(BaseCabinaAdminViewSet):
+    def list(self, request):
+        data = PadreRubroContableCabinaSerializer(PadreRubroContable.objects.all().order_by('nombre'), many=True).data
+        return respuesta_estandar(data=data, mensaje='Padres de rubro contable obtenidos.')
+
+    def create(self, request):
+        serializer = PadreRubroContableCabinaSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(creado_por=request.user)
+            return respuesta_estandar(data=serializer.data, mensaje='Padre de rubro contable creado.', codigo=status.HTTP_201_CREATED)
+        return respuesta_estandar(data=serializer.errors, mensaje='Error al crear padre de rubro contable.', estado='error', codigo=status.HTTP_400_BAD_REQUEST)
+
+    def retrieve(self, request, pk=None):
+        obj = get_object_or_404(PadreRubroContable, pk=pk)
+        return respuesta_estandar(data=PadreRubroContableCabinaSerializer(obj).data, mensaje='Padre de rubro contable obtenido.')
+
+    def update(self, request, pk=None):
+        obj = get_object_or_404(PadreRubroContable, pk=pk)
+        serializer = PadreRubroContableCabinaSerializer(obj, data=request.data)
+        if serializer.is_valid():
+            serializer.save(actualizado_por=request.user)
+            return respuesta_estandar(data=serializer.data, mensaje='Padre de rubro contable actualizado.')
+        return respuesta_estandar(data=serializer.errors, mensaje='Error al actualizar padre de rubro contable.', estado='error', codigo=status.HTTP_400_BAD_REQUEST)
+
+    def partial_update(self, request, pk=None):
+        obj = get_object_or_404(PadreRubroContable, pk=pk)
+        serializer = PadreRubroContableCabinaSerializer(obj, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save(actualizado_por=request.user)
+            return respuesta_estandar(data=serializer.data, mensaje='Padre de rubro contable actualizado parcialmente.')
+        return respuesta_estandar(data=serializer.errors, mensaje='Error al actualizar padre de rubro contable.', estado='error', codigo=status.HTTP_400_BAD_REQUEST)
+
+    def destroy(self, request, pk=None):
+        obj = get_object_or_404(PadreRubroContable, pk=pk)
+        if obj.rubros_contables.exists():
+            return respuesta_estandar(
+                data={'rubros_asociados': obj.rubros_contables.count()},
+                mensaje='No se puede eliminar el padre porque tiene rubros contables asociados.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        obj.eliminar_logico(usuario=request.user)
+        return respuesta_estandar(mensaje='Padre de rubro contable eliminado (baja logica).')

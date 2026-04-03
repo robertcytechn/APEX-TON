@@ -1,5 +1,4 @@
 from django.db.models import Sum
-from datetime import date
 from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -36,25 +35,26 @@ class EstadoResultadosAPIView(APIView):
             - sucursal_id (obligatorio)
             - mes         (opcional, default: mes actual)
             - anio        (opcional, default: año actual)
-            - dia         (opcional, filtra un día específico dentro del mes)
 
     GET /api/estado-resultados/?sucursal_id=1&mes=3&anio=2026
-    GET /api/estado-resultados/?sucursal_id=1&mes=3&anio=2026&dia=19
     """
 
     @staticmethod
     def _construir_rubros_base():
         rubros = (
             RubroContable.objects.filter(eliminado_en__isnull=True)
-            .order_by('padre', 'nombre')
-            .values('id', 'nombre', 'tipo', 'padre')
+            .select_related('padre')
+            .order_by('padre__nombre', 'nombre')
+            .values('id', 'nombre', 'tipo', 'padre__clave', 'padre__nombre', 'padre__considerar_en_estado_resultados')
         )
         return {
             rubro['id']: {
                 "rubro_id": rubro['id'],
                 "rubro_nombre": rubro['nombre'],
                 "rubro_tipo": rubro['tipo'],
-                "rubro_padre": rubro['padre'],
+                "rubro_padre": rubro.get('padre__nombre') or 'SIN GRUPO',
+                "rubro_padre_clave": rubro.get('padre__clave'),
+                "rubro_padre_considerar_en_estado_resultados": bool(rubro.get('padre__considerar_en_estado_resultados', True)),
                 "total_ingresos": 0.0,
                 "total_egresos": 0.0,
                 "resultado_neto": 0.0,
@@ -74,11 +74,9 @@ class EstadoResultadosAPIView(APIView):
         try:
             mes  = int(request.query_params.get('mes', hoy.month))
             anio = int(request.query_params.get('anio', hoy.year))
-            dia_param = request.query_params.get('dia')
-            dia = int(dia_param) if dia_param not in (None, '') else None
         except ValueError:
             return respuesta_estandar(
-                mensaje="Los parámetros 'mes', 'anio' y 'dia' deben ser números enteros.",
+                mensaje="Los parámetros 'mes' y 'anio' deben ser números enteros.",
                 estado="error", codigo=status.HTTP_400_BAD_REQUEST
             )
 
@@ -87,16 +85,6 @@ class EstadoResultadosAPIView(APIView):
                 mensaje="El parámetro 'mes' debe estar en el rango 1-12.",
                 estado="error", codigo=status.HTTP_400_BAD_REQUEST
             )
-
-        fecha_especifica = None
-        if dia is not None:
-            try:
-                fecha_especifica = date(anio, mes, dia)
-            except ValueError:
-                return respuesta_estandar(
-                    mensaje="La combinación de 'anio', 'mes' y 'dia' no representa una fecha válida.",
-                    estado="error", codigo=status.HTTP_400_BAD_REQUEST
-                )
 
         # ── Modo 1: Mes CERRADO → devolver snapshot del libro ─────────────────
         try:
@@ -109,9 +97,27 @@ class EstadoResultadosAPIView(APIView):
                 eliminado_en__isnull=True,
             ).first()
 
-            if libro and fecha_especifica is None:
+            if libro:
                 rubros_base = self._construir_rubros_base()
-                desglose_snapshot = libro.desglose_por_rubro or []
+                desglose_snapshot_crudo = libro.desglose_por_rubro or []
+                desglose_snapshot = []
+
+                if isinstance(desglose_snapshot_crudo, dict):
+                    # Compatibilidad con snapshots legados donde el desglose era un dict por nombre de rubro.
+                    for nombre_rubro, totales in desglose_snapshot_crudo.items():
+                        desglose_snapshot.append({
+                            'rubro_id': f'LEGADO::{nombre_rubro}',
+                            'rubro_nombre': nombre_rubro,
+                            'rubro_tipo': 'NO_CONTABLE',
+                            'rubro_padre': 'SIN GRUPO',
+                            'rubro_padre_clave': None,
+                            'rubro_padre_considerar_en_estado_resultados': True,
+                            'total_ingresos': float((totales or {}).get('ingresos') or 0),
+                            'total_egresos': float((totales or {}).get('egresos') or 0),
+                            'resultado_neto': float((totales or {}).get('neto') or 0),
+                        })
+                elif isinstance(desglose_snapshot_crudo, list):
+                    desglose_snapshot = [item for item in desglose_snapshot_crudo if isinstance(item, dict)]
 
                 for rubro in desglose_snapshot:
                     rubro_id = rubro.get('rubro_id')
@@ -125,7 +131,9 @@ class EstadoResultadosAPIView(APIView):
                         "rubro_id": rubro_id,
                         "rubro_nombre": rubro.get('rubro_nombre') or 'SIN RUBRO CONTABLE',
                         "rubro_tipo": rubro.get('rubro_tipo') or 'NO_CONTABLE',
-                        "rubro_padre": rubro.get('rubro_padre'),
+                        "rubro_padre": rubro.get('rubro_padre') or 'SIN GRUPO',
+                        "rubro_padre_clave": rubro.get('rubro_padre_clave'),
+                        "rubro_padre_considerar_en_estado_resultados": bool(rubro.get('rubro_padre_considerar_en_estado_resultados', True)),
                         "total_ingresos": float(rubro.get('total_ingresos') or 0),
                         "total_egresos": float(rubro.get('total_egresos') or 0),
                         "resultado_neto": float(rubro.get('resultado_neto') or 0),
@@ -134,16 +142,24 @@ class EstadoResultadosAPIView(APIView):
                 rubros_lista = list(rubros_base.values())
                 rubros_lista.sort(key=lambda rubro: ((rubro.get('rubro_padre') or ''), rubro.get('rubro_nombre') or ''))
 
+                rubros_considerados = [
+                    rubro_item for rubro_item in rubros_lista
+                    if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+                ]
+                total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
+                total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)
+                resultado_neto_considerado = total_ingresos_considerados - total_egresos_considerados
+
                 data = {
                     "fuente":               "snapshot_historico",
                     "sucursal_id":          int(sucursal_id),
                     "periodo":              f"{anio}/{mes:02d}",
                     "estado_mes":           libro.estado_mes,
                     "saldo_arrastre_inicio": float(libro.saldo_arrastre_inicio),
-                    "total_ingresos":       float(libro.total_ingresos),
-                    "total_egresos":        float(libro.total_egresos),
-                    "resultado_neto":       float(libro.resultado_neto),
-                    "saldo_arrastre_fin":   float(libro.saldo_arrastre_fin),
+                    "total_ingresos":       float(total_ingresos_considerados),
+                    "total_egresos":        float(total_egresos_considerados),
+                    "resultado_neto":       float(resultado_neto_considerado),
+                    "saldo_arrastre_fin":   float(libro.saldo_arrastre_inicio) + float(resultado_neto_considerado),
                     "tipo_cambio_usd":      float(libro.tipo_cambio_usd_snapshot),
                     "tipo_cambio_eur":      float(libro.tipo_cambio_eur_snapshot),
                     "cerrado_en":           libro.cerrado_en.isoformat() if libro.cerrado_en else None,
@@ -163,10 +179,8 @@ class EstadoResultadosAPIView(APIView):
         ).select_related(
             'concepto__categoria',
             'concepto__rubro_contable',
+            'concepto__rubro_contable__padre',
         )
-
-        if fecha_especifica is not None:
-            movimientos = movimientos.filter(reporte__fecha_contable=fecha_especifica)
 
         rubros_base = self._construir_rubros_base()
 
@@ -178,7 +192,6 @@ class EstadoResultadosAPIView(APIView):
                     "fuente": "tiempo_real",
                     "sucursal_id": int(sucursal_id),
                     "periodo": f"{anio}/{mes:02d}",
-                    "fecha": fecha_especifica.isoformat() if fecha_especifica else None,
                     "total_ingresos": 0,
                     "total_egresos": 0,
                     "resultado_neto": 0,
@@ -189,13 +202,7 @@ class EstadoResultadosAPIView(APIView):
             )
 
         if not movimientos.exists():
-            if fecha_especifica is not None:
-                return construir_respuesta_sin_movimientos(f"Sin movimientos registrados para {fecha_especifica.isoformat()}.")
             return construir_respuesta_sin_movimientos(f"Sin movimientos registrados para {anio}/{mes:02d}.")
-
-        total_ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(total=Sum('monto'))['total'] or 0
-        total_egresos  = movimientos.filter(concepto__tipo='EGRESO').aggregate(total=Sum('monto'))['total'] or 0
-        resultado_neto = total_ingresos - total_egresos
 
         # Desglose por Categoría Operativa
         por_categoria = {}
@@ -206,6 +213,9 @@ class EstadoResultadosAPIView(APIView):
             rubro_id = rubro.id if rubro else 'SIN_RUBRO_CONTABLE'
             rubro_nombre = rubro.nombre if rubro else 'SIN RUBRO CONTABLE'
             rubro_tipo = rubro.tipo if rubro else 'NO_CONTABLE'
+            rubro_padre = rubro.padre.nombre if rubro and rubro.padre else 'SIN GRUPO'
+            rubro_padre_clave = rubro.padre.clave if rubro and rubro.padre else None
+            rubro_padre_considerar = bool(rubro.padre.considerar_en_estado_resultados) if rubro and rubro.padre else True
 
             if cat.id not in por_categoria:
                 por_categoria[cat.id] = {"categoria_id": cat.id, "categoria_nombre": cat.nombre, "categoria_clave": cat.clave, "tipo": cat.tipo, "total_ingresos": 0, "total_egresos": 0, "resultado_neto": 0}
@@ -214,7 +224,9 @@ class EstadoResultadosAPIView(APIView):
                     "rubro_id": rubro_id,
                     "rubro_nombre": rubro_nombre,
                     "rubro_tipo": rubro_tipo,
-                    "rubro_padre": None,
+                    "rubro_padre": rubro_padre,
+                    "rubro_padre_clave": rubro_padre_clave,
+                    "rubro_padre_considerar_en_estado_resultados": rubro_padre_considerar,
                     "total_ingresos": 0.0,
                     "total_egresos": 0.0,
                     "resultado_neto": 0.0,
@@ -233,30 +245,32 @@ class EstadoResultadosAPIView(APIView):
             fecha_contable__month=mes,
         )
 
-        if fecha_especifica is not None:
-            reportes_mes = reportes_mes.filter(fecha_contable=fecha_especifica)
-
         primer_reporte = reportes_mes.order_by('fecha_contable').first()
         saldo_inicio = float(primer_reporte.saldo_arrastre_inicio) if primer_reporte else 0
 
         rubros_lista = list(por_rubro.values())
         rubros_lista.sort(key=lambda rubro: ((rubro.get('rubro_padre') or ''), rubro.get('rubro_nombre') or ''))
 
+        rubros_considerados = [
+            rubro_item for rubro_item in rubros_lista
+            if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+        ]
+        total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
+        total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)
+        resultado_neto_considerado = total_ingresos_considerados - total_egresos_considerados
+
         data = {
             "fuente":               "tiempo_real",
             "sucursal_id":          int(sucursal_id),
             "periodo":              f"{anio}/{mes:02d}",
-            "fecha":               fecha_especifica.isoformat() if fecha_especifica else None,
             "saldo_arrastre_inicio": saldo_inicio,
-            "total_ingresos":       float(total_ingresos),
-            "total_egresos":        float(total_egresos),
-            "resultado_neto":       float(resultado_neto),
-            "saldo_proyectado_fin":  saldo_inicio + float(resultado_neto),
+            "total_ingresos":       float(total_ingresos_considerados),
+            "total_egresos":        float(total_egresos_considerados),
+            "resultado_neto":       float(resultado_neto_considerado),
+            "saldo_proyectado_fin":  saldo_inicio + float(resultado_neto_considerado),
             "por_categoria":        list(por_categoria.values()),
             "por_rubro":            rubros_lista,
         }
 
-        if fecha_especifica is not None:
-            return respuesta_estandar(data=data, mensaje=f"Estado de resultados {fecha_especifica.isoformat()} calculado en tiempo real.")
         return respuesta_estandar(data=data, mensaje=f"Estado de resultados {anio}/{mes:02d} calculado en tiempo real.")
 

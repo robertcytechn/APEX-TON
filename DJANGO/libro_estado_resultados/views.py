@@ -92,24 +92,39 @@ class LibroEstadoResultadosViewSet(viewsets.ViewSet):
             reporte__fecha_contable__year=libro.anio,
             reporte__fecha_contable__month=libro.mes,
             eliminado_en__isnull=True,
-        ).select_related('concepto__rubro_contable')
+        ).select_related('concepto__rubro_contable__padre')
 
-        total_ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
-        total_egresos  = movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'] or 0
-        resultado_neto = total_ingresos - total_egresos
-
-        # Desglose por rubro como snapshot JSON
+        # Desglose por rubro como snapshot JSON detallado para consultas historicas.
         desglose = {}
         for mov in movimientos:
-            rubro_nombre = mov.concepto.rubro_contable.nombre if mov.concepto.rubro_contable else 'SIN RUBRO CONTABLE'
-            if rubro_nombre not in desglose:
-                desglose[rubro_nombre] = {"ingresos": 0, "egresos": 0, "neto": 0}
+            rubro = mov.concepto.rubro_contable
+            rubro_id = rubro.id if rubro else 'SIN_RUBRO_CONTABLE'
+            rubro_nombre = rubro.nombre if rubro else 'SIN RUBRO CONTABLE'
+            rubro_tipo = rubro.tipo if rubro else 'NO_CONTABLE'
+            rubro_padre = rubro.padre.nombre if rubro and rubro.padre else 'SIN GRUPO'
+            rubro_padre_clave = rubro.padre.clave if rubro and rubro.padre else None
+            rubro_padre_considerar = bool(rubro.padre.considerar_en_estado_resultados) if rubro and rubro.padre else True
+
+            if rubro_id not in desglose:
+                desglose[rubro_id] = {
+                    "rubro_id": rubro_id,
+                    "rubro_nombre": rubro_nombre,
+                    "rubro_tipo": rubro_tipo,
+                    "rubro_padre": rubro_padre,
+                    "rubro_padre_clave": rubro_padre_clave,
+                    "rubro_padre_considerar_en_estado_resultados": rubro_padre_considerar,
+                    "total_ingresos": 0.0,
+                    "total_egresos": 0.0,
+                    "resultado_neto": 0.0,
+                }
+
             if mov.concepto.tipo == 'INGRESO':
-                desglose[rubro_nombre]['ingresos'] += float(mov.monto)
+                desglose[rubro_id]['total_ingresos'] += float(mov.monto)
             else:
-                desglose[rubro_nombre]['egresos'] += float(mov.monto)
-        for k in desglose:
-            desglose[k]['neto'] = desglose[k]['ingresos'] - desglose[k]['egresos']
+                desglose[rubro_id]['total_egresos'] += float(mov.monto)
+
+        for rubro_id in desglose:
+            desglose[rubro_id]['resultado_neto'] = desglose[rubro_id]['total_ingresos'] - desglose[rubro_id]['total_egresos']
 
         # Snapshot del tipo de cambio actual
         tc_usd = libro.tipo_cambio_usd_snapshot
@@ -127,11 +142,24 @@ class LibroEstadoResultadosViewSet(viewsets.ViewSet):
         except Exception:
             pass
 
-        libro.total_ingresos          = total_ingresos
-        libro.total_egresos           = total_egresos
-        libro.resultado_neto          = resultado_neto
-        libro.saldo_arrastre_fin      = libro.saldo_arrastre_inicio + resultado_neto
-        libro.desglose_por_rubro      = desglose
+        rubros_ordenados = sorted(
+            list(desglose.values()),
+            key=lambda rubro_item: ((rubro_item.get('rubro_padre') or ''), (rubro_item.get('rubro_nombre') or '')),
+        )
+
+        rubros_considerados = [
+            rubro_item for rubro_item in rubros_ordenados
+            if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+        ]
+        total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
+        total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)
+        resultado_neto_considerado = total_ingresos_considerados - total_egresos_considerados
+
+        libro.total_ingresos          = total_ingresos_considerados
+        libro.total_egresos           = total_egresos_considerados
+        libro.resultado_neto          = resultado_neto_considerado
+        libro.saldo_arrastre_fin      = libro.saldo_arrastre_inicio + resultado_neto_considerado
+        libro.desglose_por_rubro      = rubros_ordenados
         libro.tipo_cambio_usd_snapshot = tc_usd
         libro.tipo_cambio_eur_snapshot = tc_eur
         libro.estado_mes              = LibroEstadoResultados.EstadoMes.CERRADO

@@ -2,6 +2,44 @@ from django.db import models
 from simple_history.models import HistoricalRecords
 from core.models import ModeloBase
 
+
+class PadreRubroContable(ModeloBase):
+    """
+    Catalogo administrable de padres para rubros contables.
+    """
+    clave = models.CharField(
+        max_length=150,
+        unique=True,
+        verbose_name="Clave del Padre",
+        help_text="Identificador unico del padre de rubro en formato tecnico (ej. GASTOS)."
+    )
+    nombre = models.CharField(
+        max_length=150,
+        unique=True,
+        verbose_name="Nombre del Padre",
+        help_text="Nombre visible del padre de rubro para uso en catalogos y formularios."
+    )
+    descripcion = models.TextField(
+        null=True,
+        blank=True,
+        verbose_name="Descripcion",
+        help_text="Descripcion opcional del padre de rubro contable."
+    )
+    considerar_en_estado_resultados = models.BooleanField(
+        default=True,
+        verbose_name="Considerar en Estado de Resultados",
+        help_text="Indica si los rubros de este padre deben impactar los totales generales del estado de resultados."
+    )
+
+    class Meta:
+        verbose_name = "Padre de Rubro Contable"
+        verbose_name_plural = "Padres de Rubros Contables"
+        db_table = "padre_rubro_contable"
+        ordering = ["nombre"]
+
+    def __str__(self):
+        return f"{self.nombre} ({self.clave})"
+
 class ConfiguracionGlobal(ModeloBase):
     """
     Modelo para gestionar variables globales del sistema, como
@@ -72,16 +110,13 @@ class RubroContable(ModeloBase):
     Modelo para los rubros contables globales (ej. VENTAS_BEBIDAS).
     """
     nombre = models.CharField(max_length=150, unique=True, verbose_name="Nombre del Rubro", help_text="Nombre representativo y único del rubro contable.")
-    padre = models.CharField(max_length=150, verbose_name="Padre del Rubro", choices=[
-        ('NINGUNO', 'Ninguno'), 
-        ('INGRESOS', 'Ingresos'),
-        ('GASTOS', 'Gastos'),
-        ('CARGAR_FISCALES', 'Cargar Fiscales'),
-        ('COCINA','Cosina'),
-        ('JUEGO_VIVO', 'Juego Vivo'),
-        ('PAGO_MAQUINAS', 'Pago Maquinas'),
-        ('OTROS_INGRESOS', 'Otros Ingresos'),
-        ('OTROS_GASTOS', 'Otros Gastos')], default='NINGUNO', help_text="Categoría o pestaña general a la que pertenece este rubro para su agrupación.")
+    padre = models.ForeignKey(
+        PadreRubroContable,
+        on_delete=models.PROTECT,
+        related_name="rubros_contables",
+        verbose_name="Padre del Rubro",
+        help_text="Padre de rubro al que pertenece este rubro para su agrupacion contable."
+    )
     tipo = models.CharField(
         max_length=20,
         choices=[('INGRESO', 'Ingreso'), ('EGRESO', 'Egreso')],
