@@ -146,9 +146,16 @@ class EstadoResultadosAPIView(APIView):
                     rubro_item for rubro_item in rubros_lista
                     if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
                 ]
+                rubros_no_considerados = [
+                    rubro_item for rubro_item in rubros_lista
+                    if not bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+                ]
                 total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
                 total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)
                 resultado_neto_considerado = total_ingresos_considerados - total_egresos_considerados
+                total_ingresos_no_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_no_considerados)
+                total_egresos_no_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_no_considerados)
+                resultado_neto_no_considerado = total_ingresos_no_considerados - total_egresos_no_considerados
 
                 data = {
                     "fuente":               "snapshot_historico",
@@ -160,6 +167,9 @@ class EstadoResultadosAPIView(APIView):
                     "total_egresos":        float(total_egresos_considerados),
                     "resultado_neto":       float(resultado_neto_considerado),
                     "saldo_arrastre_fin":   float(libro.saldo_arrastre_inicio) + float(resultado_neto_considerado),
+                    "total_ingresos_no_considerados": float(total_ingresos_no_considerados),
+                    "total_egresos_no_considerados": float(total_egresos_no_considerados),
+                    "resultado_neto_no_considerado": float(resultado_neto_no_considerado),
                     "tipo_cambio_usd":      float(libro.tipo_cambio_usd_snapshot),
                     "tipo_cambio_eur":      float(libro.tipo_cambio_eur_snapshot),
                     "cerrado_en":           libro.cerrado_en.isoformat() if libro.cerrado_en else None,
@@ -255,9 +265,16 @@ class EstadoResultadosAPIView(APIView):
             rubro_item for rubro_item in rubros_lista
             if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
         ]
+        rubros_no_considerados = [
+            rubro_item for rubro_item in rubros_lista
+            if not bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+        ]
         total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
         total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)
         resultado_neto_considerado = total_ingresos_considerados - total_egresos_considerados
+        total_ingresos_no_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_no_considerados)
+        total_egresos_no_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_no_considerados)
+        resultado_neto_no_considerado = total_ingresos_no_considerados - total_egresos_no_considerados
 
         data = {
             "fuente":               "tiempo_real",
@@ -268,6 +285,9 @@ class EstadoResultadosAPIView(APIView):
             "total_egresos":        float(total_egresos_considerados),
             "resultado_neto":       float(resultado_neto_considerado),
             "saldo_proyectado_fin":  saldo_inicio + float(resultado_neto_considerado),
+            "total_ingresos_no_considerados": float(total_ingresos_no_considerados),
+            "total_egresos_no_considerados": float(total_egresos_no_considerados),
+            "resultado_neto_no_considerado": float(resultado_neto_no_considerado),
             "por_categoria":        list(por_categoria.values()),
             "por_rubro":            rubros_lista,
         }

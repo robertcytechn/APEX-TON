@@ -111,7 +111,7 @@ El principal objetivo funcional de estructurar pestañas, conceptos y rubros, es
           * ADMINISTRADOR: administracion total del sistema en este caso (yo)
 - el sistema debe de tener en configuraciones globales un campo "HORARIO_APERTURA" y "HORARIO_CIERRE" que seran las horas en las que se abriran y cerraran las pestañas, fuera de este horario no se podra modificar
 - el sistema debe de cerrar el dia creando o cerrando el historico diario y si es fin de mes cerrar el historico de estado de resultados
-- el dia contable es un dia anterior ejemplo si hoy es 20 de marzo el dia contable es 19 de marzo
+- el dia contable debde de ser un datepicker, pero el sistema debe de validar que no se puedan modificar dias anteriores que ya creados y cerrados, solo se podran modificar dias abiertos o el dia actual, esto para evitar que se modifiquen registros historicos y se pierda la trazabilidad de los movimientos realizados en la sala de juegos
 
 
 ## reglas de estilo de frontend

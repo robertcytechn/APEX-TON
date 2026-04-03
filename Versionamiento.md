@@ -1,6 +1,11 @@
-Version del sistema: 2.3.0
+Version del sistema: 2.4.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-02
+- Version: 2.4.0
+- Autor: Cy tamayo
+- Descripcion: Se reforzo el estado de resultados con indicadores visuales de rubros y padres que impactan o no el total general, se mejoro profesionalmente el formulario de padres de rubros con validaciones y mensajes claros, y se ampliaron los datos de respuesta para mostrar montos considerados y no considerados de forma transparente.
 
 - Fecha: 2026-04-02
 - Version: 2.3.0
