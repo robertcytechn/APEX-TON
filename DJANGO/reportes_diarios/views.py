@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from calendar import monthrange
 
 from django.db import transaction
+from django.db.models import Sum
 from django.utils import timezone
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
@@ -63,6 +64,115 @@ def _parsear_fecha_contable(valor_fecha):
 def _fecha_contable_bloqueada_por_antiguedad(fecha_contable):
     limite_minimo = _dia_contable_actual() - timedelta(days=5)
     return fecha_contable < limite_minimo
+
+
+# 1) Para qué sirve: validar autorización de cierre según roles permitidos de negocio.
+# 2) Cómo funciona: consulta relación usuario-rol y también permite superusuario/staff.
+# 3) Qué hace: limita cierre de día a CONTADOR, GERENTE y ADMINISTRADOR.
+# 4) Cómo editarla: agrega o remueve roles de la lista según reglas futuras.
+def _usuario_puede_cerrar_dia(usuario):
+    if not usuario or not usuario.is_authenticated:
+        return False
+    if usuario.is_superuser or usuario.is_staff:
+        return True
+
+    try:
+        return usuario.usuario_roles.filter(
+            rol__nombre__in=['CONTADOR', 'GERENTE', 'ADMINISTRADOR']
+        ).exists()
+    except Exception:
+        return False
+
+
+# 1) Para qué sirve: cerrar un reporte con cálculo consolidado de ingresos/egresos.
+# 2) Cómo funciona: calcula totales en vivo, toma snapshots de tipo de cambio y persiste cierre.
+# 3) Qué hace: deja el día contable bloqueado para nuevas modificaciones.
+# 4) Cómo editarla: integra nuevas métricas de cierre en este único punto central.
+def _cerrar_reporte_diario(reporte, usuario):
+    movimientos = reporte.movimientos.filter(eliminado_en__isnull=True)
+    ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
+    egresos = movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'] or 0
+    neto = ingresos - egresos
+
+    try:
+        tasa_usd = _obtener_tasa_cambio_por_claves(['TASA_CAMBIO_DOLARES', 'TIPO_CAMBIO_USD'])
+        tasa_eur = _obtener_tasa_cambio_por_claves(['TIPO_CAMBIO_EUR'])
+        if tasa_usd is not None:
+            reporte.tipo_cambio_usd_snapshot = tasa_usd
+        if tasa_eur is not None:
+            reporte.tipo_cambio_eur_snapshot = tasa_eur
+    except Exception:
+        pass
+
+    reporte.total_ingresos = ingresos
+    reporte.total_egresos = egresos
+    reporte.resultado_neto = neto
+    reporte.saldo_arrastre_fin = reporte.saldo_arrastre_inicio + neto
+    reporte.estado_reporte = ReporteDiario.EstadoReporte.CERRADO
+    reporte.cerrado_en = timezone.now()
+    reporte.cerrado_por = usuario
+    reporte.save()
+
+    return reporte
+
+
+# 1) Para qué sirve: construir un resumen ejecutivo del día contable para tablero rápido.
+# 2) Cómo funciona: cruza movimientos capturados contra conceptos recurrentes activos.
+# 3) Qué hace: muestra métricas de avance y conceptos faltantes para detectar omisiones.
+# 4) Cómo editarla: amplía los campos retornados si se requieren KPIs adicionales.
+def _construir_resumen_rapido_reporte(reporte, usuario):
+    from categoria_operativa.models import Concepto
+
+    movimientos = reporte.movimientos.filter(eliminado_en__isnull=True).select_related('concepto', 'concepto__categoria')
+    ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
+    egresos = movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'] or 0
+    neto = ingresos - egresos
+
+    conceptos_recurrentes = Concepto.objects.filter(
+        estado='ACTIVO',
+        es_recurrente=True,
+        categoria__estado='ACTIVO'
+    )
+
+    conceptos_capturados_ids = movimientos.values_list('concepto_id', flat=True)
+    conceptos_faltantes = conceptos_recurrentes.exclude(id__in=conceptos_capturados_ids)
+    faltantes_detalle = [
+        {
+            'id': item['id'],
+            'nombre': item['nombre'],
+            'tipo': item['tipo'],
+            'categoria_id': item['categoria_id'],
+            'categoria_nombre': item['categoria__nombre'],
+            'categoria_clave': item['categoria__clave'],
+        }
+        for item in conceptos_faltantes.values(
+            'id', 'nombre', 'tipo', 'categoria_id', 'categoria__nombre', 'categoria__clave'
+        )[:40]
+    ]
+
+    total_recurrentes = conceptos_recurrentes.count()
+    total_faltantes = conceptos_faltantes.count()
+
+    return {
+        'reporte_id': reporte.id,
+        'sucursal_id': reporte.sucursal_id,
+        'fecha_contable': reporte.fecha_contable.isoformat(),
+        'estado_reporte': reporte.estado_reporte,
+        'cerrado_en': timezone.localtime(reporte.cerrado_en).isoformat() if reporte.cerrado_en else None,
+        'movimientos_registrados': movimientos.count(),
+        'ingresos_capturados': ingresos,
+        'egresos_capturados': egresos,
+        'resultado_neto_capturado': neto,
+        'conceptos_recurrentes_totales': total_recurrentes,
+        'conceptos_recurrentes_capturados': max(total_recurrentes - total_faltantes, 0),
+        'conceptos_recurrentes_faltantes': total_faltantes,
+        'faltantes_recurrentes': faltantes_detalle,
+        'puede_cerrar_dia': bool(
+            reporte.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO
+            and reporte.fecha_contable <= _dia_contable_actual()
+            and _usuario_puede_cerrar_dia(usuario)
+        ),
+    }
 
 
 # 1) Para qué sirve: obtener una tasa de cambio válida buscando varias claves configurables.
@@ -191,8 +301,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         - Lectura (GET): solo autenticación.
         - Escritura (POST/PATCH/DELETE): requiere estar DENTRO del horario de operación.
         - Reapertura: exclusivo para ADMINISTRADOR.
-        - Cierre: puede ejecutarlo cualquier usuario autenticado (la validación
-          de rol se delega a las reglas de negocio del frontend y a los roles).
+                - Cierre: exclusivo para CONTADOR, GERENTE, ADMINISTRADOR o superusuario.
     """
 
     def get_permissions(self):
@@ -273,6 +382,89 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         return respuesta_estandar(
             data=ReporteDiarioSerializer(reporte, context={'request': request}).data,
             mensaje="Reporte del día contable creado automáticamente." if creado else "Reporte del día contable obtenido."
+        )
+
+    @action(detail=False, methods=['get'], url_path='resumen-actual')
+    def resumen_actual(self, request):
+        sucursal_id = request.query_params.get('sucursal_id') or getattr(request.user, 'sucursal_id', None)
+        if not sucursal_id:
+            return respuesta_estandar(
+                mensaje="El parámetro 'sucursal_id' es obligatorio.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            fecha_contable = _parsear_fecha_contable(request.query_params.get('fecha_contable'))
+        except ValueError as error:
+            return respuesta_estandar(
+                mensaje=str(error),
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        fecha_objetivo = fecha_contable or _dia_contable_actual()
+        if fecha_objetivo > _dia_contable_actual():
+            return respuesta_estandar(
+                mensaje="No se permite consultar resumen en fechas contables futuras.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        reporte, _ = _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_objetivo)
+        resumen = _construir_resumen_rapido_reporte(reporte, request.user)
+        return respuesta_estandar(data=resumen, mensaje="Resumen del día contable obtenido.")
+
+    @action(detail=False, methods=['post'], url_path='cerrar-actual')
+    def cerrar_actual(self, request):
+        if not _usuario_puede_cerrar_dia(request.user):
+            return respuesta_estandar(
+                mensaje="No tienes permisos para ejecutar el cierre de día.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
+
+        sucursal_id = request.data.get('sucursal_id') or getattr(request.user, 'sucursal_id', None)
+        if not sucursal_id:
+            return respuesta_estandar(
+                mensaje="El campo 'sucursal_id' es obligatorio.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            fecha_contable = _parsear_fecha_contable(request.data.get('fecha_contable'))
+        except ValueError as error:
+            return respuesta_estandar(
+                mensaje=str(error),
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        fecha_objetivo = fecha_contable or _dia_contable_actual()
+        if fecha_objetivo > _dia_contable_actual():
+            return respuesta_estandar(
+                mensaje="No se permite cerrar fechas contables futuras.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
+        with transaction.atomic():
+            reporte, _ = _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_objetivo)
+            reporte = ReporteDiario.todos.select_for_update().get(pk=reporte.pk)
+
+            if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
+                return respuesta_estandar(
+                    mensaje="El reporte ya está cerrado.",
+                    estado="error",
+                    codigo=status.HTTP_400_BAD_REQUEST
+                )
+
+            reporte = _cerrar_reporte_diario(reporte, request.user)
+
+        return respuesta_estandar(
+            data=ReporteDiarioSerializer(reporte, context={'request': request}).data,
+            mensaje=f"Reporte del día {reporte.fecha_contable} cerrado correctamente."
         )
 
     @action(detail=False, methods=['get'], url_path='calendario-mensual')
@@ -454,36 +646,19 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         Usa transaction.atomic + select_for_update para evitar condiciones de carrera.
         El cierre automático lo ejecuta la tarea Celery `cerrar_dia_contable`.
         """
+        if not _usuario_puede_cerrar_dia(request.user):
+            return respuesta_estandar(
+                mensaje="No tienes permisos para ejecutar el cierre de día.",
+                estado="error",
+                codigo=status.HTTP_403_FORBIDDEN
+            )
+
         with transaction.atomic():
             reporte = ReporteDiario.todos.select_for_update().get(pk=pk)
             if reporte.estado_reporte == ReporteDiario.EstadoReporte.CERRADO:
                 return respuesta_estandar(mensaje="El reporte ya está cerrado.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
-            from django.db.models import Sum
-            movimientos = reporte.movimientos.filter(eliminado_en__isnull=True)
-            ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
-            egresos  = movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'] or 0
-            neto = ingresos - egresos
-
-            # Snapshot del tipo de cambio al momento del cierre
-            try:
-                tasa_usd = _obtener_tasa_cambio_por_claves(['TASA_CAMBIO_DOLARES', 'TIPO_CAMBIO_USD'])
-                tasa_eur = _obtener_tasa_cambio_por_claves(['TIPO_CAMBIO_EUR'])
-                if tasa_usd is not None:
-                    reporte.tipo_cambio_usd_snapshot = tasa_usd
-                if tasa_eur is not None:
-                    reporte.tipo_cambio_eur_snapshot = tasa_eur
-            except Exception:
-                pass
-
-            reporte.total_ingresos     = ingresos
-            reporte.total_egresos      = egresos
-            reporte.resultado_neto     = neto
-            reporte.saldo_arrastre_fin = reporte.saldo_arrastre_inicio + neto
-            reporte.estado_reporte     = ReporteDiario.EstadoReporte.CERRADO
-            reporte.cerrado_en         = timezone.now()
-            reporte.cerrado_por        = request.user
-            reporte.save()
+            reporte = _cerrar_reporte_diario(reporte, request.user)
 
         return respuesta_estandar(data=ReporteDiarioSerializer(reporte, context={'request': request}).data, mensaje=f"Reporte del día {reporte.fecha_contable} cerrado correctamente.")
 

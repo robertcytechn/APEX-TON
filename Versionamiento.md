@@ -1,6 +1,11 @@
-Version del sistema: 2.6.5
+Version del sistema: 2.7.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-10
+- Version: 2.7.0
+- Autor: Cy tamayo
+- Descripcion: Se incorporo un resumen rapido del dia contable para CONTADOR y GERENTE en dashboard y captura operativa, incluyendo avance de movimientos, ingresos, egresos, neto y conceptos recurrentes faltantes; ademas se agrego el boton rojo de Cierre de dia para bloquear completamente el reporte diario del casino actual y se habilitaron endpoints backend dedicados para resumen-actual y cerrar-actual con control de permisos por rol.
 
 - Fecha: 2026-04-09
 - Version: 2.6.5
