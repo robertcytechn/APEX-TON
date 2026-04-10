@@ -158,8 +158,12 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-STATIC_URL = 'static/'
-MEDIA_URL = '/media/'
+# Prefijo de subcarpeta para despliegue conjunto con frontend.
+SUBCARPETA_BASE_APEX = '/apex'
+FORCE_SCRIPT_NAME = SUBCARPETA_BASE_APEX
+
+STATIC_URL = f'{SUBCARPETA_BASE_APEX}/static/'
+MEDIA_URL = f'{SUBCARPETA_BASE_APEX}/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # ── Celery ──────────────────────────────────────────────────────────────────

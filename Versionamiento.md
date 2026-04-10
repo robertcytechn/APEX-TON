@@ -1,6 +1,26 @@
-Version del sistema: 2.5.1
+Version del sistema: 2.5.5
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-09
+- Version: 2.5.5
+- Autor: Cy tamayo
+- Descripcion: Se alineo el backend Django al despliegue en subcarpeta configurando FORCE_SCRIPT_NAME en '/apex' y ajustando STATIC_URL y MEDIA_URL para que sirvan recursos bajo la misma base de dominio.
+
+- Fecha: 2026-04-09
+- Version: 2.5.4
+- Autor: Cy tamayo
+- Descripcion: Se configuro el frontend para despliegue en subruta agregando base '/apex/' en Vite y el uso de BASE_URL en Vue Router para compatibilidad con proyectos hermanos o estructuras por carpetas.
+
+- Fecha: 2026-04-09
+- Version: 2.5.3
+- Autor: Cy tamayo
+- Descripcion: Se aplico la misma restriccion por rol al selector de casino en reportes; CONTADOR y GERENTE ya no pueden ver ni usar ese filtro y solo consultan su sucursal asignada, mientras DIRECTOR y ADMINISTRADOR/SUPERUSUARIO mantienen el control completo del filtro en Estado de Resultados, Reporte Diario y Dias Contables.
+
+- Fecha: 2026-04-09
+- Version: 2.5.2
+- Autor: Cy tamayo
+- Descripcion: Se ajusto la visibilidad por rol en reportes para que CONTADOR y GERENTE no vean filtros de fecha ni botones especiales como conversion a USD; esos controles quedan disponibles solo para DIRECTOR y ADMINISTRADOR/SUPERUSUARIO, mostrando en su lugar texto informativo con fecha o mes en curso en Estado de Resultados, Reporte Diario y Dias Contables.
 
 - Fecha: 2026-04-02
 - Version: 2.5.1
