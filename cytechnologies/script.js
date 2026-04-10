@@ -2,35 +2,86 @@ const iniciarEscenaEntrada = () => {
   const escena = document.getElementById('escena-entrada');
 
   if (!escena) {
-    return;
+    return Promise.resolve();
   }
 
   const prefiereReducirMovimiento = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   if (prefiereReducirMovimiento) {
     escena.remove();
-    return;
+    return Promise.resolve();
   }
 
-  let escenaCerrada = false;
+  return new Promise((resolverEscena) => {
+    let escenaCerrada = false;
+    let cargaCompleta = document.readyState === 'complete';
+    let tiempoMinimoCumplido = false;
+    let cierreSolicitado = false;
 
-  const cerrarEscena = () => {
-    if (escenaCerrada) {
-      return;
-    }
+    const cerrarEscena = () => {
+      if (escenaCerrada) {
+        return;
+      }
 
-    escenaCerrada = true;
-    escena.classList.add('escena-entrada--oculta');
-    document.body.classList.remove('escena-activa');
+      escenaCerrada = true;
+      escena.classList.add('escena-entrada--oculta');
+      document.body.classList.remove('escena-activa');
+
+      window.setTimeout(() => {
+        escena.remove();
+        resolverEscena();
+      }, 980);
+    };
+
+    const evaluarCierre = () => {
+      if (!cargaCompleta) {
+        return;
+      }
+
+      if (!tiempoMinimoCumplido && !cierreSolicitado) {
+        return;
+      }
+
+      cerrarEscena();
+    };
+
+    document.body.classList.add('escena-activa');
 
     window.setTimeout(() => {
-      escena.remove();
-    }, 760);
-  };
+      tiempoMinimoCumplido = true;
+      evaluarCierre();
+    }, 2200);
 
-  document.body.classList.add('escena-activa');
-  window.setTimeout(cerrarEscena, 2200);
-  escena.addEventListener('click', cerrarEscena, { once: true });
+    if (!cargaCompleta) {
+      window.addEventListener(
+        'load',
+        () => {
+          cargaCompleta = true;
+          evaluarCierre();
+        },
+        { once: true }
+      );
+    } else {
+      evaluarCierre();
+    }
+
+    escena.addEventListener('click', () => {
+      cierreSolicitado = true;
+      evaluarCierre();
+    });
+  });
+};
+
+const iniciarExperienciaPrincipal = () => {
+  document.body.classList.remove('cargando-inicial');
+  document.body.classList.add('contenido-visible');
+
+  window.setTimeout(() => {
+    iniciarAnimacionesEntrada();
+    iniciarContadores();
+    iniciarEfectoHero();
+    colocarAnioActual();
+  }, 120);
 };
 
 const iniciarAnimacionesEntrada = () => {
@@ -162,9 +213,7 @@ const colocarAnioActual = () => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  iniciarEscenaEntrada();
-  iniciarAnimacionesEntrada();
-  iniciarContadores();
-  iniciarEfectoHero();
-  colocarAnioActual();
+  iniciarEscenaEntrada().then(() => {
+    iniciarExperienciaPrincipal();
+  });
 });

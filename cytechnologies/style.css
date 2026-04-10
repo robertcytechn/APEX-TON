@@ -41,6 +41,10 @@ body.escena-activa {
   overflow: hidden;
 }
 
+body.cargando-inicial main * {
+  animation-play-state: paused !important;
+}
+
 .escena-entrada {
   position: fixed;
   inset: 0;
@@ -53,7 +57,9 @@ body.escena-activa {
     linear-gradient(165deg, #040a14 0%, #0a1426 45%, #07101e 100%);
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.7s ease, visibility 0.7s ease;
+  transform: scale(1);
+  filter: blur(0);
+  transition: opacity 0.9s ease, visibility 0.9s ease, transform 0.9s ease, filter 0.9s ease;
 }
 
 body.escena-activa .escena-entrada {
@@ -63,6 +69,9 @@ body.escena-activa .escena-entrada {
 .escena-entrada--oculta {
   opacity: 0;
   visibility: hidden;
+  transform: scale(1.03);
+  filter: blur(6px);
+  pointer-events: none;
 }
 
 .escena-entrada__contenido {
@@ -113,8 +122,18 @@ body.escena-activa .escena-entrada {
   animation: latidoEscena 2s ease-in-out infinite;
 }
 
+.escena-entrada__eslogan {
+  margin-top: 0.75rem;
+  font-family: "Sora", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #d8e9ff;
+}
+
 .escena-entrada__titulo {
-  margin-top: 0.8rem;
+  margin-top: 0.5rem;
   font-family: "Sora", sans-serif;
   font-size: clamp(1.35rem, 4vw, 1.95rem);
   font-weight: 700;
@@ -270,6 +289,33 @@ a {
   z-index: 20;
 }
 
+.encabezado-principal,
+main,
+.pie-pagina {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  transition: opacity 0.92s cubic-bezier(0.22, 1, 0.36, 1), transform 0.92s cubic-bezier(0.22, 1, 0.36, 1), filter 0.92s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+body.cargando-inicial .encabezado-principal,
+body.cargando-inicial main,
+body.cargando-inicial .pie-pagina {
+  opacity: 0;
+  transform: translateY(24px) scale(0.992);
+  filter: blur(8px);
+  pointer-events: none;
+}
+
+body.contenido-visible .encabezado-principal,
+body.contenido-visible main,
+body.contenido-visible .pie-pagina {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+  transition-delay: 120ms;
+}
+
 .marca {
   display: inline-flex;
   align-items: center;
@@ -342,6 +388,17 @@ main {
   font-size: clamp(2rem, 8vw, 3.45rem);
   line-height: 1.08;
   letter-spacing: -0.03em;
+}
+
+.hero__eslogan {
+  margin-top: 0.72rem;
+  font-family: "Sora", sans-serif;
+  font-size: clamp(1.15rem, 4.6vw, 1.8rem);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #deedff;
+  text-shadow: 0 0 16px rgba(146, 186, 250, 0.42);
 }
 
 .hero__descripcion {

@@ -1,6 +1,16 @@
-Version del sistema: 2.6.3
+Version del sistema: 2.6.5
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-09
+- Version: 2.6.5
+- Autor: Cy tamayo
+- Descripcion: Se reforzo la identidad de marca en la landing de Cy Technologies incorporando el eslogan oficial "Bienvenido al futuro" en metadatos, escena de entrada y hero principal para incrementar impacto comunicativo.
+
+- Fecha: 2026-04-09
+- Version: 2.6.4
+- Autor: Cy tamayo
+- Descripcion: Se mejoro la transicion entre la escena de carga y la pagina real en la landing de Cy Technologies, aplicando disolucion suave, entrada progresiva del contenido y bloqueo temporal de efectos hasta finalizar la carga visual.
 
 - Fecha: 2026-04-09
 - Version: 2.6.3
