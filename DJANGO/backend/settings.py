@@ -158,7 +158,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
-# Prefijo de subcarpeta para despliegue conjunto con frontend.
+# Prefijo de subcarpeta para despliegue conjunto con frontend. Si se va a desplegar en la raíz, dejar vacío ''.
 SUBCARPETA_BASE_APEX = '/apex'
 FORCE_SCRIPT_NAME = SUBCARPETA_BASE_APEX
 
