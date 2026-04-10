@@ -1,6 +1,26 @@
-Version del sistema: 2.5.5
+Version del sistema: 2.6.3
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-09
+- Version: 2.6.3
+- Autor: Cy tamayo
+- Descripcion: Se amplio la seccion de tecnologias en la landing institucional de Cy Technologies agregando mas logotipos y capacidades visibles (TypeScript, JavaScript, Node.js, PostgreSQL, Docker, Kubernetes, AWS, Azure, Flutter, Kotlin y Git/GitHub) para fortalecer el posicionamiento de servicios.
+
+- Fecha: 2026-04-09
+- Version: 2.6.2
+- Autor: Cy tamayo
+- Descripcion: Se agrego una escena de entrada animada en la landing de Cy Technologies y una seccion final profesional con logotipos de tecnologias (Android, C#, .NET, Python, Vue.js, Django, MySQL y APIs), manteniendo el estilo corporativo dinamico de la pagina.
+
+- Fecha: 2026-04-09
+- Version: 2.6.1
+- Autor: Cy tamayo
+- Descripcion: Se actualizo la landing institucional de Cy Technologies con mayor dinamismo visual (particulas ambientales, orbita SVG, brillo interactivo y cinta animada), ampliacion de textos y portafolio a medida para software web, escritorio y Android, eliminando botones de contacto para una presentacion informativa.
+
+- Fecha: 2026-04-09
+- Version: 2.6.0
+- Autor: Cy tamayo
+- Descripcion: Se creo una pagina de presentacion institucional en la carpeta cytechnologies con enfoque informativo para Cy Technologies, incluyendo diseno profesional movil primero, estilos CSS dinamicos, componentes visuales SVG y animaciones de interfaz.
 
 - Fecha: 2026-04-09
 - Version: 2.5.5
