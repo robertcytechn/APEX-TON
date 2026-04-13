@@ -1,6 +1,11 @@
-Version del sistema: 2.7.0
+Version del sistema: 2.8.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-13
+- Version: 2.8.0
+- Autor: Cy tamayo
+- Descripcion: Se creo la nueva pestaña de Estadisticas exclusiva para DIRECTOR y ADMINISTRADOR, con panel analitico profesional y filtros avanzados por dia, rango de fechas, categoria, casino y tipo de movimiento; incluye KPIs ejecutivos, comparativo contra periodo anterior, graficas de tendencia/distribucion/rankings, tablas detalladas y nuevo endpoint backend de analitica operativa con control estricto de permisos.
 
 - Fecha: 2026-04-10
 - Version: 2.7.0
@@ -88,6 +93,22 @@ Version del sistema: 2.7.0
 - Descripcion: Se normalizo el campo padre de rubros contables a un catalogo dinamico con tabla propia, migracion de datos conservando relaciones existentes, nuevos endpoints CRUD de padres y ajuste de serializers/views para operar padres por id o clave sin perder compatibilidad de consumo.
 
 ## Cambios Menores
+
+- Fecha: 2026-04-13
+- Autor: Cy tamayo
+- Descripcion: Se mejoro la tabla de conceptos en Catalogo Operativo para mostrar el rubro contable con su padre en formato "Nombre rubro - Nombre padre"; adicionalmente se expuso esta informacion combinada desde el serializer de conceptos.
+
+- Fecha: 2026-04-13
+- Autor: Cy tamayo
+- Descripcion: Se corrigio el selector de rubro contable en alta/edicion de conceptos para mostrar etiqueta legible en formato "Nombre rubro - Nombre padre", evitando que se visualice el ID del padre.
+
+- Fecha: 2026-04-10
+- Autor: Cy tamayo
+- Descripcion: Se endurecio el endpoint de cierre de dia contable para exigir fecha_contable explicita y se agregaron pruebas automatizadas de API que validan cierre puntual por fecha sin afectar otros dias abiertos.
+
+- Fecha: 2026-04-10
+- Autor: Cy tamayo
+- Descripcion: Se retiro el panel de resumen del dia contable en captura operativa para centralizarlo solo en dashboard, y se reforzo el flujo de cierre para confirmar y enviar explicitamente la fecha contable que se cierra sin afectar otros dias abiertos.
 
 - Fecha: 2026-04-02
 - Autor: Cy tamayo

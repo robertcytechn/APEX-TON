@@ -432,8 +432,16 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 codigo=status.HTTP_400_BAD_REQUEST
             )
 
+        fecha_contable_cruda = request.data.get('fecha_contable')
+        if fecha_contable_cruda in (None, ''):
+            return respuesta_estandar(
+                mensaje="El campo 'fecha_contable' es obligatorio para cerrar un día contable específico.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST
+            )
+
         try:
-            fecha_contable = _parsear_fecha_contable(request.data.get('fecha_contable'))
+            fecha_contable = _parsear_fecha_contable(fecha_contable_cruda)
         except ValueError as error:
             return respuesta_estandar(
                 mensaje=str(error),
@@ -441,7 +449,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 codigo=status.HTTP_400_BAD_REQUEST
             )
 
-        fecha_objetivo = fecha_contable or _dia_contable_actual()
+        fecha_objetivo = fecha_contable
         if fecha_objetivo > _dia_contable_actual():
             return respuesta_estandar(
                 mensaje="No se permite cerrar fechas contables futuras.",
