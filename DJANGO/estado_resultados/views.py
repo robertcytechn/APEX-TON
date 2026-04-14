@@ -46,6 +46,74 @@ def _a_flotante(valor):
         return 0.0
 
 
+# 1) Para qué sirve: normalizar cadenas de rubros para validaciones semánticas.
+# 2) Cómo funciona: recorta, mayusculiza y unifica separadores a guion bajo.
+# 3) Qué hace: facilita identificar patrones como SIN_GRUPO o NO_CONTABLE.
+# 4) Cómo editarla: agrega más sustituciones si surgen nuevos formatos de catálogos.
+def _normalizar_texto_rubro(valor):
+    return str(valor or '').strip().replace('-', '_').replace(' ', '_').upper()
+
+
+# 1) Para qué sirve: detectar rubros que no deben impactar estado de resultados.
+# 2) Cómo funciona: evalúa ausencia de rubro y marcadores semánticos de no contable.
+# 3) Qué hace: clasifica como no contable casos SIN_RUBRO, SIN_GRUPO o NO_CONTABLE.
+# 4) Cómo editarla: amplía patrones cuando se incorporen nuevas nomenclaturas.
+def _rubro_es_no_contable(rubro=None, rubro_id=None, rubro_tipo=None, rubro_padre_clave=None, rubro_padre_nombre=None):
+    if rubro is not None:
+        rubro_id = getattr(rubro, 'id', rubro_id)
+        rubro_tipo = getattr(rubro, 'tipo', rubro_tipo)
+        padre = getattr(rubro, 'padre', None)
+        rubro_padre_clave = getattr(padre, 'clave', rubro_padre_clave) if padre else rubro_padre_clave
+        rubro_padre_nombre = getattr(padre, 'nombre', rubro_padre_nombre) if padre else rubro_padre_nombre
+
+    identificador = _normalizar_texto_rubro(rubro_id)
+    tipo_rubro = _normalizar_texto_rubro(rubro_tipo)
+    padre_clave = _normalizar_texto_rubro(rubro_padre_clave)
+    padre_nombre = _normalizar_texto_rubro(rubro_padre_nombre)
+    huella_padre = f"{padre_clave} {padre_nombre}"
+
+    if not identificador:
+        return True
+
+    if identificador in {'SIN_RUBRO_CONTABLE', 'SINRUBROCONTABLE', 'SIN_RUBRO', 'SINRUBRO'}:
+        return True
+
+    if tipo_rubro in {'NO_CONTABLE', 'NOCONTABLE'}:
+        return True
+
+    if 'NO_CONTABLE' in huella_padre or 'NOCONTABLE' in huella_padre:
+        return True
+
+    if 'SIN_GRUPO' in huella_padre or 'SINGRUPO' in huella_padre:
+        return True
+
+    return False
+
+
+# 1) Para qué sirve: decidir si un rubro impacta los totales contables del reporte.
+# 2) Cómo funciona: combina bandera del padre con clasificación semántica contable.
+# 3) Qué hace: excluye no contables aunque el flag histórico venga en true.
+# 4) Cómo editarla: centraliza reglas para mantener consistencia entre tiempo real e histórico.
+def _rubro_debe_considerarse_en_estado_resultados(
+    rubro=None,
+    rubro_id=None,
+    rubro_tipo=None,
+    rubro_padre_clave=None,
+    rubro_padre_nombre=None,
+    considerar_padre=True,
+):
+    if not bool(considerar_padre):
+        return False
+
+    return not _rubro_es_no_contable(
+        rubro=rubro,
+        rubro_id=rubro_id,
+        rubro_tipo=rubro_tipo,
+        rubro_padre_clave=rubro_padre_clave,
+        rubro_padre_nombre=rubro_padre_nombre,
+    )
+
+
 # 1) Para qué sirve: parsear fechas ISO recibidas por query string.
 # 2) Cómo funciona: usa parse_date de Django y valida vacíos/formato.
 # 3) Qué hace: unifica entrada de filtros fecha, fecha_inicio y fecha_fin.
@@ -111,7 +179,13 @@ class EstadoResultadosAPIView(APIView):
                 "rubro_tipo": rubro['tipo'],
                 "rubro_padre": rubro.get('padre__nombre') or 'SIN GRUPO',
                 "rubro_padre_clave": rubro.get('padre__clave'),
-                "rubro_padre_considerar_en_estado_resultados": bool(rubro.get('padre__considerar_en_estado_resultados', True)),
+                "rubro_padre_considerar_en_estado_resultados": _rubro_debe_considerarse_en_estado_resultados(
+                    rubro_id=rubro['id'],
+                    rubro_tipo=rubro.get('tipo'),
+                    rubro_padre_clave=rubro.get('padre__clave'),
+                    rubro_padre_nombre=rubro.get('padre__nombre'),
+                    considerar_padre=rubro.get('padre__considerar_en_estado_resultados', True),
+                ),
                 "total_ingresos": 0.0,
                 "total_egresos": 0.0,
                 "resultado_neto": 0.0,
@@ -168,7 +242,7 @@ class EstadoResultadosAPIView(APIView):
                             'rubro_tipo': 'NO_CONTABLE',
                             'rubro_padre': 'SIN GRUPO',
                             'rubro_padre_clave': None,
-                            'rubro_padre_considerar_en_estado_resultados': True,
+                            'rubro_padre_considerar_en_estado_resultados': False,
                             'total_ingresos': float((totales or {}).get('ingresos') or 0),
                             'total_egresos': float((totales or {}).get('egresos') or 0),
                             'resultado_neto': float((totales or {}).get('neto') or 0),
@@ -190,7 +264,13 @@ class EstadoResultadosAPIView(APIView):
                         "rubro_tipo": rubro.get('rubro_tipo') or 'NO_CONTABLE',
                         "rubro_padre": rubro.get('rubro_padre') or 'SIN GRUPO',
                         "rubro_padre_clave": rubro.get('rubro_padre_clave'),
-                        "rubro_padre_considerar_en_estado_resultados": bool(rubro.get('rubro_padre_considerar_en_estado_resultados', True)),
+                        "rubro_padre_considerar_en_estado_resultados": _rubro_debe_considerarse_en_estado_resultados(
+                            rubro_id=rubro_id,
+                            rubro_tipo=rubro.get('rubro_tipo'),
+                            rubro_padre_clave=rubro.get('rubro_padre_clave'),
+                            rubro_padre_nombre=rubro.get('rubro_padre'),
+                            considerar_padre=rubro.get('rubro_padre_considerar_en_estado_resultados', True),
+                        ),
                         "total_ingresos": float(rubro.get('total_ingresos') or 0),
                         "total_egresos": float(rubro.get('total_egresos') or 0),
                         "resultado_neto": float(rubro.get('resultado_neto') or 0),
@@ -201,11 +281,11 @@ class EstadoResultadosAPIView(APIView):
 
                 rubros_considerados = [
                     rubro_item for rubro_item in rubros_lista
-                    if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+                    if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', False))
                 ]
                 rubros_no_considerados = [
                     rubro_item for rubro_item in rubros_lista
-                    if not bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+                    if not bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', False))
                 ]
                 total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
                 total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)
@@ -282,7 +362,14 @@ class EstadoResultadosAPIView(APIView):
             rubro_tipo = rubro.tipo if rubro else 'NO_CONTABLE'
             rubro_padre = rubro.padre.nombre if rubro and rubro.padre else 'SIN GRUPO'
             rubro_padre_clave = rubro.padre.clave if rubro and rubro.padre else None
-            rubro_padre_considerar = bool(rubro.padre.considerar_en_estado_resultados) if rubro and rubro.padre else True
+            rubro_padre_considerar = _rubro_debe_considerarse_en_estado_resultados(
+                rubro=rubro,
+                rubro_id=rubro_id,
+                rubro_tipo=rubro_tipo,
+                rubro_padre_clave=rubro_padre_clave,
+                rubro_padre_nombre=rubro_padre,
+                considerar_padre=(bool(rubro.padre.considerar_en_estado_resultados) if rubro and rubro.padre else False),
+            )
 
             if cat.id not in por_categoria:
                 por_categoria[cat.id] = {"categoria_id": cat.id, "categoria_nombre": cat.nombre, "categoria_clave": cat.clave, "tipo": cat.tipo, "total_ingresos": 0, "total_egresos": 0, "resultado_neto": 0}
@@ -320,11 +407,11 @@ class EstadoResultadosAPIView(APIView):
 
         rubros_considerados = [
             rubro_item for rubro_item in rubros_lista
-            if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+            if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', False))
         ]
         rubros_no_considerados = [
             rubro_item for rubro_item in rubros_lista
-            if not bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+            if not bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', False))
         ]
         total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
         total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)

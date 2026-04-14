@@ -8,6 +8,7 @@ from rest_framework.test import APITestCase
 
 from categoria_operativa.models import CategoriaOperativa, Concepto
 from configuraciones_globales.models import PadreRubroContable, RubroContable
+from libro_estado_resultados.models import LibroEstadoResultados
 from reportes_diarios.models import MovimientoDiario, ReporteDiario
 from sucursales.models import Sucursal
 from usuarios.models import Rol, Usuario, UsuarioRol
@@ -109,3 +110,161 @@ class EstadisticasOperativasAPIViewTests(APITestCase):
 		self.assertEqual(float(resumen.get('total_ingresos') or 0), 1500.0)
 		self.assertTrue(isinstance(series.get('por_dia'), list))
 		self.assertTrue(isinstance(data.get('catalogos', {}).get('sucursales'), list))
+
+
+# 1) Para qué sirve: proteger cálculo contable de estado de resultados ante rubros no válidos.
+# 2) Cómo funciona: valida modo tiempo real y modo snapshot cerrado con datos no contables.
+# 3) Qué hace: asegura que SIN_RUBRO y NO_CONTABLE no alteren ingresos/egresos/neto.
+# 4) Cómo editarla: agrega nuevos escenarios cuando se amplíe taxonomía de rubros.
+class EstadoResultadosContablesExclusionTests(APITestCase):
+	def setUp(self):
+		self.sucursal = Sucursal.objects.create(nombre='Sucursal Test Estado Resultados', clave='SUC-ER-01')
+
+		self.padre_contable = PadreRubroContable.objects.create(
+			clave='INGRESOS_OPERATIVOS_CONTABLES',
+			nombre='Ingresos Operativos Contables',
+			considerar_en_estado_resultados=True,
+		)
+		self.padre_no_contable = PadreRubroContable.objects.create(
+			clave='SIN_GRUPO_NO_CONTABLE',
+			nombre='Sin Grupo No Contable',
+			considerar_en_estado_resultados=True,
+		)
+
+		self.rubro_contable = RubroContable.objects.create(
+			nombre='Ventas Contables',
+			padre=self.padre_contable,
+			tipo='INGRESO',
+		)
+		self.rubro_no_contable = RubroContable.objects.create(
+			nombre='Registro No Contable',
+			padre=self.padre_no_contable,
+			tipo='INGRESO',
+		)
+
+		self.categoria = CategoriaOperativa.objects.create(
+			nombre='ADMIN TEST CONTABLE',
+			clave='ADMIN_TEST_CONTABLE',
+			tipo='MIXTO',
+			orden=1,
+		)
+
+		self.concepto_contable = Concepto.objects.create(
+			categoria=self.categoria,
+			rubro_contable=self.rubro_contable,
+			nombre='INGRESO CONTABLE TEST',
+			clave='INGRESO_CONTABLE_TEST',
+			tipo='INGRESO',
+		)
+		self.concepto_sin_rubro = Concepto.objects.create(
+			categoria=self.categoria,
+			rubro_contable=None,
+			nombre='INGRESO SIN RUBRO TEST',
+			clave='INGRESO_SIN_RUBRO_TEST',
+			tipo='INGRESO',
+		)
+		self.concepto_no_contable = Concepto.objects.create(
+			categoria=self.categoria,
+			rubro_contable=self.rubro_no_contable,
+			nombre='INGRESO NO CONTABLE TEST',
+			clave='INGRESO_NO_CONTABLE_TEST',
+			tipo='INGRESO',
+		)
+
+		self.usuario_admin = Usuario.objects.create_user(
+			username='admin_estado_resultados',
+			password='password_seguro_123',
+			nombre='Admin Estado Resultados',
+			sucursal=self.sucursal,
+		)
+
+		self.reporte = ReporteDiario.objects.create(
+			sucursal=self.sucursal,
+			fecha_contable=timezone.localdate() - timedelta(days=1),
+			estado_reporte=ReporteDiario.EstadoReporte.ABIERTO,
+		)
+		MovimientoDiario.objects.create(reporte=self.reporte, concepto=self.concepto_contable, monto=1000)
+		MovimientoDiario.objects.create(reporte=self.reporte, concepto=self.concepto_sin_rubro, monto=900)
+		MovimientoDiario.objects.create(reporte=self.reporte, concepto=self.concepto_no_contable, monto=800)
+
+		self.url_estado_resultados = reverse('estado-resultados')
+		if settings.FORCE_SCRIPT_NAME and self.url_estado_resultados.startswith(settings.FORCE_SCRIPT_NAME):
+			self.url_estado_resultados = self.url_estado_resultados[len(settings.FORCE_SCRIPT_NAME):] or '/'
+
+	def test_tiempo_real_excluye_conceptos_sin_rubro_y_no_contables(self):
+		self.client.force_authenticate(user=self.usuario_admin)
+
+		respuesta = self.client.get(
+			self.url_estado_resultados,
+			{
+				'sucursal_id': self.sucursal.id,
+				'mes': self.reporte.fecha_contable.month,
+				'anio': self.reporte.fecha_contable.year,
+			},
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+		self.assertEqual(respuesta.data.get('status'), 'success')
+
+		data = respuesta.data.get('data') or {}
+		self.assertEqual(float(data.get('total_ingresos') or 0), 1000.0)
+		self.assertEqual(float(data.get('total_ingresos_no_considerados') or 0), 1700.0)
+
+		por_rubro = data.get('por_rubro') or []
+		rubro_sin = next((item for item in por_rubro if str(item.get('rubro_id')) == 'SIN_RUBRO_CONTABLE'), None)
+		self.assertIsNotNone(rubro_sin)
+		self.assertFalse(bool(rubro_sin.get('rubro_padre_considerar_en_estado_resultados')))
+
+	def test_snapshot_historico_excluye_no_contables_legacy(self):
+		self.client.force_authenticate(user=self.usuario_admin)
+
+		libro = LibroEstadoResultados.objects.create(
+			sucursal=self.sucursal,
+			anio=self.reporte.fecha_contable.year,
+			mes=self.reporte.fecha_contable.month,
+			estado_mes=LibroEstadoResultados.EstadoMes.CERRADO,
+			tipo_cambio_usd_snapshot=17.5000,
+			tipo_cambio_eur_snapshot=18.9000,
+			saldo_arrastre_inicio=0,
+			desglose_por_rubro=[
+				{
+					'rubro_id': self.rubro_contable.id,
+					'rubro_nombre': self.rubro_contable.nombre,
+					'rubro_tipo': 'INGRESO',
+					'rubro_padre': self.padre_contable.nombre,
+					'rubro_padre_clave': self.padre_contable.clave,
+					'rubro_padre_considerar_en_estado_resultados': True,
+					'total_ingresos': 2200,
+					'total_egresos': 0,
+					'resultado_neto': 2200,
+				},
+				{
+					'rubro_id': 'SIN_RUBRO_CONTABLE',
+					'rubro_nombre': 'SIN RUBRO CONTABLE',
+					'rubro_tipo': 'NO_CONTABLE',
+					'rubro_padre': 'SIN GRUPO',
+					'rubro_padre_clave': None,
+					'rubro_padre_considerar_en_estado_resultados': True,
+					'total_ingresos': 500,
+					'total_egresos': 0,
+					'resultado_neto': 500,
+				},
+			],
+		)
+
+		respuesta = self.client.get(
+			self.url_estado_resultados,
+			{
+				'sucursal_id': self.sucursal.id,
+				'mes': libro.mes,
+				'anio': libro.anio,
+			},
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+		self.assertEqual(respuesta.data.get('status'), 'success')
+
+		data = respuesta.data.get('data') or {}
+		self.assertEqual(data.get('fuente'), 'snapshot_historico')
+		self.assertEqual(float(data.get('total_ingresos') or 0), 2200.0)
+		self.assertEqual(float(data.get('total_ingresos_no_considerados') or 0), 500.0)

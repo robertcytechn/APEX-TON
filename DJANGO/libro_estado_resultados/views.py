@@ -18,6 +18,74 @@ def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success"
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
 
 
+# 1) Para qué sirve: normalizar cadenas de rubro para validaciones contables.
+# 2) Cómo funciona: estandariza texto a mayúsculas con separadores uniformes.
+# 3) Qué hace: facilita detección de etiquetas no contables en claves/nombres.
+# 4) Cómo editarla: amplía sustituciones si surgen nuevos formatos en catálogo.
+def _normalizar_texto_rubro(valor):
+    return str(valor or '').strip().replace('-', '_').replace(' ', '_').upper()
+
+
+# 1) Para qué sirve: identificar rubros no contables en el cierre mensual.
+# 2) Cómo funciona: evalúa ausencia de rubro y patrones semánticos de exclusión.
+# 3) Qué hace: detecta SIN_RUBRO, SIN_GRUPO o NO_CONTABLE para no impactar totales.
+# 4) Cómo editarla: incorpora nuevas palabras clave si negocio agrega nomenclaturas.
+def _rubro_es_no_contable(rubro=None, rubro_id=None, rubro_tipo=None, rubro_padre_clave=None, rubro_padre_nombre=None):
+    if rubro is not None:
+        rubro_id = getattr(rubro, 'id', rubro_id)
+        rubro_tipo = getattr(rubro, 'tipo', rubro_tipo)
+        padre = getattr(rubro, 'padre', None)
+        rubro_padre_clave = getattr(padre, 'clave', rubro_padre_clave) if padre else rubro_padre_clave
+        rubro_padre_nombre = getattr(padre, 'nombre', rubro_padre_nombre) if padre else rubro_padre_nombre
+
+    identificador = _normalizar_texto_rubro(rubro_id)
+    tipo_rubro = _normalizar_texto_rubro(rubro_tipo)
+    padre_clave = _normalizar_texto_rubro(rubro_padre_clave)
+    padre_nombre = _normalizar_texto_rubro(rubro_padre_nombre)
+    huella_padre = f"{padre_clave} {padre_nombre}"
+
+    if not identificador:
+        return True
+
+    if identificador in {'SIN_RUBRO_CONTABLE', 'SINRUBROCONTABLE', 'SIN_RUBRO', 'SINRUBRO'}:
+        return True
+
+    if tipo_rubro in {'NO_CONTABLE', 'NOCONTABLE'}:
+        return True
+
+    if 'NO_CONTABLE' in huella_padre or 'NOCONTABLE' in huella_padre:
+        return True
+
+    if 'SIN_GRUPO' in huella_padre or 'SINGRUPO' in huella_padre:
+        return True
+
+    return False
+
+
+# 1) Para qué sirve: decidir si un rubro entra al total contable del mes.
+# 2) Cómo funciona: combina bandera del padre con clasificación no contable.
+# 3) Qué hace: evita que rubros no contables alteren total_ingresos/egresos/neto.
+# 4) Cómo editarla: mantén aquí la regla maestra para cierre mensual.
+def _rubro_debe_considerarse_en_estado_resultados(
+    rubro=None,
+    rubro_id=None,
+    rubro_tipo=None,
+    rubro_padre_clave=None,
+    rubro_padre_nombre=None,
+    considerar_padre=True,
+):
+    if not bool(considerar_padre):
+        return False
+
+    return not _rubro_es_no_contable(
+        rubro=rubro,
+        rubro_id=rubro_id,
+        rubro_tipo=rubro_tipo,
+        rubro_padre_clave=rubro_padre_clave,
+        rubro_padre_nombre=rubro_padre_nombre,
+    )
+
+
 # 1) Para qué sirve: administrar apertura, consulta y cierre del libro mensual por sucursal.
 # 2) Cómo funciona: expone CRUD controlado y acción cerrar_mes con agregación de movimientos.
 # 3) Qué hace: genera snapshot histórico inmutable del estado de resultados mensual.
@@ -103,7 +171,14 @@ class LibroEstadoResultadosViewSet(viewsets.ViewSet):
             rubro_tipo = rubro.tipo if rubro else 'NO_CONTABLE'
             rubro_padre = rubro.padre.nombre if rubro and rubro.padre else 'SIN GRUPO'
             rubro_padre_clave = rubro.padre.clave if rubro and rubro.padre else None
-            rubro_padre_considerar = bool(rubro.padre.considerar_en_estado_resultados) if rubro and rubro.padre else True
+            rubro_padre_considerar = _rubro_debe_considerarse_en_estado_resultados(
+                rubro=rubro,
+                rubro_id=rubro_id,
+                rubro_tipo=rubro_tipo,
+                rubro_padre_clave=rubro_padre_clave,
+                rubro_padre_nombre=rubro_padre,
+                considerar_padre=(bool(rubro.padre.considerar_en_estado_resultados) if rubro and rubro.padre else False),
+            )
 
             if rubro_id not in desglose:
                 desglose[rubro_id] = {
@@ -149,7 +224,7 @@ class LibroEstadoResultadosViewSet(viewsets.ViewSet):
 
         rubros_considerados = [
             rubro_item for rubro_item in rubros_ordenados
-            if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', True))
+            if bool(rubro_item.get('rubro_padre_considerar_en_estado_resultados', False))
         ]
         total_ingresos_considerados = sum(float(rubro_item.get('total_ingresos') or 0) for rubro_item in rubros_considerados)
         total_egresos_considerados = sum(float(rubro_item.get('total_egresos') or 0) for rubro_item in rubros_considerados)

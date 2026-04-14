@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
+from categoria_operativa.models import Concepto
 from core.permisos import VentanaHorariaPermiso, EsAdministrador
 from .models import ReporteDiario, MovimientoDiario
 from .serializers import (
@@ -784,6 +785,11 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
         """
         Crea o actualiza automáticamente el movimiento del día contable para un concepto.
         Se usa para capturas por tabla con autoguardado en frontend.
+
+        Reglas de guardado:
+        - Si llega `movimiento_id`, actualiza ese movimiento puntual.
+        - Si la categoría del concepto tiene detalles parametrizados activos y NO llega `movimiento_id`, crea un movimiento nuevo.
+        - Si la categoría no tiene detalles parametrizados activos y NO llega `movimiento_id`, mantiene el comportamiento histórico de upsert por concepto.
         """
         sucursal_id = request.data.get('sucursal_id')
         concepto_id = request.data.get('concepto')
@@ -827,12 +833,55 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
             )
 
         with transaction.atomic():
-            movimiento_existente = MovimientoDiario.objects.filter(
-                reporte_id=reporte.id,
-                concepto_id=concepto_id
-            ).first()
-
             datos = _construir_datos_movimiento(request, reporte.id)
+            movimiento_id = request.data.get('movimiento_id')
+
+            # Campo de control de flujo para backend; no forma parte del serializer.
+            datos.pop('movimiento_id', None)
+
+            movimiento_existente = None
+
+            if movimiento_id not in (None, ''):
+                try:
+                    movimiento_id = int(movimiento_id)
+                except (TypeError, ValueError):
+                    return respuesta_estandar(
+                        mensaje="El campo 'movimiento_id' debe ser un entero válido.",
+                        estado="error",
+                        codigo=status.HTTP_400_BAD_REQUEST
+                    )
+
+                movimiento_existente = MovimientoDiario.objects.filter(
+                    id=movimiento_id,
+                    reporte_id=reporte.id,
+                    concepto_id=concepto_id,
+                ).first()
+
+                if movimiento_existente is None:
+                    return respuesta_estandar(
+                        mensaje="No se encontró el movimiento solicitado para actualizar en esta captura.",
+                        estado="error",
+                        codigo=status.HTTP_404_NOT_FOUND
+                    )
+            else:
+                concepto = Concepto.objects.filter(id=concepto_id).select_related('categoria').first()
+                if concepto is None:
+                    return respuesta_estandar(
+                        mensaje="El concepto enviado no existe.",
+                        estado="error",
+                        codigo=status.HTTP_400_BAD_REQUEST
+                    )
+
+                categoria_tiene_detalles_parametrizados = concepto.categoria.detalles_parametrizados.filter(
+                    estado='ACTIVO',
+                    eliminado_en__isnull=True,
+                ).exists()
+
+                if not categoria_tiene_detalles_parametrizados:
+                    movimiento_existente = MovimientoDiario.objects.filter(
+                        reporte_id=reporte.id,
+                        concepto_id=concepto_id
+                    ).first()
 
             if movimiento_existente:
                 serializador = MovimientoDiarioSerializer(movimiento_existente, data=datos, partial=True)

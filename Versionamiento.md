@@ -1,6 +1,21 @@
-Version del sistema: 2.8.0
+Version del sistema: 2.8.3
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-13
+- Version: 2.8.3
+- Autor: Cy tamayo
+- Descripcion: Se mejoro la captura operativa para permitir multiples registros del mismo concepto cuando la categoria tiene detalles parametrizados, habilitando guardado por fila con actualizacion puntual por movimiento; adicionalmente se agrego una alerta visual en Catalogo Operativo al seleccionar rubro no contable o sin rubro, indicando que no impactara el Estado de Resultados.
+
+- Fecha: 2026-04-13
+- Version: 2.8.2
+- Autor: Cy tamayo
+- Descripcion: Se corrigio la logica contable del Estado de Resultados para excluir de los totales cualquier concepto sin rubro contable o asociado a rubros no contables (por ejemplo sin grupo/no contable), tanto en calculo en tiempo real como en lectura/cierre historico mensual.
+
+- Fecha: 2026-04-13
+- Version: 2.8.1
+- Autor: Cy tamayo
+- Descripcion: Se agrego un comando backend para simular un ano completo de operacion del casino con reglas realistas (nomina quincenal, renta mensual, pagos bimestrales de IMSS e INFONAVIT, ingresos diarios y consumo de cocina), y se cargo el ano 2025 para la sucursal de pruebas con el usuario conta.
 
 - Fecha: 2026-04-13
 - Version: 2.8.0
@@ -93,6 +108,10 @@ Version del sistema: 2.8.0
 - Descripcion: Se normalizo el campo padre de rubros contables a un catalogo dinamico con tabla propia, migracion de datos conservando relaciones existentes, nuevos endpoints CRUD de padres y ajuste de serializers/views para operar padres por id o clave sin perder compatibilidad de consumo.
 
 ## Cambios Menores
+
+- Fecha: 2026-04-13
+- Autor: Cy tamayo
+- Descripcion: Se agrego en captura operativa el boton para eliminar filas de conceptos capturados, con confirmacion de seguridad, limpieza de estado local y eliminacion del movimiento persistido cuando ya existe en base de datos.
 
 - Fecha: 2026-04-13
 - Autor: Cy tamayo
