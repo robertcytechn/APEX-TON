@@ -151,6 +151,18 @@ Version del sistema: 2.16.0
 
 - Fecha: 2026-04-15
 - Autor: Cy tamayo
+- Descripcion: Se estandarizo la pantalla de mantenimiento con catalogo configurable de estados operativos (mantenimiento general, actualizacion de software, mantenimiento de infraestructura, migracion de datos y contingencia operativa), decoradores visuales por estado, barra de progreso ligada a la cuenta regresiva y eliminacion de botones de navegacion/notas administrativas.
+
+- Fecha: 2026-04-15
+- Autor: Cy tamayo
+- Descripcion: Se agrego temporizador de reactivacion en la pagina de mantenimiento, tomando fecha y hora exacta desde src/utils/estadoAplicacion.js para mostrar una cuenta regresiva en tiempo real hasta la reactivacion del sistema.
+
+- Fecha: 2026-04-15
+- Autor: Cy tamayo
+- Descripcion: Se agrego modo de mantenimiento configurable en frontend con pantalla dedicada (/mantenimiento) y control centralizado en src/utils/estadoAplicacion.js para alternar de forma rapida entre operacion normal y mantenimiento desde una sola bandera.
+
+- Fecha: 2026-04-15
+- Autor: Cy tamayo
 - Descripcion: Se realizo limpieza tecnica en frontend eliminando servicios mock huerfanos no referenciados (CountryService, CustomerService, NodeService, PhotoService y ProductService) y se robustecio el guard de ruteo operativo para evitar fallos de navegacion cuando falle la carga asincrona de categorias.
 
 - Fecha: 2026-04-15
