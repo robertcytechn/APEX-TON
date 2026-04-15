@@ -151,6 +151,14 @@ Version del sistema: 2.16.0
 
 - Fecha: 2026-04-15
 - Autor: Cy tamayo
+- Descripcion: Se actualizo la configuracion de correo Django para Google Workspace/Gmail (smtp.gmail.com), se agrego plantilla de clave de aplicacion en DJANGO/.env.example y se documento su uso para envio SMTP con cuenta institucional.
+
+- Fecha: 2026-04-15
+- Autor: Cy tamayo
+- Descripcion: Se preparo Django para envio de correos SMTP con configuracion por variables de entorno, carga automatica de DJANGO/.env y plantilla DJANGO/.env.example para activar el buzon robertot@gbentretenimiento.com en cuanto se reciba la clave.
+
+- Fecha: 2026-04-15
+- Autor: Cy tamayo
 - Descripcion: Se estandarizo la pantalla de mantenimiento con catalogo configurable de estados operativos (mantenimiento general, actualizacion de software, mantenimiento de infraestructura, migracion de datos y contingencia operativa), decoradores visuales por estado, barra de progreso ligada a la cuenta regresiva y eliminacion de botones de navegacion/notas administrativas.
 
 - Fecha: 2026-04-15

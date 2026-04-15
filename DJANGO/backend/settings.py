@@ -10,14 +10,36 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
+
 import pymysql
 pymysql.install_as_MySQLdb()
 import MySQLdb
 MySQLdb.version_info = (2, 2, 6, "final", 0)
 from pathlib import Path
 
+
+def _cargar_archivo_entorno(ruta_archivo):
+    """Carga variables clave=valor desde un archivo .env local."""
+    if not ruta_archivo.exists():
+        return
+
+    for linea in ruta_archivo.read_text(encoding='utf-8').splitlines():
+        linea_limpia = linea.strip()
+        if not linea_limpia or linea_limpia.startswith('#'):
+            continue
+        if '=' not in linea_limpia:
+            continue
+
+        clave, valor = linea_limpia.split('=', 1)
+        clave = clave.strip()
+        valor = valor.strip().strip('"').strip("'")
+        if clave:
+            os.environ.setdefault(clave, valor)
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+_cargar_archivo_entorno(BASE_DIR / '.env')
 
 
 # Quick-start development settings - unsuitable for production
@@ -29,7 +51,7 @@ SECRET_KEY = 'django-insecure-ndrl1!l22)rjr5+)4iv9n2ycu#)$q8+up1u+xkk#z-)0t@4=s!
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'http://cytechn.ddns.net', 'cytechn.ddns.net', '192.168.1.69']
 
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
@@ -180,3 +202,27 @@ CELERY_BEAT_SCHEDULER     = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # ── django-simple-history ───────────────────────────────────────────────────
 HISTORY_USER_MODEL = AUTH_USER_MODEL
+
+
+def _obtener_booleano_entorno(nombre_variable, valor_predeterminado):
+    """Convierte valores de entorno en booleanos de forma tolerante."""
+    valor = os.getenv(nombre_variable)
+    if valor is None:
+        return valor_predeterminado
+    return valor.strip().lower() in {'1', 'true', 't', 'si', 's', 'yes', 'y', 'on'}
+
+
+# ── Correo saliente (SMTP) ──────────────────────────────────────────────────
+# Configuracion preparada para robertot@gbentretenimiento.com.
+# Valor por defecto orientado a Google Workspace / Gmail SMTP.
+# Usar DJANGO_EMAIL_HOST_PASSWORD con contrasena de aplicacion.
+EMAIL_BACKEND = os.getenv('DJANGO_EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
+EMAIL_HOST = os.getenv('DJANGO_EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('DJANGO_EMAIL_PORT', '587'))
+EMAIL_USE_TLS = _obtener_booleano_entorno('DJANGO_EMAIL_USE_TLS', True)
+EMAIL_USE_SSL = _obtener_booleano_entorno('DJANGO_EMAIL_USE_SSL', False)
+EMAIL_HOST_USER = os.getenv('DJANGO_EMAIL_HOST_USER', 'robertot@gbentretenimiento.com')
+EMAIL_HOST_PASSWORD = os.getenv('DJANGO_EMAIL_HOST_PASSWORD', '')
+EMAIL_TIMEOUT = int(os.getenv('DJANGO_EMAIL_TIMEOUT', '20'))
+DEFAULT_FROM_EMAIL = os.getenv('DJANGO_DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+SERVER_EMAIL = os.getenv('DJANGO_SERVER_EMAIL', EMAIL_HOST_USER)
