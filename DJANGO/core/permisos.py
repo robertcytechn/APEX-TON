@@ -41,7 +41,13 @@ def sistema_dentro_de_horario():
         # Sin configuración: el sistema no restringe por horario
         return True, hora_apertura, hora_cierre
     ahora = timezone.localtime(timezone.now()).time()
-    dentro = hora_apertura <= ahora <= hora_cierre
+
+    # Soporta ventanas normales (ej. 08:00-20:00) y cruzadas (ej. 22:00-05:00).
+    if hora_apertura <= hora_cierre:
+        dentro = hora_apertura <= ahora <= hora_cierre
+    else:
+        dentro = ahora >= hora_apertura or ahora <= hora_cierre
+
     return dentro, hora_apertura, hora_cierre
 
 

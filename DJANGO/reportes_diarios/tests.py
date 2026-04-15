@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.conf import settings
 from django.urls import reverse
@@ -7,9 +8,45 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from categoria_operativa.models import CategoriaOperativa, Concepto, DetalleParametrizado
-from reportes_diarios.models import ReporteDiario
+from configuraciones_globales.models import ConfiguracionGlobal
+from reportes_diarios.models import ReporteDiario, MovimientoDiario
 from sucursales.models import Sucursal
-from usuarios.models import Usuario
+from usuarios.models import Usuario, Rol, UsuarioRol
+
+
+# 1) Para qué sirve: forzar una ventana horaria que deje bloqueada la escritura en pruebas.
+# 2) Cómo funciona: configura apertura y cierre en el minuto siguiente exacto al momento actual.
+# 3) Qué hace: garantiza que las operaciones de escritura caigan fuera de horario en los tests.
+# 4) Cómo editarla: cambia la estrategia si negocio redefine el manejo de límites horarios.
+def _configurar_horario_bloqueado_para_pruebas():
+	hora_bloqueada = (timezone.localtime() + timedelta(minutes=1)).replace(second=0, microsecond=0).time()
+	valor_hora = hora_bloqueada.strftime('%H:%M:%S')
+
+	ConfiguracionGlobal.objects.update_or_create(
+		clave='HORARIO_APERTURA',
+		defaults={
+			'valor': valor_hora,
+			'tipo_valor': 'TIME',
+			'descripcion': 'Prueba automatizada de bloqueo horario.',
+		}
+	)
+	ConfiguracionGlobal.objects.update_or_create(
+		clave='HORARIO_CIERRE',
+		defaults={
+			'valor': valor_hora,
+			'tipo_valor': 'TIME',
+			'descripcion': 'Prueba automatizada de bloqueo horario.',
+		}
+	)
+
+
+# 1) Para qué sirve: asociar de forma explícita un rol de negocio a un usuario de prueba.
+# 2) Cómo funciona: crea/recupera rol por nombre y registra relación usuario-rol.
+# 3) Qué hace: habilita validaciones reales de permisos por rol en endpoints.
+# 4) Cómo editarla: añade descripción por entorno si se requiere trazabilidad adicional.
+def _asignar_rol_usuario(usuario, nombre_rol):
+	rol, _ = Rol.objects.get_or_create(nombre=nombre_rol)
+	UsuarioRol.objects.get_or_create(usuario=usuario, rol=rol)
 
 
 # 1) Para qué sirve: validar flujo de cierre manual de día contable en API.
@@ -85,6 +122,28 @@ class ReporteDiarioCierreActualTests(APITestCase):
 		self.assertEqual(reporte_objetivo.estado_reporte, ReporteDiario.EstadoReporte.CERRADO)
 		self.assertEqual(reporte_no_objetivo.estado_reporte, ReporteDiario.EstadoReporte.ABIERTO)
 		self.assertEqual(str(respuesta.data.get('data', {}).get('fecha_contable')), fecha_a_cerrar.isoformat())
+
+	# 1) Para qué sirve: asegurar blindaje de cierre de día cuando la operación está fuera de horario.
+	# 2) Cómo funciona: define horario bloqueado y ejecuta POST cerrar-actual.
+	# 3) Qué hace: valida rechazo con HTTP 403 y mensaje de horario de captura.
+	# 4) Cómo editarla: ajusta texto esperado si cambia mensaje de permiso.
+	def test_cerrar_actual_fuera_de_horario_no_permite_modificar(self):
+		_configurar_horario_bloqueado_para_pruebas()
+		fecha_objetivo = timezone.localdate() - timedelta(days=1)
+		self._crear_reporte_abierto(fecha_objetivo)
+
+		respuesta = self.client.post(
+			self.url_cerrar_actual,
+			{
+				'sucursal_id': self.sucursal.id,
+				'fecha_contable': fecha_objetivo.isoformat(),
+			},
+			format='json'
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_403_FORBIDDEN)
+		mensaje = str(respuesta.data.get('message') or respuesta.data.get('detail') or '').lower()
+		self.assertIn('horario de captura', mensaje)
 
 
 # 1) Para qué sirve: validar comportamiento de captura rápida con conceptos repetibles.
@@ -243,3 +302,199 @@ class MovimientoDiarioCapturaRapidaConDetallesTests(APITestCase):
 		movimientos = reporte.movimientos.filter(concepto=self.concepto_sin_detalles)
 		self.assertEqual(movimientos.count(), 1)
 		self.assertEqual(float(movimientos.first().monto), 2300.00)
+
+	# 1) Para qué sirve: validar que captura-rapida queda bloqueada fuera de horario operativo.
+	# 2) Cómo funciona: define horario bloqueado y envía payload válido de captura.
+	# 3) Qué hace: asegura rechazo con HTTP 403 antes de crear o editar movimientos.
+	# 4) Cómo editarla: amplía con multipart si deseas cubrir evidencia adjunta.
+	def test_captura_rapida_fuera_de_horario_no_permite_modificar(self):
+		_configurar_horario_bloqueado_para_pruebas()
+
+		respuesta = self.client.post(
+			self.url_captura_rapida,
+			{
+				'sucursal_id': self.sucursal.id,
+				'fecha_contable': self.fecha_contable.isoformat(),
+				'concepto': self.concepto_con_detalles.id,
+				'monto': '500.00',
+			},
+			format='json'
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_403_FORBIDDEN)
+		mensaje = str(respuesta.data.get('message') or respuesta.data.get('detail') or '').lower()
+		self.assertIn('horario de captura', mensaje)
+
+
+# 1) Para qué sirve: validar reporte diario tipo libro con restricciones por rol y arrastre encadenado.
+# 2) Cómo funciona: consulta endpoint libro-operativo con usuarios de rol operativo/directivo.
+# 3) Qué hace: asegura día forzado para contador y rango habilitado para director.
+# 4) Cómo editarla: agrega escenarios multi-sucursal si se amplía cobertura funcional.
+class ReporteDiarioLibroOperativoTests(APITestCase):
+	def setUp(self):
+		self.sucursal = Sucursal.objects.create(
+			nombre='Sucursal Libro Operativo',
+			clave='SUC-LIBRO-OPERATIVO'
+		)
+
+		self.categoria = CategoriaOperativa.objects.create(
+			nombre='ADMINISTRACION LIBRO',
+			clave='ADMIN_LIBRO',
+			tipo='MIXTO',
+			orden=1,
+		)
+		self.concepto_ingreso = Concepto.objects.create(
+			categoria=self.categoria,
+			nombre='Ingreso Libro',
+			clave='INGRESO_LIBRO_TEST',
+			tipo='INGRESO',
+		)
+		self.concepto_egreso = Concepto.objects.create(
+			categoria=self.categoria,
+			nombre='Egreso Libro',
+			clave='EGRESO_LIBRO_TEST',
+			tipo='EGRESO',
+		)
+
+		self.url_libro_operativo = reverse('reportediario-libro-operativo')
+		self.url_reporte_actual = reverse('reportediario-actual')
+		if settings.FORCE_SCRIPT_NAME and self.url_libro_operativo.startswith(settings.FORCE_SCRIPT_NAME):
+			self.url_libro_operativo = self.url_libro_operativo[len(settings.FORCE_SCRIPT_NAME):] or '/'
+		if settings.FORCE_SCRIPT_NAME and self.url_reporte_actual.startswith(settings.FORCE_SCRIPT_NAME):
+			self.url_reporte_actual = self.url_reporte_actual[len(settings.FORCE_SCRIPT_NAME):] or '/'
+
+	def _crear_usuario_con_rol(self, username, rol):
+		usuario = Usuario.objects.create_user(
+			username=username,
+			password='password_seguro_123',
+			nombre=f'Usuario {rol}',
+			sucursal=self.sucursal,
+		)
+		_asignar_rol_usuario(usuario, rol)
+		return usuario
+
+	def _crear_reporte_con_movimientos(self, fecha_contable, saldo_inicio='0.00', ingreso='0.00', egreso='0.00'):
+		reporte = ReporteDiario.objects.create(
+			sucursal=self.sucursal,
+			fecha_contable=fecha_contable,
+			estado_reporte=ReporteDiario.EstadoReporte.ABIERTO,
+			saldo_arrastre_inicio=Decimal(str(saldo_inicio)),
+		)
+
+		if Decimal(str(ingreso)) > 0:
+			MovimientoDiario.objects.create(
+				reporte=reporte,
+				concepto=self.concepto_ingreso,
+				monto=Decimal(str(ingreso)),
+			)
+
+		if Decimal(str(egreso)) > 0:
+			MovimientoDiario.objects.create(
+				reporte=reporte,
+				concepto=self.concepto_egreso,
+				monto=Decimal(str(egreso)),
+			)
+
+		return reporte
+
+	def test_libro_operativo_contador_forza_dia_actual(self):
+		fecha_actual = timezone.localdate() - timedelta(days=1)
+		fecha_anterior = fecha_actual - timedelta(days=1)
+
+		self._crear_reporte_con_movimientos(fecha_anterior, saldo_inicio='1000.00', ingreso='200.00', egreso='50.00')
+		self._crear_reporte_con_movimientos(fecha_actual, saldo_inicio='1200.00', ingreso='300.00', egreso='100.00')
+
+		usuario_contador = self._crear_usuario_con_rol('contador_libro', 'CONTADOR')
+		self.client.force_authenticate(user=usuario_contador)
+
+		respuesta = self.client.get(
+			self.url_libro_operativo,
+			{
+				'sucursal_id': self.sucursal.id,
+				'fecha_inicio': fecha_anterior.isoformat(),
+				'fecha_fin': fecha_actual.isoformat(),
+			}
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+		filtro = respuesta.data.get('data', {}).get('filtro_aplicado', {})
+		self.assertEqual(filtro.get('fecha_inicio'), fecha_actual.isoformat())
+		self.assertEqual(filtro.get('fecha_fin'), fecha_actual.isoformat())
+		self.assertTrue(filtro.get('filtro_forzado'))
+
+		filas = respuesta.data.get('data', {}).get('filas', [])
+		fila_total = next((fila for fila in filas if fila.get('tipo_fila') == 'TOTAL_PERIODO'), None)
+		self.assertIsNotNone(fila_total)
+		self.assertEqual(float(fila_total.get('ingreso') or 0), 300.0)
+		self.assertEqual(float(fila_total.get('egreso') or 0), 100.0)
+		fila_efectivo = next((fila for fila in filas if fila.get('tipo_fila') == 'EFECTIVO_FISICO'), None)
+		self.assertIsNotNone(fila_efectivo)
+		self.assertIsNone(fila_efectivo.get('ingreso'))
+		self.assertIsNone(fila_efectivo.get('egreso'))
+		self.assertEqual(float(fila_efectivo.get('saldo') or 0), float(fila_total.get('saldo') or 0))
+
+	def test_libro_operativo_director_permite_rango(self):
+		fecha_actual = timezone.localdate() - timedelta(days=1)
+		fecha_inicio = fecha_actual - timedelta(days=1)
+
+		self._crear_reporte_con_movimientos(fecha_inicio, saldo_inicio='1000.00', ingreso='500.00', egreso='100.00')
+		self._crear_reporte_con_movimientos(fecha_actual, saldo_inicio='1400.00', ingreso='700.00', egreso='200.00')
+
+		usuario_director = self._crear_usuario_con_rol('director_libro', 'DIRECTOR')
+		self.client.force_authenticate(user=usuario_director)
+
+		respuesta = self.client.get(
+			self.url_libro_operativo,
+			{
+				'sucursal_id': self.sucursal.id,
+				'fecha_inicio': fecha_inicio.isoformat(),
+				'fecha_fin': fecha_actual.isoformat(),
+			}
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+		filtro = respuesta.data.get('data', {}).get('filtro_aplicado', {})
+		self.assertEqual(filtro.get('fecha_inicio'), fecha_inicio.isoformat())
+		self.assertEqual(filtro.get('fecha_fin'), fecha_actual.isoformat())
+		self.assertFalse(filtro.get('filtro_forzado'))
+
+		resumen = respuesta.data.get('data', {}).get('resumen', {})
+		self.assertEqual(resumen.get('dias_consultados'), 2)
+
+		filas = respuesta.data.get('data', {}).get('filas', [])
+		fila_categoria = next((fila for fila in filas if fila.get('partida') == 'ADMIN_LIBRO'), None)
+		self.assertIsNotNone(fila_categoria)
+		self.assertEqual(float(fila_categoria.get('ingreso') or 0), 1200.0)
+		self.assertEqual(float(fila_categoria.get('egreso') or 0), 300.0)
+		fila_total = next((fila for fila in filas if fila.get('tipo_fila') == 'TOTAL_PERIODO'), None)
+		fila_efectivo = next((fila for fila in filas if fila.get('tipo_fila') == 'EFECTIVO_FISICO'), None)
+		self.assertIsNotNone(fila_total)
+		self.assertIsNotNone(fila_efectivo)
+		self.assertEqual(float(fila_efectivo.get('saldo') or 0), float(fila_total.get('saldo') or 0))
+
+	def test_arrastre_se_traslada_al_siguiente_dia_al_crear_reporte(self):
+		fecha_actual = timezone.localdate() - timedelta(days=1)
+		fecha_anterior = fecha_actual - timedelta(days=1)
+
+		self._crear_reporte_con_movimientos(fecha_anterior, saldo_inicio='40000.00', ingreso='2000.00', egreso='500.00')
+
+		usuario_staff = Usuario.objects.create_user(
+			username='staff_arrastre',
+			password='password_seguro_123',
+			nombre='Usuario Staff Arrastre',
+			is_staff=True,
+			sucursal=self.sucursal,
+		)
+		self.client.force_authenticate(user=usuario_staff)
+
+		respuesta = self.client.get(
+			self.url_reporte_actual,
+			{
+				'sucursal_id': self.sucursal.id,
+				'fecha_contable': fecha_actual.isoformat(),
+			}
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+		saldo_arrastre_inicio = Decimal(str(respuesta.data.get('data', {}).get('saldo_arrastre_inicio', '0')))
+		self.assertEqual(saldo_arrastre_inicio, Decimal('41500.00'))

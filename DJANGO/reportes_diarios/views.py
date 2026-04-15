@@ -1,6 +1,8 @@
 import json
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from calendar import monthrange
+from collections import defaultdict
 
 from django.db import transaction
 from django.db.models import Sum
@@ -11,13 +13,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
-from categoria_operativa.models import Concepto
+from categoria_operativa.models import Concepto, CategoriaOperativa
 from core.permisos import VentanaHorariaPermiso, EsAdministrador
 from .models import ReporteDiario, MovimientoDiario
 from .serializers import (
     ReporteDiarioSerializer, ReporteDiarioListSerializer,
     MovimientoDiarioSerializer, MovimientoDiarioListSerializer,
 )
+from sucursales.models import Sucursal
 
 
 # 1) Para qué sirve: homologar la estructura JSON de salida de este módulo.
@@ -85,6 +88,144 @@ def _usuario_puede_cerrar_dia(usuario):
         return False
 
 
+# 1) Para qué sirve: validar pertenencia de un usuario a un conjunto de roles nominales.
+# 2) Cómo funciona: consulta usuario_roles con comparación case-sensitive por negocio.
+# 3) Qué hace: permite reutilizar reglas de autorización sin duplicar lógica en endpoints.
+# 4) Cómo editarla: cambia a iregex/iexact si se necesita tolerancia adicional de nombre.
+def _usuario_tiene_roles(usuario, roles_permitidos):
+    if not usuario or not usuario.is_authenticated:
+        return False
+    if usuario.is_superuser or usuario.is_staff:
+        return True
+    try:
+        return usuario.usuario_roles.filter(rol__nombre__in=roles_permitidos).exists()
+    except Exception:
+        return False
+
+
+# 1) Para qué sirve: identificar perfiles directivos con capacidad de consulta avanzada.
+# 2) Cómo funciona: delega validación a helper de roles y privilegios globales.
+# 3) Qué hace: habilita filtros por rango de fechas en reportes diarios.
+# 4) Cómo editarla: agrega roles de lectura ejecutiva cuando negocio lo solicite.
+def _usuario_es_directivo(usuario):
+    return _usuario_tiene_roles(usuario, ['DIRECTOR', 'ADMINISTRADOR'])
+
+
+# 1) Para qué sirve: identificar perfiles operativos que solo consultan día contable actual.
+# 2) Cómo funciona: valida roles CONTADOR/GERENTE y excluye directivos con acceso amplio.
+# 3) Qué hace: fuerza filtros a día actual y sucursal asignada para evitar sobreexposición.
+# 4) Cómo editarla: agrega roles equivalentes si se crea una nueva jerarquía operativa.
+def _usuario_es_operativo(usuario):
+    return _usuario_tiene_roles(usuario, ['CONTADOR', 'GERENTE']) and not _usuario_es_directivo(usuario)
+
+
+# 1) Para qué sirve: convertir valores monetarios a Decimal seguro para cálculos de arrastre.
+# 2) Cómo funciona: intenta cast a string+Decimal y retorna 0 ante errores de formato.
+# 3) Qué hace: evita fallas por None o cadenas inválidas en sumas contables.
+# 4) Cómo editarla: agrega quantize si negocio exige redondeo estricto en todos los pasos.
+def _a_decimal(valor):
+    try:
+        return Decimal(str(valor or 0))
+    except (InvalidOperation, TypeError, ValueError):
+        return Decimal('0')
+
+
+# 1) Para qué sirve: serializar Decimal a float en payload JSON del libro diario.
+# 2) Cómo funciona: aplica cast seguro con fallback en 0.0.
+# 3) Qué hace: simplifica consumo en frontend para celdas monetarias y cálculos visuales.
+# 4) Cómo editarla: cambia a string si se requiere precisión textual exacta en cliente.
+def _a_flotante(valor):
+    try:
+        return float(valor or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+# 1) Para qué sirve: resolver filtros efectivos de consulta según rol y parámetros enviados.
+# 2) Cómo funciona: fuerza día/sucursal en operativos y permite rango en perfiles directivos.
+# 3) Qué hace: unifica reglas de visibilidad para listados y libro operativo.
+# 4) Cómo editarla: ajusta límites de rango o parámetros admitidos si cambia el UX de filtros.
+def _resolver_filtros_consulta_reportes(request):
+    usuario = request.user
+    dia_actual = _dia_contable_actual()
+
+    es_directivo = _usuario_es_directivo(usuario)
+    es_operativo = _usuario_es_operativo(usuario)
+
+    if not es_directivo and not es_operativo:
+        raise PermissionError('No tienes permisos para consultar reporte diario.')
+
+    if es_operativo:
+        sucursal_usuario = getattr(usuario, 'sucursal_id', None)
+        if not sucursal_usuario:
+            raise ValueError('Tu usuario no tiene una sucursal asignada para consultar el reporte diario.')
+        return {
+            'sucursal_id': int(sucursal_usuario),
+            'fecha_inicio': dia_actual,
+            'fecha_fin': dia_actual,
+            'filtro_forzado': True,
+        }
+
+    sucursal_cruda = request.query_params.get('sucursal_id') or getattr(usuario, 'sucursal_id', None)
+    if not sucursal_cruda:
+        raise ValueError("El parámetro 'sucursal_id' es obligatorio para la consulta.")
+
+    try:
+        sucursal_id = int(sucursal_cruda)
+        if sucursal_id <= 0:
+            raise ValueError('sucursal_id inválido')
+    except (TypeError, ValueError):
+        raise ValueError("El parámetro 'sucursal_id' debe ser un entero válido.")
+
+    fecha_inicio_txt = request.query_params.get('fecha_inicio') or request.query_params.get('fecha_desde')
+    fecha_fin_txt = request.query_params.get('fecha_fin') or request.query_params.get('fecha_hasta')
+
+    if fecha_inicio_txt or fecha_fin_txt:
+        fecha_inicio = _parsear_fecha_contable(fecha_inicio_txt) if fecha_inicio_txt else None
+        fecha_fin = _parsear_fecha_contable(fecha_fin_txt) if fecha_fin_txt else None
+
+        if fecha_inicio is None and fecha_fin is None:
+            fecha_inicio = dia_actual
+            fecha_fin = dia_actual
+        elif fecha_inicio is None:
+            fecha_inicio = fecha_fin
+        elif fecha_fin is None:
+            fecha_fin = fecha_inicio
+    else:
+        anio = request.query_params.get('anio')
+        mes = request.query_params.get('mes')
+        dia = request.query_params.get('dia')
+
+        if anio not in (None, '') or mes not in (None, '') or dia not in (None, ''):
+            if anio in (None, '') or mes in (None, '') or dia in (None, ''):
+                raise ValueError("Para usar anio/mes/dia debes enviar los tres parámetros completos.")
+            try:
+                fecha_unica = datetime(int(anio), int(mes), int(dia)).date()
+            except ValueError:
+                raise ValueError("Los parámetros 'anio', 'mes' y 'dia' deben formar una fecha válida.")
+            fecha_inicio = fecha_unica
+            fecha_fin = fecha_unica
+        else:
+            fecha_inicio = dia_actual
+            fecha_fin = dia_actual
+
+    if fecha_inicio > fecha_fin:
+        raise ValueError("'fecha_inicio' no puede ser mayor que 'fecha_fin'.")
+
+    if fecha_inicio > dia_actual or fecha_fin > dia_actual:
+        raise ValueError('No se permite consultar fechas contables futuras.')
+
+    if (fecha_fin - fecha_inicio).days > 62:
+        raise ValueError('El rango máximo permitido es de 63 días por consulta.')
+
+    return {
+        'sucursal_id': sucursal_id,
+        'fecha_inicio': fecha_inicio,
+        'fecha_fin': fecha_fin,
+        'filtro_forzado': False,
+    }
+
+
 # 1) Para qué sirve: cerrar un reporte con cálculo consolidado de ingresos/egresos.
 # 2) Cómo funciona: calcula totales en vivo, toma snapshots de tipo de cambio y persiste cierre.
 # 3) Qué hace: deja el día contable bloqueado para nuevas modificaciones.
@@ -113,6 +254,16 @@ def _cerrar_reporte_diario(reporte, usuario):
     reporte.cerrado_en = timezone.now()
     reporte.cerrado_por = usuario
     reporte.save()
+
+    # Mantener continuidad de arrastre cuando el siguiente día ya existe en estado abierto.
+    reporte_siguiente = ReporteDiario.objects.filter(
+        sucursal_id=reporte.sucursal_id,
+        fecha_contable=reporte.fecha_contable + timedelta(days=1),
+        estado_reporte=ReporteDiario.EstadoReporte.ABIERTO,
+    ).first()
+    if reporte_siguiente and reporte_siguiente.saldo_arrastre_inicio != reporte.saldo_arrastre_fin:
+        reporte_siguiente.saldo_arrastre_inicio = reporte.saldo_arrastre_fin
+        reporte_siguiente.save()
 
     return reporte
 
@@ -212,16 +363,26 @@ def _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_contable=None):
             defaults={'estado_reporte': ReporteDiario.EstadoReporte.ABIERTO}
         )
 
+        # Encadenar saldo de arrastre desde el día anterior con cálculo dinámico.
+        anterior = ReporteDiario.objects.filter(
+            sucursal_id=sucursal_id,
+            fecha_contable__lt=fecha,
+        ).order_by('-fecha_contable').first()
+
+        saldo_arrastre_esperado = _a_decimal(reporte.saldo_arrastre_inicio)
+        if anterior:
+            movimientos_anterior = anterior.movimientos.filter(eliminado_en__isnull=True)
+            ingresos_anterior = _a_decimal(movimientos_anterior.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'])
+            egresos_anterior = _a_decimal(movimientos_anterior.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'])
+            saldo_arrastre_esperado = _a_decimal(anterior.saldo_arrastre_inicio) + ingresos_anterior - egresos_anterior
+
+        requiere_guardado = False
+
+        if reporte.saldo_arrastre_inicio != saldo_arrastre_esperado:
+            reporte.saldo_arrastre_inicio = saldo_arrastre_esperado
+            requiere_guardado = True
+
         if creado:
-            # Encadenar saldo de arrastre desde el día anterior
-            anterior = ReporteDiario.objects.filter(
-                sucursal_id=sucursal_id,
-                fecha_contable__lt=fecha,
-            ).order_by('-fecha_contable').first()
-
-            if anterior:
-                reporte.saldo_arrastre_inicio = anterior.saldo_arrastre_fin
-
             # Snapshot del tipo de cambio actual
             try:
                 tasa_usd = _obtener_tasa_cambio_por_claves(['TASA_CAMBIO_DOLARES', 'TIPO_CAMBIO_USD'])
@@ -232,7 +393,9 @@ def _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_contable=None):
                     reporte.tipo_cambio_eur_snapshot = tasa_eur
             except Exception:
                 pass
+            requiere_guardado = True
 
+        if requiere_guardado:
             reporte.save()
 
     return reporte, creado
@@ -306,43 +469,254 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
     """
 
     def get_permissions(self):
-        """Aplica VentanaHorariaPermiso solo a operaciones de escritura."""
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+        """Aplica VentanaHorariaPermiso a toda operación que modifica estado o datos."""
+        acciones_escritura = (
+            'create',
+            'update',
+            'partial_update',
+            'destroy',
+            'cerrar',
+            'cerrar_actual',
+            'reabrir',
+        )
+
+        if self.action in acciones_escritura:
+            if self.action == 'reabrir':
+                return [IsAuthenticated(), EsAdministrador(), VentanaHorariaPermiso()]
             return [IsAuthenticated(), VentanaHorariaPermiso()]
-        if self.action == 'reabrir':
-            return [IsAuthenticated(), EsAdministrador()]
         return [IsAuthenticated()]
 
     def list(self, request):
-        qs = ReporteDiario.objects.all()
-        sucursal_id = request.query_params.get('sucursal_id')
-        anio = request.query_params.get('anio')
-        mes = request.query_params.get('mes')
-        dia = request.query_params.get('dia')
-
-        if sucursal_id:
-            qs = qs.filter(sucursal_id=sucursal_id)
-
         try:
-            if anio not in (None, ''):
-                qs = qs.filter(fecha_contable__year=int(anio))
-            if mes not in (None, ''):
-                mes_valor = int(mes)
-                if mes_valor < 1 or mes_valor > 12:
-                    raise ValueError('mes fuera de rango')
-                qs = qs.filter(fecha_contable__month=mes_valor)
-            if dia not in (None, ''):
-                dia_valor = int(dia)
-                if dia_valor < 1 or dia_valor > 31:
-                    raise ValueError('dia fuera de rango')
-                qs = qs.filter(fecha_contable__day=dia_valor)
-        except ValueError:
+            filtros = _resolver_filtros_consulta_reportes(request)
+        except PermissionError as error:
+            return respuesta_estandar(mensaje=str(error), estado='error', codigo=status.HTTP_403_FORBIDDEN)
+        except ValueError as error:
+            return respuesta_estandar(mensaje=str(error), estado='error', codigo=status.HTTP_400_BAD_REQUEST)
+
+        qs = ReporteDiario.objects.filter(
+            sucursal_id=filtros['sucursal_id'],
+            fecha_contable__range=(filtros['fecha_inicio'], filtros['fecha_fin']),
+        ).order_by('-fecha_contable')
+
+        return respuesta_estandar(
+            data=ReporteDiarioListSerializer(qs, many=True, context={'request': request}).data,
+            mensaje="Reportes diarios obtenidos."
+        )
+
+    @action(detail=False, methods=['get'], url_path='libro-operativo')
+    def libro_operativo(self, request):
+        """
+        Devuelve el reporte diario en formato tabular por columnas:
+        FECHA | PARTIDA | CONCEPTO | INGRESO | EGRESO | SALDO.
+
+        Reglas:
+        - CONTADOR/GERENTE: solo día contable actual y sucursal asignada.
+        - DIRECTOR/ADMINISTRADOR: puede consultar rango de fechas.
+        - El armado usa categorías de base de datos y calcula arrastre secuencial.
+        """
+        try:
+            filtros = _resolver_filtros_consulta_reportes(request)
+        except PermissionError as error:
+            return respuesta_estandar(mensaje=str(error), estado='error', codigo=status.HTTP_403_FORBIDDEN)
+        except ValueError as error:
+            return respuesta_estandar(mensaje=str(error), estado='error', codigo=status.HTTP_400_BAD_REQUEST)
+
+        sucursal = Sucursal.objects.filter(id=filtros['sucursal_id']).first()
+        if not sucursal:
             return respuesta_estandar(
-                mensaje="Los parámetros 'anio', 'mes' y 'dia' deben ser enteros válidos.",
-                estado="error",
-                codigo=status.HTTP_400_BAD_REQUEST
+                mensaje='No existe la sucursal solicitada para esta consulta.',
+                estado='error',
+                codigo=status.HTTP_404_NOT_FOUND
             )
-        return respuesta_estandar(data=ReporteDiarioListSerializer(qs, many=True, context={'request': request}).data, mensaje="Reportes diarios obtenidos.")
+
+        fecha_inicio = filtros['fecha_inicio']
+        fecha_fin = filtros['fecha_fin']
+
+        reportes_qs = ReporteDiario.objects.filter(
+            sucursal_id=filtros['sucursal_id'],
+            fecha_contable__range=(fecha_inicio, fecha_fin),
+        ).order_by('fecha_contable')
+
+        if filtros['filtro_forzado'] and fecha_inicio == fecha_fin and not reportes_qs.exists():
+            reporte_hoy, _ = _obtener_o_crear_reporte_del_dia(filtros['sucursal_id'], fecha_inicio)
+            reportes_qs = ReporteDiario.objects.filter(pk=reporte_hoy.pk)
+
+        reportes = list(reportes_qs)
+        reportes_por_fecha = {reporte.fecha_contable: reporte for reporte in reportes}
+        ids_reportes = [reporte.id for reporte in reportes]
+
+        movimientos = list(
+            MovimientoDiario.objects.filter(
+                reporte_id__in=ids_reportes,
+                eliminado_en__isnull=True,
+            ).select_related('reporte', 'concepto__categoria')
+        )
+
+        resumen_por_categoria = defaultdict(lambda: {'ingreso': Decimal('0'), 'egreso': Decimal('0')})
+        totales_por_fecha = defaultdict(lambda: {'ingreso': Decimal('0'), 'egreso': Decimal('0')})
+
+        categorias_consulta = list(
+            CategoriaOperativa.objects.filter(eliminado_en__isnull=True)
+            .order_by('orden', 'nombre')
+            .values('id', 'clave', 'nombre', 'orden')
+        )
+        categorias_por_id = {categoria['id']: categoria for categoria in categorias_consulta}
+
+        for movimiento in movimientos:
+            categoria = getattr(getattr(movimiento, 'concepto', None), 'categoria', None)
+            if categoria and categoria.id not in categorias_por_id:
+                registro_categoria = {
+                    'id': categoria.id,
+                    'clave': categoria.clave,
+                    'nombre': categoria.nombre,
+                    'orden': categoria.orden,
+                }
+                categorias_consulta.append(registro_categoria)
+                categorias_por_id[categoria.id] = registro_categoria
+
+        categorias_consulta.sort(key=lambda categoria: (categoria.get('orden') or 0, categoria.get('nombre') or ''))
+
+        for movimiento in movimientos:
+            categoria = getattr(getattr(movimiento, 'concepto', None), 'categoria', None)
+            if not categoria:
+                continue
+
+            fecha_movimiento = movimiento.reporte.fecha_contable
+            monto_movimiento = _a_decimal(movimiento.monto)
+            tipo_movimiento = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
+
+            if tipo_movimiento == 'INGRESO':
+                resumen_por_categoria[categoria.id]['ingreso'] += monto_movimiento
+                totales_por_fecha[fecha_movimiento]['ingreso'] += monto_movimiento
+            else:
+                resumen_por_categoria[categoria.id]['egreso'] += monto_movimiento
+                totales_por_fecha[fecha_movimiento]['egreso'] += monto_movimiento
+
+        reporte_previo = ReporteDiario.objects.filter(
+            sucursal_id=filtros['sucursal_id'],
+            fecha_contable__lt=fecha_inicio,
+        ).order_by('-fecha_contable').first()
+
+        saldo_arrastre_actual = Decimal('0')
+        if reporte_previo:
+            if reporte_previo.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO:
+                movimientos_previos = reporte_previo.movimientos.filter(eliminado_en__isnull=True)
+                ingresos_previos = _a_decimal(movimientos_previos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'])
+                egresos_previos = _a_decimal(movimientos_previos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'])
+                saldo_arrastre_actual = _a_decimal(reporte_previo.saldo_arrastre_inicio) + ingresos_previos - egresos_previos
+            else:
+                saldo_arrastre_actual = _a_decimal(reporte_previo.saldo_arrastre_fin)
+
+        saldo_inicial_rango = saldo_arrastre_actual
+        total_ingresos_rango = Decimal('0')
+        total_egresos_rango = Decimal('0')
+        dias_con_reporte = 0
+
+        # Recalcular y sincronizar totales por día para reportes abiertos del rango.
+        fecha_cursor = fecha_inicio
+        while fecha_cursor <= fecha_fin:
+            reporte_dia = reportes_por_fecha.get(fecha_cursor)
+            if reporte_dia:
+                dias_con_reporte += 1
+
+            saldo_inicial_dia = saldo_arrastre_actual
+            ingreso_dia = _a_decimal(totales_por_fecha[fecha_cursor]['ingreso'])
+            egreso_dia = _a_decimal(totales_por_fecha[fecha_cursor]['egreso'])
+            neto_dia = ingreso_dia - egreso_dia
+
+            if reporte_dia and reporte_dia.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO:
+                saldo_fin_dia = saldo_inicial_dia + neto_dia
+                requiere_actualizacion = any([
+                    _a_decimal(reporte_dia.saldo_arrastre_inicio) != saldo_inicial_dia,
+                    _a_decimal(reporte_dia.total_ingresos) != ingreso_dia,
+                    _a_decimal(reporte_dia.total_egresos) != egreso_dia,
+                    _a_decimal(reporte_dia.resultado_neto) != neto_dia,
+                    _a_decimal(reporte_dia.saldo_arrastre_fin) != saldo_fin_dia,
+                ])
+                if requiere_actualizacion:
+                    reporte_dia.saldo_arrastre_inicio = saldo_inicial_dia
+                    reporte_dia.total_ingresos = ingreso_dia
+                    reporte_dia.total_egresos = egreso_dia
+                    reporte_dia.resultado_neto = neto_dia
+                    reporte_dia.saldo_arrastre_fin = saldo_fin_dia
+                    reporte_dia.save()
+
+            total_ingresos_rango += ingreso_dia
+            total_egresos_rango += egreso_dia
+            fecha_cursor += timedelta(days=1)
+
+        filas = []
+        saldo_acumulado = saldo_inicial_rango
+
+        filas.append({
+            'partida': 'SALDO',
+            'concepto': 'SALDO INICIAL',
+            'ingreso': None,
+            'egreso': None,
+            'saldo': _a_flotante(saldo_acumulado),
+            'tipo_fila': 'SALDO_INICIAL',
+        })
+
+        for categoria in categorias_consulta:
+            resumen_categoria = resumen_por_categoria.get(categoria['id']) or {'ingreso': Decimal('0'), 'egreso': Decimal('0')}
+            ingreso_categoria = _a_decimal(resumen_categoria['ingreso'])
+            egreso_categoria = _a_decimal(resumen_categoria['egreso'])
+            saldo_acumulado = saldo_acumulado + ingreso_categoria - egreso_categoria
+
+            filas.append({
+                'partida': categoria.get('clave') or 'CATEGORIA',
+                'concepto': categoria.get('nombre') or 'SIN CATEGORIA',
+                'ingreso': _a_flotante(ingreso_categoria) if ingreso_categoria > 0 else None,
+                'egreso': _a_flotante(egreso_categoria) if egreso_categoria > 0 else None,
+                'saldo': _a_flotante(saldo_acumulado),
+                'tipo_fila': 'CATEGORIA_RESUMEN',
+            })
+
+        filas.append({
+            'partida': 'TOTAL',
+            'concepto': 'TOTAL DEL PERIODO',
+            'ingreso': _a_flotante(total_ingresos_rango),
+            'egreso': _a_flotante(total_egresos_rango),
+            'saldo': _a_flotante(saldo_acumulado),
+            'tipo_fila': 'TOTAL_PERIODO',
+        })
+
+        filas.append({
+            'partida': 'EFECTIVO',
+            'concepto': 'EFECTIVO FISICO ESPERADO EN SALA',
+            'ingreso': None,
+            'egreso': None,
+            'saldo': _a_flotante(saldo_acumulado),
+            'tipo_fila': 'EFECTIVO_FISICO',
+        })
+
+        resumen = {
+            'saldo_inicial': _a_flotante(saldo_inicial_rango),
+            'total_ingresos': _a_flotante(total_ingresos_rango),
+            'total_egresos': _a_flotante(total_egresos_rango),
+            'saldo_final': _a_flotante(saldo_acumulado),
+            'dias_consultados': int((fecha_fin - fecha_inicio).days) + 1,
+            'dias_con_reporte': dias_con_reporte,
+        }
+
+        return respuesta_estandar(
+            data={
+                'sucursal': {
+                    'id': sucursal.id,
+                    'nombre': sucursal.nombre,
+                },
+                'filtro_aplicado': {
+                    'sucursal_id': filtros['sucursal_id'],
+                    'fecha_inicio': fecha_inicio.isoformat(),
+                    'fecha_fin': fecha_fin.isoformat(),
+                    'filtro_forzado': filtros['filtro_forzado'],
+                },
+                'resumen': resumen,
+                'filas': filas,
+            },
+            mensaje='Libro operativo diario obtenido correctamente.'
+        )
 
     @action(detail=False, methods=['get'], url_path='actual')
     def actual(self, request):
@@ -722,7 +1096,8 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
     """
 
     def get_permissions(self):
-        if self.action in ('create', 'update', 'partial_update', 'destroy'):
+        acciones_escritura = ('create', 'update', 'partial_update', 'destroy', 'captura_rapida')
+        if self.action in acciones_escritura:
             return [IsAuthenticated(), VentanaHorariaPermiso()]
         return [IsAuthenticated()]
 

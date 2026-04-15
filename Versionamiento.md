@@ -1,6 +1,46 @@
-Version del sistema: 2.8.3
+Version del sistema: 2.16.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-14
+- Version: 2.16.0
+- Autor: Cy tamayo
+- Descripcion: Se rediseño completamente la vista de Estado de Resultados a una maquetacion anual tipo Excel con columnas de ENERO a DICIEMBRE, agrupacion por padre a la izquierda y rubros contables al centro, manteniendo la fuente de datos actual desde base de datos por mes; ademas se elimino el filtro mensual de la interfaz y su logica asociada para evitar codigo huerfano, conservando el filtro por casino y anio.
+
+- Fecha: 2026-04-14
+- Version: 2.15.0
+- Autor: Cy tamayo
+- Descripcion: Se estandarizaron los nombres de archivos para todas las exportaciones actuales (Estadisticas y Reporte Diario) mediante una plantilla unica reutilizable, aplicada en Excel y PDF SVG con segmentos de modulo, tipo, casino, periodo y marca de tiempo para trazabilidad y uso futuro en nuevas exportaciones.
+
+- Fecha: 2026-04-14
+- Version: 2.14.0
+- Autor: Cy tamayo
+- Descripcion: Se implemento en Reporte Diario la exportacion profesional del libro operativo a Excel compatible con Microsoft Excel (hoja de resumen y hoja tabular) y a PDF vectorial mediante SVG multipagina para evitar distorsion visual; ademas se integraron controles UI de exportacion con validaciones de disponibilidad de datos.
+
+- Fecha: 2026-04-14
+- Version: 2.13.0
+- Autor: Cy tamayo
+- Descripcion: Se rediseño Reporte Diario al formato tipo libro operativo por columnas (Partida, Concepto, Ingreso, Egreso y Saldo) usando categorias de base de datos y saldo acumulado por dia; se habilito filtro por rango de fechas para DIRECTOR/ADMINISTRADOR y se forzo consulta del dia contable actual para CONTADOR/GERENTE; ademas se reforzo el arrastre de efectivo entre dias en backend y se agrego endpoint dedicado de libro operativo con pruebas automatizadas.
+
+- Fecha: 2026-04-14
+- Version: 2.12.0
+- Autor: Cy tamayo
+- Descripcion: Se reforzo Captura Operativa con autoguardado uniforme tras 1 segundo en todos los inputs editables de la tabla y se implemento blindaje de horario de operacion en backend y frontend usando HORARIO_APERTURA/HORARIO_CIERRE, bloqueando modificaciones fuera de ventana (incluyendo captura-rapida y cierre de dia), con pruebas automatizadas de API para validar el bloqueo.
+
+- Fecha: 2026-04-14
+- Version: 2.11.0
+- Autor: Cy tamayo
+- Descripcion: Se agrego exportacion por bloque en Estadisticas (Excel y PDF SVG), se deshabilitaron botones de exportacion cuando no existe informacion y se mejoro la experiencia de captura monetaria en formularios clave limpiando el 0.00 al enfocar y usando inicializacion no intrusiva en montos.
+
+- Fecha: 2026-04-14
+- Version: 2.10.0
+- Autor: Cy tamayo
+- Descripcion: Se robustecio el modulo de Estadisticas corrigiendo el Mapa de conceptos principales para evitar visualizacion vacia, se incorporo drill-down interactivo desde graficas clave, y se agregaron exportaciones ejecutivas: Excel con estructura vertical de bloques analiticos y PDF vectorial (SVG) para evitar distorsion de graficas.
+
+- Fecha: 2026-04-14
+- Version: 2.9.0
+- Autor: Cy tamayo
+- Descripcion: Se rediseño integralmente la vista de Estadisticas para DIRECTOR y ADMINISTRADOR con un tablero ejecutivo avanzado, incorporando ApexCharts en visualizaciones profesionales (flujo diario, distribucion por tipo, impacto por categoria, mapa de conceptos, rendimiento por casino y pulso semanal), KPIs estrategicos derivados, insights automaticos y tablas analiticas robustecidas con busqueda, ordenamiento y configuracion de columnas.
 
 - Fecha: 2026-04-13
 - Version: 2.8.3
@@ -108,6 +148,42 @@ Version del sistema: 2.8.3
 - Descripcion: Se normalizo el campo padre de rubros contables a un catalogo dinamico con tabla propia, migracion de datos conservando relaciones existentes, nuevos endpoints CRUD de padres y ajuste de serializers/views para operar padres por id o clave sin perder compatibilidad de consumo.
 
 ## Cambios Menores
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se corrigieron todas las exportaciones PDF activas del frontend en reportes (Reporte Diario y Estadisticas) eliminando la dependencia runtime de svg2pdf/font-family-papandreou; ahora las salidas PDF se generan con jsPDF y conversion de graficas/paginas a imagen en memoria, evitando el error de modulo en navegador.
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se mejoro la exportacion de Estado de Resultados Anual a Excel aplicando estilos por celda (encabezados, padres, rubros, totales y resumenes) con colores, bordes y alineacion para conservar la jerarquia visual del reporte y evitar la hoja plana en blanco.
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se corrigieron las exportaciones de Estado de Resultados Anual: el PDF ahora se genera de forma vectorial directa con jsPDF (sin conversion SVG) para evitar el error de modulo en tiempo de ejecucion, y el Excel se construye desde la tabla HTML renderizada para conservar exactamente la misma estructura visual (padres, rubros y todos los meses, incluso en 0) que se muestra en pantalla.
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se agregaron en Estado de Resultados Anual los botones de exportacion a Excel y PDF SVG, incluyendo generacion de archivos con plantilla de nombre estandar, hoja de resumen y tabla anual detallada, asi como documento PDF vectorial multipagina para conservar nitidez sin distorsion.
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se optimizo nuevamente la tabla anual de Estado de Resultados para mayor adaptabilidad: se redujo mas el ancho de la columna de rubro contable y de las columnas mensuales, se eliminaron los totales anuales por fila para dejar un unico acumulado anual al final, y se reforzaron breakpoints responsive para laptop y movil respetando el estilo visual del reporte.
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se ajusto la vista anual de Estado de Resultados para mejorar responsividad: se habilito desplazamiento horizontal visible con barra de scroll y se compactaron anchos de columnas, paddings y tipografias para aprovechar mejor el espacio en pantalla de PC y evitar que se oculte informacion en resoluciones menores.
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se agrego en Reporte Diario una fila de EFECTIVO FISICO ESPERADO EN SALA con base en el saldo final del periodo, y se aplico resaltado visual con fondo diferenciado para identificar rapidamente las filas de TOTAL y EFECTIVO.
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se ajusto el Reporte Diario para eliminar la columna de fecha y la tarjeta duplicada de casino, y en consultas por rango se consolido cada categoria en una sola fila acumulando ingresos y egresos del periodo.
+
+- Fecha: 2026-04-14
+- Autor: Cy tamayo
+- Descripcion: Se corrigio el autoguardado en Captura Operativa para que los campos numericos guarden automaticamente tras 1 segundo de inactividad durante la escritura, sin depender de cambiar de input.
 
 - Fecha: 2026-04-13
 - Autor: Cy tamayo
