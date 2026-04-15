@@ -149,6 +149,18 @@ Version del sistema: 2.16.0
 
 ## Cambios Menores
 
+- Fecha: 2026-04-15
+- Autor: Cy tamayo
+- Descripcion: Se realizo limpieza tecnica en frontend eliminando servicios mock huerfanos no referenciados (CountryService, CustomerService, NodeService, PhotoService y ProductService) y se robustecio el guard de ruteo operativo para evitar fallos de navegacion cuando falle la carga asincrona de categorias.
+
+- Fecha: 2026-04-15
+- Autor: Cy tamayo
+- Descripcion: Se corrigio el orden de captura en categorias con detalles parametrizados para mostrar primero la columna de Monto y despues las columnas de detalles, mejorando el flujo de registro monetario en Captura Operativa.
+
+- Fecha: 2026-04-15
+- Autor: Cy tamayo
+- Descripcion: Se ajusto el KPI de Estadisticas reemplazando "Ticket promedio" por "Monto promedio por movimiento" y se dividio su lectura en ingreso y egreso tanto en la tarjeta del tablero como en la hoja de resumen de la exportacion a Excel.
+
 - Fecha: 2026-04-14
 - Autor: Cy tamayo
 - Descripcion: Se corrigieron todas las exportaciones PDF activas del frontend en reportes (Reporte Diario y Estadisticas) eliminando la dependencia runtime de svg2pdf/font-family-papandreou; ahora las salidas PDF se generan con jsPDF y conversion de graficas/paginas a imagen en memoria, evitando el error de modulo en navegador.
