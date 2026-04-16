@@ -58,15 +58,26 @@ class UsuarioSerializer(serializers.ModelSerializer):
     sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
     roles = UsuarioRolSerializer(source='usuario_roles', many=True, read_only=True)
     password = serializers.CharField(write_only=True, required=False, help_text="Contraseña del usuario. Solo escritura.")
+    foto_perfil_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Usuario
         fields = (
             'id', 'username', 'nombre', 'correo', 'sucursal', 'sucursal_nombre',
+            'foto_perfil', 'foto_perfil_url',
             'is_active', 'is_staff', 'creado_en', 'actualizado_en',
             'roles', 'password',
         )
         read_only_fields = ('creado_en', 'actualizado_en')
+
+    def get_foto_perfil_url(self, obj):
+        if not getattr(obj, 'foto_perfil', None):
+            return None
+
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.foto_perfil.url)
+        return obj.foto_perfil.url
 
     def create(self, validated_data):
         password = validated_data.pop('password', None)
@@ -88,7 +99,17 @@ class UsuarioSerializer(serializers.ModelSerializer):
 class UsuarioListSerializer(serializers.ModelSerializer):
     """Serializador reducido para listados de usuarios."""
     sucursal_nombre = serializers.CharField(source='sucursal.nombre', read_only=True)
+    foto_perfil_url = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Usuario
-        fields = ('id', 'username', 'nombre', 'correo', 'sucursal_nombre', 'is_active')
+        fields = ('id', 'username', 'nombre', 'correo', 'sucursal_nombre', 'foto_perfil_url', 'is_active')
+
+    def get_foto_perfil_url(self, obj):
+        if not getattr(obj, 'foto_perfil', None):
+            return None
+
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(obj.foto_perfil.url)
+        return obj.foto_perfil.url

@@ -1,7 +1,41 @@
+import os
+from pathlib import Path
+
+from django.conf import settings
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.utils.text import slugify
 from core.models import ModeloBase
 from sucursales.models import Sucursal
+
+
+# 1) Para qué sirve: normalizar nombres para usarlos de forma segura en rutas.
+# 2) Cómo funciona: aplica slugify y reemplaza guiones por guion bajo.
+# 3) Qué hace: evita caracteres inválidos en carpetas de media.
+# 4) Cómo editarla: ajusta reglas de normalización si se permite otro formato.
+def _normalizar_segmento_carpeta(valor, respaldo):
+    texto = (str(valor or '')).strip()
+    texto_normalizado = slugify(texto, allow_unicode=False).replace('-', '_')
+    return texto_normalizado or respaldo
+
+
+# 1) Para qué sirve: construir ruta de almacenamiento de foto de perfil por casino y usuario.
+# 2) Cómo funciona: lee sucursal/id del usuario, crea carpetas si no existen y retorna ruta relativa.
+# 3) Qué hace: guarda archivos como media/<casino>/<id_usuario>/images/perfil.ext.
+# 4) Cómo editarla: cambia jerarquía si se requiere otro estándar documental.
+def construir_ruta_imagen_perfil_usuario(instancia, nombre_archivo):
+    sucursal = getattr(instancia, 'sucursal', None)
+    nombre_casino = getattr(sucursal, 'nombre', '')
+    casino_segmento = _normalizar_segmento_carpeta(nombre_casino, 'casino_global')
+
+    id_usuario = getattr(instancia, 'pk', None) or 'sin_id'
+    extension = os.path.splitext(nombre_archivo or '')[1].lower() or '.jpg'
+    nombre_final = f"perfil{extension}"
+
+    directorio_absoluto = Path(settings.MEDIA_ROOT) / casino_segmento / str(id_usuario) / 'images'
+    directorio_absoluto.mkdir(parents=True, exist_ok=True)
+
+    return f"{casino_segmento}/{id_usuario}/images/{nombre_final}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -158,6 +192,13 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         null=True, blank=True,
         verbose_name="Correo Electrónico",
         help_text="Correo electrónico del usuario (opcional)."
+    )
+    foto_perfil = models.ImageField(
+        upload_to=construir_ruta_imagen_perfil_usuario,
+        null=True,
+        blank=True,
+        verbose_name="Foto de Perfil",
+        help_text="Imagen de perfil del usuario. Se guarda en media/<casino>/<id_usuario>/images/."
     )
     sucursal = models.ForeignKey(
         Sucursal,

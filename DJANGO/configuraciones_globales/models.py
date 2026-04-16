@@ -109,7 +109,11 @@ class RubroContable(ModeloBase):
     """
     Modelo para los rubros contables globales (ej. VENTAS_BEBIDAS).
     """
-    nombre = models.CharField(max_length=150, unique=True, verbose_name="Nombre del Rubro", help_text="Nombre representativo y único del rubro contable.")
+    nombre = models.CharField(
+        max_length=150,
+        verbose_name="Nombre del Rubro",
+        help_text="Nombre representativo del rubro contable. Debe ser unico dentro de su padre de rubro."
+    )
     padre = models.ForeignKey(
         PadreRubroContable,
         on_delete=models.PROTECT,
@@ -132,3 +136,6 @@ class RubroContable(ModeloBase):
         verbose_name = "Rubro Contable"
         verbose_name_plural = "Rubros Contables"
         db_table = "rubro_contable"
+        constraints = [
+            models.UniqueConstraint(fields=["nombre", "padre"], name="uq_rubrocontable_nombre_padre"),
+        ]

@@ -68,6 +68,12 @@ class RubroContableSerializer(serializers.ModelSerializer):
                             'creado_por', 'actualizado_por', 'eliminado_por',
                             'valor_anterior', 'valor_actual')
 
+    def validate_nombre(self, value):
+        nombre_limpio = (value or '').strip()
+        if not nombre_limpio:
+            raise serializers.ValidationError('El nombre del rubro es obligatorio.')
+        return nombre_limpio
+
     def validate(self, attrs):
         padre_id = attrs.get('padre')
         padre_clave = self.initial_data.get('padre_clave')
@@ -81,6 +87,19 @@ class RubroContableSerializer(serializers.ModelSerializer):
 
         if attrs.get('padre') is None and self.instance is None:
             raise serializers.ValidationError({'padre': 'El padre del rubro es obligatorio.'})
+
+        nombre = attrs.get('nombre', getattr(self.instance, 'nombre', None))
+        padre = attrs.get('padre', getattr(self.instance, 'padre', None))
+
+        if nombre and padre:
+            queryset = RubroContable.objects.filter(nombre__iexact=nombre.strip(), padre=padre)
+            if self.instance is not None:
+                queryset = queryset.exclude(pk=self.instance.pk)
+
+            if queryset.exists():
+                raise serializers.ValidationError({
+                    'nombre': 'Ya existe un rubro con este nombre para el padre seleccionado.'
+                })
 
         return attrs
 

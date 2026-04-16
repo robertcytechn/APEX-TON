@@ -1,6 +1,11 @@
-Version del sistema: 2.16.0
+Version del sistema: 2.17.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.17.0
+- Autor: Cy tamayo
+- Descripcion: Se implemento el modulo de Perfil de Usuario para autogestion de cuenta (consulta de datos personales, actualizacion de correo, cambio de contrasena con validacion de contrasena actual y carga de imagen de perfil), incluyendo endpoint backend dedicado con SessionAuth, almacenamiento de imagen en ruta dinamica por casino y usuario (media/<casino>/<id_usuario>/images), nueva vista frontend responsive y rediseño profesional del topbar para mostrar avatar y accesos directos al perfil.
 
 - Fecha: 2026-04-14
 - Version: 2.16.0
@@ -148,6 +153,10 @@ Version del sistema: 2.16.0
 - Descripcion: Se normalizo el campo padre de rubros contables a un catalogo dinamico con tabla propia, migracion de datos conservando relaciones existentes, nuevos endpoints CRUD de padres y ajuste de serializers/views para operar padres por id o clave sin perder compatibilidad de consumo.
 
 ## Cambios Menores
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se ajusto la validacion de rubros contables para permitir nombres repetidos cuando pertenecen a padres distintos y bloquear duplicados solo cuando coinciden nombre y padre.
 
 - Fecha: 2026-04-15
 - Autor: Cy tamayo
