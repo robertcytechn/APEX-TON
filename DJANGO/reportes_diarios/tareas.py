@@ -5,6 +5,7 @@ configurada en ConfiguracionGlobal.
 """
 import logging
 from celery import shared_task
+from django.core.mail import get_connection
 from django.db import transaction
 from django.utils import timezone
 from django.db.models import Sum
@@ -203,3 +204,162 @@ def _cerrar_mes_automatico(sucursal, anio, mes, tc_usd, tc_eur):
 
     except Exception as exc:
         logger.error(f"[CIERRE MES] Error al cerrar libro {sucursal.nombre} {anio}/{mes:02d}: {exc}")
+
+
+# 1) Para qué sirve: resolver la lista final de destinatarios para correos ejecutivos.
+# 2) Cómo funciona: toma destinatarios globales desde ConfiguracionGlobal y opcionalmente agrega correo de sucursal.
+# 3) Qué hace: unifica la fuente de destinatarios para tareas diarias y mensuales.
+# 4) Cómo editarla: cambia la clave/flag en configuracion_correos_ejecutivos.py sin tocar lógica de tareas.
+def _resolver_destinatarios_correos_ejecutivos(sucursal):
+    from reportes_diarios.configuracion_correos_ejecutivos import (
+        CLAVE_CONFIG_DESTINATARIOS_CORREOS,
+        INCLUIR_CORREO_SUCURSAL_EN_ENVIO,
+    )
+    from reportes_diarios.servicios_resumenes_correo import (
+        normalizar_destinatarios,
+        obtener_destinatarios_globales_configurados,
+    )
+
+    destinatarios = obtener_destinatarios_globales_configurados(CLAVE_CONFIG_DESTINATARIOS_CORREOS)
+    if INCLUIR_CORREO_SUCURSAL_EN_ENVIO and getattr(sucursal, 'correo', None):
+        destinatarios.append(sucursal.correo)
+
+    return normalizar_destinatarios(destinatarios)
+
+
+# 1) Para qué sirve: enviar automáticamente el resumen diario ejecutivo por cada sucursal activa.
+# 2) Cómo funciona: construye paquete por sucursal, toma destinatarios globales y envía con una conexión SMTP compartida.
+# 3) Qué hace: materializa el envío diario sin requerir ejecución manual del comando.
+# 4) Cómo editarla: ajusta filtros de sucursal o payload de tarea manteniendo esta rutina idempotente.
+@shared_task(bind=True, name='reportes_diarios.enviar_resumen_diario_ejecutivo', max_retries=2)
+def enviar_resumen_diario_ejecutivo(self, fecha_contable_iso=None):
+    from datetime import date
+
+    from reportes_diarios.servicios_resumenes_correo import (
+        construir_paquete_correo_resumen_diario_ejecutivo,
+        enviar_paquete_correo,
+        obtener_sucursales_objetivo,
+    )
+
+    if fecha_contable_iso:
+        fecha_contable = date.fromisoformat(str(fecha_contable_iso))
+    else:
+        fecha_contable = timezone.localdate() - timezone.timedelta(days=1)
+
+    sucursales = obtener_sucursales_objetivo()
+    if not sucursales:
+        logger.info('[CORREO DIARIO] No hay sucursales activas para procesar.')
+        return {
+            'fecha_contable': str(fecha_contable),
+            'sucursales_procesadas': 0,
+            'mensajes_enviados': 0,
+            'sucursales_omitidas': 0,
+            'errores': [],
+        }
+
+    conexion = get_connection(fail_silently=False)
+    mensajes_enviados = 0
+    sucursales_omitidas = 0
+    errores = []
+
+    for sucursal in sucursales:
+        try:
+            destinatarios = _resolver_destinatarios_correos_ejecutivos(sucursal)
+            if not destinatarios:
+                sucursales_omitidas += 1
+                logger.warning(f"[CORREO DIARIO] {sucursal.nombre}: omitido por falta de destinatarios configurados.")
+                continue
+
+            paquete = construir_paquete_correo_resumen_diario_ejecutivo(
+                sucursal=sucursal,
+                fecha_contable=fecha_contable,
+            )
+            resultado = enviar_paquete_correo(
+                paquete_correo=paquete,
+                destinatarios=destinatarios,
+                conexion=conexion,
+            )
+            mensajes_enviados += int(resultado.get('enviados') or 0)
+            logger.info(f"[CORREO DIARIO] {sucursal.nombre}: enviado a {', '.join(destinatarios)}")
+        except Exception as exc:
+            texto_error = f"[CORREO DIARIO] Error en {sucursal.nombre}: {exc}"
+            logger.error(texto_error)
+            errores.append(texto_error)
+
+    resumen = {
+        'fecha_contable': str(fecha_contable),
+        'sucursales_procesadas': len(sucursales),
+        'mensajes_enviados': mensajes_enviados,
+        'sucursales_omitidas': sucursales_omitidas,
+        'errores': errores,
+    }
+    logger.info(f"[CORREO DIARIO] Finalizado: {resumen}")
+    return resumen
+
+
+# 1) Para qué sirve: enviar automáticamente el cierre mensual ejecutivo por sucursal.
+# 2) Cómo funciona: determina periodo objetivo (mes anterior por defecto), construye paquetes y envía por SMTP.
+# 3) Qué hace: automatiza el correo de cierre del 1er día de cada mes.
+# 4) Cómo editarla: permite forzar periodo con anio/mes al ejecutar la tarea manualmente.
+@shared_task(bind=True, name='reportes_diarios.enviar_cierre_mensual_ejecutivo', max_retries=2)
+def enviar_cierre_mensual_ejecutivo(self, anio=None, mes=None):
+    from reportes_diarios.servicios_resumenes_correo import (
+        construir_paquete_correo_cierre_mensual_ejecutivo,
+        enviar_paquete_correo,
+        obtener_periodo_mes_anterior,
+        obtener_sucursales_objetivo,
+    )
+
+    if anio is None or mes is None:
+        anio, mes = obtener_periodo_mes_anterior()
+
+    sucursales = obtener_sucursales_objetivo()
+    if not sucursales:
+        logger.info('[CORREO MENSUAL] No hay sucursales activas para procesar.')
+        return {
+            'periodo': f"{int(anio)}-{int(mes):02d}",
+            'sucursales_procesadas': 0,
+            'mensajes_enviados': 0,
+            'sucursales_omitidas': 0,
+            'errores': [],
+        }
+
+    conexion = get_connection(fail_silently=False)
+    mensajes_enviados = 0
+    sucursales_omitidas = 0
+    errores = []
+
+    for sucursal in sucursales:
+        try:
+            destinatarios = _resolver_destinatarios_correos_ejecutivos(sucursal)
+            if not destinatarios:
+                sucursales_omitidas += 1
+                logger.warning(f"[CORREO MENSUAL] {sucursal.nombre}: omitido por falta de destinatarios configurados.")
+                continue
+
+            paquete = construir_paquete_correo_cierre_mensual_ejecutivo(
+                sucursal=sucursal,
+                anio=int(anio),
+                mes=int(mes),
+            )
+            resultado = enviar_paquete_correo(
+                paquete_correo=paquete,
+                destinatarios=destinatarios,
+                conexion=conexion,
+            )
+            mensajes_enviados += int(resultado.get('enviados') or 0)
+            logger.info(f"[CORREO MENSUAL] {sucursal.nombre}: enviado a {', '.join(destinatarios)}")
+        except Exception as exc:
+            texto_error = f"[CORREO MENSUAL] Error en {sucursal.nombre}: {exc}"
+            logger.error(texto_error)
+            errores.append(texto_error)
+
+    resumen = {
+        'periodo': f"{int(anio)}-{int(mes):02d}",
+        'sucursales_procesadas': len(sucursales),
+        'mensajes_enviados': mensajes_enviados,
+        'sucursales_omitidas': sucursales_omitidas,
+        'errores': errores,
+    }
+    logger.info(f"[CORREO MENSUAL] Finalizado: {resumen}")
+    return resumen

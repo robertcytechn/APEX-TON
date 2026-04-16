@@ -1,0 +1,31 @@
+Cierre mensual ejecutivo - {{ marca_nombre }}
+
+Casino: {{ sucursal_nombre }}
+Periodo: {{ periodo_texto }}
+Fuente: {{ fuente }}
+
+Saldo inicio: {{ saldo_inicio_texto }}
+Total ingresos: {{ ingresos_texto }}
+Total egresos: {{ egresos_texto }}
+Resultado neto: {{ neto_texto }}
+Saldo fin: {{ saldo_fin_texto }}
+Movimientos del mes: {{ movimientos_mes }}
+
+No considerados en total contable:
+- Ingresos: {{ ingresos_no_considerados_texto }}
+- Egresos: {{ egresos_no_considerados_texto }}
+- Neto: {{ neto_no_considerado_texto }}
+
+Rubros destacados:
+{% for rubro in rubros_destacados %}
+- {{ rubro.rubro_padre }} / {{ rubro.rubro_nombre }} | Ingresos: {{ rubro.ingresos_texto }} | Egresos: {{ rubro.egresos_texto }} | Neto: {{ rubro.neto_texto }} | Considerado: {% if rubro.considerado %}SI{% else %}NO{% endif %}
+{% empty %}
+- Sin rubros con movimiento para este periodo.
+{% endfor %}
+
+Adjuntos:
+- Cierre mensual completo en PDF
+- Cierre mensual completo en Excel
+
+Enviado el {{ fecha_envio_texto }} por {{ marca_nombre }}.
+Sistema: {{ url_sistema }}

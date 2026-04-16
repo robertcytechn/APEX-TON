@@ -1,6 +1,7 @@
 ## 2. Stack Tecnológico
 
 El proyecto está dividido en un Backend robusto (API REST) y un Frontend reactivo, orientado a un entorno móvil
+Nombre del sowftware es BinsurMX
 
 ### 2.1. Backend
 - **Lenguaje:** Python 3.13

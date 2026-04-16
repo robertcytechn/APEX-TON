@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cierre mensual ejecutivo</title>
+</head>
+<body style="margin:0;padding:0;background:#f8fafc;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f8fafc;padding:20px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="760" cellspacing="0" cellpadding="0" style="width:760px;max-width:96%;background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:22px 24px;background:linear-gradient(135deg,#0f172a,#1d4ed8);">
+              <div style="font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#bfdbfe;">Cierre mensual ejecutivo</div>
+              <h1 style="margin:10px 0 4px 0;font-family:Segoe UI, Tahoma, sans-serif;font-size:28px;line-height:1.2;color:#ffffff;">{{ marca_nombre }}</h1>
+              <p style="margin:0;font-family:Segoe UI, Tahoma, sans-serif;font-size:14px;line-height:1.4;color:#e2e8f0;">
+                Casino: <strong>{{ sucursal_nombre }}</strong><br />
+                Periodo: <strong>{{ periodo_texto }}</strong> | Fuente: <strong>{{ fuente }}</strong>
+              </p>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:18px 20px 8px 20px;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td width="33.33%" style="padding:6px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dbeafe;border-radius:12px;background:#eff6ff;">
+                      <tr><td style="padding:12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#1e3a8a;">Saldo inicio</td></tr>
+                      <tr><td style="padding:0 14px 12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:20px;font-weight:700;color:#0f172a;">{{ saldo_inicio_texto }}</td></tr>
+                    </table>
+                  </td>
+                  <td width="33.33%" style="padding:6px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dcfce7;border-radius:12px;background:#f0fdf4;">
+                      <tr><td style="padding:12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#166534;">Total ingresos</td></tr>
+                      <tr><td style="padding:0 14px 12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:20px;font-weight:700;color:#0f172a;">{{ ingresos_texto }}</td></tr>
+                    </table>
+                  </td>
+                  <td width="33.33%" style="padding:6px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #fee2e2;border-radius:12px;background:#fff1f2;">
+                      <tr><td style="padding:12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#9f1239;">Total egresos</td></tr>
+                      <tr><td style="padding:0 14px 12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:20px;font-weight:700;color:#0f172a;">{{ egresos_texto }}</td></tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr>
+                  <td width="33.33%" style="padding:6px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
+                      <tr><td style="padding:12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#334155;">Resultado neto</td></tr>
+                      <tr><td style="padding:0 14px 12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:20px;font-weight:700;color:#0f172a;">{{ neto_texto }}</td></tr>
+                    </table>
+                  </td>
+                  <td width="33.33%" style="padding:6px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
+                      <tr><td style="padding:12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#334155;">Saldo fin</td></tr>
+                      <tr><td style="padding:0 14px 12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:20px;font-weight:700;color:#0f172a;">{{ saldo_fin_texto }}</td></tr>
+                    </table>
+                  </td>
+                  <td width="33.33%" style="padding:6px;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #f1f5f9;border-radius:12px;background:#ffffff;">
+                      <tr><td style="padding:12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#334155;">Movimientos del mes</td></tr>
+                      <tr><td style="padding:0 14px 12px 14px;font-family:Segoe UI, Tahoma, sans-serif;font-size:20px;font-weight:700;color:#0f172a;">{{ movimientos_mes }}</td></tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:8px 24px 6px 24px;font-family:Segoe UI, Tahoma, sans-serif;color:#475569;font-size:13px;line-height:1.6;">
+              No considerados en total contable: Ingresos <strong>{{ ingresos_no_considerados_texto }}</strong> | Egresos <strong>{{ egresos_no_considerados_texto }}</strong> | Neto <strong>{{ neto_no_considerado_texto }}</strong>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:8px 24px 6px 24px;">
+              <h2 style="margin:0 0 10px 0;font-family:Segoe UI, Tahoma, sans-serif;font-size:18px;color:#0f172a;">Rubros destacados del mes</h2>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
+                <tr style="background:#0f172a;">
+                  <th align="left" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Grupo</th>
+                  <th align="left" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Rubro</th>
+                  <th align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Ingresos</th>
+                  <th align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Egresos</th>
+                  <th align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Neto</th>
+                  <th align="center" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Considerado</th>
+                </tr>
+                {% for rubro in rubros_destacados %}
+                <tr style="border-top:1px solid #e2e8f0;{% if not rubro.considerado %}background:#f8fafc;{% endif %}">
+                  <td style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#0f172a;">{{ rubro.rubro_padre }}</td>
+                  <td style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#0f172a;">{{ rubro.rubro_nombre }}</td>
+                  <td align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#166534;">{{ rubro.ingresos_texto }}</td>
+                  <td align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#9f1239;">{{ rubro.egresos_texto }}</td>
+                  <td align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#0f172a;">{{ rubro.neto_texto }}</td>
+                  <td align="center" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#334155;">{% if rubro.considerado %}SI{% else %}NO{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                  <td colspan="6" style="padding:14px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#64748b;">No hay rubros con movimiento para este periodo.</td>
+                </tr>
+                {% endfor %}
+              </table>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:8px 24px 10px 24px;font-family:Segoe UI, Tahoma, sans-serif;color:#475569;font-size:13px;line-height:1.6;">
+              Se adjunta el cierre mensual completo en <strong>PDF</strong> y <strong>Excel</strong>.
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:12px 24px 22px 24px;border-top:1px solid #e2e8f0;">
+              <div style="font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#64748b;">Enviado el {{ fecha_envio_texto }} por {{ marca_nombre }}.</div>
+              <div style="margin-top:10px;">
+                <a href="{{ url_sistema }}" style="display:inline-block;padding:10px 16px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:10px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;">Abrir sistema</a>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -1,6 +1,21 @@
-Version del sistema: 2.17.0
+Version del sistema: 2.20.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.20.0
+- Autor: Cy tamayo
+- Descripcion: Se configuraron los correos ejecutivos para tomar destinatarios desde la variable global DESTINATARIOS_CORREOS en ConfiguracionGlobal (correos separados por comas), se agregaron tareas automaticas de Celery para envio diario y cierre mensual por casino, se creo un archivo de configuracion rapida para horarios/flags de disparadores y se incorporo una guia operativa de uso para sincronizar y ejecutar Celery Beat.
+
+- Fecha: 2026-04-16
+- Version: 2.19.0
+- Autor: Cy tamayo
+- Descripcion: Se implementaron plantillas y logica backend para correos ejecutivos por casino en dos flujos: resumen diario (un correo por sucursal con adjuntos PDF y Excel del libro operativo completo) y cierre mensual (resumen del mes objetivo con adjuntos PDF y Excel del estado de resultados mensual); ademas se agrego un comando de gestion para generar o enviar manualmente estos paquetes sin depender aun de disparadores programados.
+
+- Fecha: 2026-04-16
+- Version: 2.18.0
+- Autor: Cy tamayo
+- Descripcion: Se agrego recorte profesional de imagen en la pagina de perfil de usuario antes de subir el avatar (flujo seleccionar-recortar-confirmar con control de zoom/rotacion) y se incorporo un comando de backend para envio de correo HTML de prueba de BinsurMX con iconos, metricas y estilos tipograficos para validar visualmente los correos automaticos en cuentas reales.
 
 - Fecha: 2026-04-16
 - Version: 2.17.0

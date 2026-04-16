@@ -1,0 +1,26 @@
+Resumen diario ejecutivo - {{ marca_nombre }}
+
+Casino: {{ sucursal_nombre }}
+Dia contable: {{ fecha_contable_texto }}
+
+Saldo inicial: {{ saldo_inicial_texto }}
+Total ingresos: {{ ingresos_texto }}
+Total egresos: {{ egresos_texto }}
+Saldo final: {{ saldo_final_texto }}
+Movimientos registrados: {{ total_movimientos }}
+Dias consultados: {{ dias_consultados }}
+Dias con reporte: {{ dias_con_reporte }}
+
+Categorias destacadas:
+{% for categoria in categorias_destacadas %}
+- {{ categoria.nombre }} | Ingresos: {{ categoria.ingresos_texto }} | Egresos: {{ categoria.egresos_texto }} | Neto: {{ categoria.neto_texto }}
+{% empty %}
+- Sin movimientos capturados para este dia contable.
+{% endfor %}
+
+Adjuntos:
+- Reporte diario completo en PDF
+- Reporte diario completo en Excel
+
+Enviado el {{ fecha_envio_texto }} por {{ marca_nombre }}.
+Sistema: {{ url_sistema }}
