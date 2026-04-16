@@ -98,5 +98,30 @@ NOMBRE_PERIODIC_TASK_RESPALDO_BD = 'backup_bd_completo_diario'
 RUTA_RESPALDOS_BD_RELATIVA = 'media/backups_bd'
 RETENCION_DIAS_RESPALDO_BD = 30
 
+# 1) Para que sirve: definir destinatarios exclusivos del correo de backup.
+# 2) Como funciona: se consulta esta clave en configuracion global y, si no existe, usa DESTINATARIOS_CORREOS.
+# 3) Que hace: permite enviar respaldo a un correo personal sin afectar otros flujos.
+# 4) Como editarla: cambia la clave solo si homologas convencion en base de datos.
+CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD = 'DESTINATARIO_BACKUP'
+
+# 1) Para que sirve: definir formato de compresion del respaldo antes de adjuntar por correo.
+# 2) Como funciona: acepta 'gz' o 'zip'.
+# 3) Que hace: reduce el peso del archivo para no exceder limites de adjuntos.
+# 4) Como editarla: usa 'gz' por mejor compresion para SQL de texto.
+FORMATO_COMPRESION_RESPALDO_BD = 'gz'
+
+# 1) Para que sirve: limitar tamano del adjunto de respaldo en correo.
+# 2) Como funciona: si el comprimido supera este valor se envia correo sin adjunto.
+# 3) Que hace: evita rechazos por limite de 25 MB en proveedores de correo.
+# 4) Como editarla: ajusta solo si cambian politicas del buzón destino.
+LIMITE_ADJUNTO_CORREO_RESPALDO_BD_BYTES = 25 * 1024 * 1024
+
+# 1) Para que sirve: estandarizar asuntos del correo de estado del backup.
+# 2) Como funciona: la tarea usa asunto distinto para exito y fallo.
+# 3) Que hace: facilita identificar alertas operativas en bandeja.
+# 4) Como editarla: ajusta textos sin cambiar logica de ejecucion.
+ASUNTO_CORREO_RESPALDO_BD_EXITO = 'BinsurMX | Respaldo BD exitoso'
+ASUNTO_CORREO_RESPALDO_BD_FALLO = 'BinsurMX | Alerta respaldo BD fallido'
+
 # Zona horaria para los cron de django_celery_beat.
 ZONA_HORARIA_CRON = 'America/Mexico_City'

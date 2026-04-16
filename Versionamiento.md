@@ -1,6 +1,11 @@
-Version del sistema: 2.23.0
+Version del sistema: 2.24.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.24.0
+- Autor: Cy tamayo
+- Descripcion: Se robustecio la tarea Celery de respaldo de base de datos para ejecutar mysqldump local, comprimir automaticamente el resultado en formato configurable (gz/zip), enviar notificacion SMTP de exito con archivo adjunto cuando no supera 25 MB, y disparar correo de alerta en caso de fallo del respaldo o del envio principal.
 
 - Fecha: 2026-04-16
 - Version: 2.23.0

@@ -5,6 +5,7 @@ Esta guia explica como operar los envios automaticos diario y mensual usando:
 - Disparadores en django_celery_beat.
 - Archivo de configuracion editable para horarios y backups.
 - Broker RabbitMQ para tareas programadas en Windows Server.
+- Notificacion SMTP de respaldo BD con archivo comprimido adjunto.
 
 ## 1) Configurar destinatarios globales en base de datos
 
@@ -12,6 +13,11 @@ En la tabla de configuraciones globales crea o actualiza el registro:
 - clave: DESTINATARIOS_CORREOS
 - tipo_valor: STRING
 - valor: correos separados por coma
+
+Para respaldo de BD se recomienda crear tambien:
+- clave: DESTINATARIOS_RESPALDO_BD
+- tipo_valor: STRING
+- valor: correo personal o lista de monitoreo (separados por coma)
 
 Ejemplo de valor:
 
@@ -35,6 +41,9 @@ Parametros clave:
 - CRON_DIARIO_* (fallback si HORARIO_CIERRE no esta definido o no es valido)
 - CRON_MENSUAL_* (por defecto dia 1 de cada mes a las 08:00)
 - CRON_RESPALDO_BD_* (por defecto 23:59 diario)
+- CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD
+- FORMATO_COMPRESION_RESPALDO_BD (gz o zip)
+- LIMITE_ADJUNTO_CORREO_RESPALDO_BD_BYTES (25 MB por defecto)
 - INCLUIR_CORREO_SUCURSAL_EN_ENVIO (opcional)
 
 Despues de cualquier cambio en este archivo, sincroniza disparadores.
@@ -120,12 +129,16 @@ c:/Users/rober/OneDrive/Escritorio/APEX-TON/.venv/Scripts/python.exe manage.py p
 - reportes_diarios.ejecutar_backup_bd
 
 Estas tareas leen destinatarios desde ConfiguracionGlobal.DESTINATARIOS_CORREOS en cada ejecucion.
+Para backup BD se prioriza ConfiguracionGlobal.DESTINATARIOS_RESPALDO_BD y, si no existe, se usa DESTINATARIOS_CORREOS.
 
 ## 7) Programacion aplicada
 
 - Envio diario: usa HORARIO_CIERRE desde ConfiguracionGlobal (resincroniza cada dia).
 - Envio mensual: dia 1 a las 08:00.
 - Backup completo BD: diario a las 23:59.
+- El backup se comprime en formato configurable (.gz por default) antes del correo.
+- Si el comprimido excede 25 MB, se envia aviso exitoso sin adjunto y con ruta local.
+- Si falla mysqldump o el envio principal, la tarea intenta enviar correo de alerta.
 
 Nota: cron de django_celery_beat no maneja segundos, por eso el respaldo se define a las 23:59.
 

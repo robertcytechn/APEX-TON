@@ -5,11 +5,13 @@ configurada en ConfiguracionGlobal.
 """
 import logging
 import os
+import gzip
 import shutil
 import subprocess
+import zipfile
 from datetime import datetime
 from celery import shared_task
-from django.core.mail import get_connection
+from django.core.mail import EmailMessage, get_connection
 from django.core.management import call_command
 from django.db import transaction
 from django.utils import timezone
@@ -414,6 +416,73 @@ def _resolver_ruta_mysqldump():
     return None
 
 
+# 1) Para que sirve: obtener destinatarios del correo de respaldo con fallback seguro.
+# 2) Como funciona: intenta DESTINATARIOS_RESPALDO_BD y cae a DESTINATARIOS_CORREOS.
+# 3) Que hace: permite notificar respaldo a correo personal sin romper configuracion existente.
+# 4) Como editarla: cambia claves en configuracion_correos_ejecutivos.py.
+def _resolver_destinatarios_respaldo_bd():
+    from reportes_diarios.configuracion_correos_ejecutivos import (
+        CLAVE_CONFIG_DESTINATARIOS_CORREOS,
+        CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD,
+    )
+    from reportes_diarios.servicios_resumenes_correo import (
+        normalizar_destinatarios,
+        obtener_destinatarios_globales_configurados,
+    )
+
+    destinatarios = obtener_destinatarios_globales_configurados(CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD)
+    if not destinatarios:
+        destinatarios = obtener_destinatarios_globales_configurados(CLAVE_CONFIG_DESTINATARIOS_CORREOS)
+    return normalizar_destinatarios(destinatarios)
+
+
+# 1) Para que sirve: comprimir el .sql de respaldo para reducir peso de adjunto.
+# 2) Como funciona: soporta compresion gzip (.gz) o zip (.zip).
+# 3) Que hace: genera un archivo comprimido listo para envio por correo.
+# 4) Como editarla: cambia formato por default en configuracion, no en esta funcion.
+def _comprimir_respaldo_sql(ruta_sql, formato_compresion):
+    formato = str(formato_compresion or 'gz').strip().lower()
+    if formato not in {'gz', 'zip'}:
+        raise ValueError(f'Formato de compresion no soportado: {formato}. Usa gz o zip.')
+
+    if formato == 'gz':
+        ruta_comprimida = Path(f'{ruta_sql}.gz')
+        with ruta_sql.open('rb') as origen, gzip.open(ruta_comprimida, 'wb', compresslevel=9) as destino:
+            shutil.copyfileobj(origen, destino)
+        return ruta_comprimida
+
+    ruta_comprimida = Path(f'{ruta_sql}.zip')
+    with zipfile.ZipFile(ruta_comprimida, mode='w', compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archivo_zip:
+        archivo_zip.write(ruta_sql, arcname=ruta_sql.name)
+    return ruta_comprimida
+
+
+# 1) Para que sirve: enviar notificacion de respaldo usando SMTP configurado en Django.
+# 2) Como funciona: construye EmailMessage y adjunta archivo comprimido cuando aplica.
+# 3) Que hace: confirma al operador exito o fallo de respaldo diario.
+# 4) Como editarla: personaliza remitente/asunto/cuerpo sin tocar flujo principal.
+def _enviar_correo_respaldo_bd(destinatarios, asunto, cuerpo, ruta_adjunto=None):
+    from django.conf import settings
+
+    remitente = str(
+        getattr(settings, 'DEFAULT_FROM_EMAIL', '')
+        or getattr(settings, 'EMAIL_HOST_USER', '')
+        or 'no-responder@binsur.mx'
+    )
+    correo = EmailMessage(
+        subject=str(asunto),
+        body=str(cuerpo),
+        from_email=remitente,
+        to=list(destinatarios or []),
+    )
+
+    if ruta_adjunto and Path(ruta_adjunto).exists():
+        correo.attach_file(str(ruta_adjunto))
+
+    enviados = int(correo.send(fail_silently=False) or 0)
+    return enviados
+
+
 # 1) Para que sirve: limpiar respaldos viejos para controlar crecimiento de disco.
 # 2) Como funciona: elimina archivos .sql con antiguedad mayor a retencion_dias.
 # 3) Que hace: conserva solo ventana reciente de backups completos.
@@ -425,7 +494,12 @@ def _limpiar_respaldos_antiguos(carpeta_respaldos, retencion_dias):
     ahora = timezone.localtime(timezone.now())
     eliminados = 0
 
-    for archivo in carpeta_respaldos.glob('backup_*.sql'):
+    patrones = ('backup_*.sql', 'backup_*.sql.gz', 'backup_*.sql.zip')
+    archivos_candidatos = set()
+    for patron in patrones:
+        archivos_candidatos.update(carpeta_respaldos.glob(patron))
+
+    for archivo in archivos_candidatos:
         modificado = timezone.make_aware(datetime.fromtimestamp(archivo.stat().st_mtime), timezone.get_current_timezone())
         antiguedad = (ahora - modificado).days
         if antiguedad > int(retencion_dias):
@@ -443,71 +517,130 @@ def _limpiar_respaldos_antiguos(carpeta_respaldos, retencion_dias):
 def ejecutar_backup_bd(self):
     from django.conf import settings
     from reportes_diarios.configuracion_correos_ejecutivos import (
+        ASUNTO_CORREO_RESPALDO_BD_EXITO,
+        ASUNTO_CORREO_RESPALDO_BD_FALLO,
+        FORMATO_COMPRESION_RESPALDO_BD,
+        LIMITE_ADJUNTO_CORREO_RESPALDO_BD_BYTES,
         RETENCION_DIAS_RESPALDO_BD,
         RUTA_RESPALDOS_BD_RELATIVA,
     )
 
-    configuracion_db = settings.DATABASES.get('default', {})
-    engine = str(configuracion_db.get('ENGINE') or '')
-    if 'mysql' not in engine:
-        mensaje = f'Backup omitido: engine no soportado para esta tarea ({engine}).'
-        logger.warning(f"[BACKUP BD] {mensaje}")
-        return {'status': 'omitido', 'mensaje': mensaje}
-
-    ruta_mysqldump = _resolver_ruta_mysqldump()
-    if not ruta_mysqldump:
-        raise RuntimeError('No se encontro mysqldump. Define MYSQLDUMP_PATH en entorno del servidor.')
-
-    carpeta_respaldos = Path(settings.BASE_DIR) / str(RUTA_RESPALDOS_BD_RELATIVA)
-    carpeta_respaldos.mkdir(parents=True, exist_ok=True)
-
-    marca_tiempo = timezone.localtime(timezone.now()).strftime('%Y%m%d_%H%M%S')
-    nombre_bd = str(configuracion_db.get('NAME') or 'base_datos')
-    nombre_archivo = f'backup_{nombre_bd}_{marca_tiempo}.sql'
-    ruta_archivo = carpeta_respaldos / nombre_archivo
-
-    host = str(configuracion_db.get('HOST') or '127.0.0.1')
-    puerto = str(configuracion_db.get('PORT') or '3306')
-    usuario = str(configuracion_db.get('USER') or '')
-    password = str(configuracion_db.get('PASSWORD') or '')
-
-    comando = [
-        ruta_mysqldump,
-        f'--host={host}',
-        f'--port={puerto}',
-        f'--user={usuario}',
-        '--single-transaction',
-        '--skip-lock-tables',
-        '--routines',
-        '--triggers',
-        nombre_bd,
-    ]
-
-    entorno = os.environ.copy()
-    if password:
-        entorno['MYSQL_PWD'] = password
+    fecha_ejecucion = timezone.localtime(timezone.now())
+    destinatarios = _resolver_destinatarios_respaldo_bd()
 
     try:
-        with ruta_archivo.open('wb') as flujo_salida:
-            subprocess.run(
-                comando,
-                env=entorno,
-                stdout=flujo_salida,
-                stderr=subprocess.PIPE,
-                check=True,
+        if not destinatarios:
+            raise RuntimeError(
+                'No hay destinatarios de respaldo configurados. '
+                'Define DESTINATARIOS_RESPALDO_BD o DESTINATARIOS_CORREOS en ConfiguracionGlobal.'
             )
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or b'').decode('utf-8', errors='ignore')
-        raise RuntimeError(f'Error en mysqldump: {stderr}') from exc
 
-    eliminados = _limpiar_respaldos_antiguos(carpeta_respaldos, RETENCION_DIAS_RESPALDO_BD)
-    tamanio_bytes = ruta_archivo.stat().st_size if ruta_archivo.exists() else 0
+        configuracion_db = settings.DATABASES.get('default', {})
+        engine = str(configuracion_db.get('ENGINE') or '')
+        if 'mysql' not in engine:
+            raise RuntimeError(f'Engine no soportado para respaldo automatico ({engine}).')
 
-    resumen = {
-        'status': 'ok',
-        'archivo': str(ruta_archivo),
-        'bytes': int(tamanio_bytes),
-        'respaldos_eliminados': int(eliminados),
-    }
-    logger.info(f"[BACKUP BD] Respaldo generado: {resumen}")
-    return resumen
+        ruta_mysqldump = _resolver_ruta_mysqldump()
+        if not ruta_mysqldump:
+            raise RuntimeError('No se encontro mysqldump. Define MYSQLDUMP_PATH en entorno del servidor.')
+
+        carpeta_respaldos = Path(settings.BASE_DIR) / str(RUTA_RESPALDOS_BD_RELATIVA)
+        carpeta_respaldos.mkdir(parents=True, exist_ok=True)
+
+        marca_tiempo = fecha_ejecucion.strftime('%Y%m%d_%H%M%S')
+        nombre_bd = str(configuracion_db.get('NAME') or 'base_datos')
+        nombre_archivo = f'backup_{nombre_bd}_{marca_tiempo}.sql'
+        ruta_archivo_sql = carpeta_respaldos / nombre_archivo
+
+        host = str(configuracion_db.get('HOST') or '127.0.0.1')
+        puerto = str(configuracion_db.get('PORT') or '3306')
+        usuario = str(configuracion_db.get('USER') or '')
+        password = str(configuracion_db.get('PASSWORD') or '')
+
+        comando = [
+            ruta_mysqldump,
+            f'--host={host}',
+            f'--port={puerto}',
+            f'--user={usuario}',
+            '--single-transaction',
+            '--skip-lock-tables',
+            '--routines',
+            '--triggers',
+            nombre_bd,
+        ]
+
+        entorno = os.environ.copy()
+        if password:
+            entorno['MYSQL_PWD'] = password
+
+        try:
+            with ruta_archivo_sql.open('wb') as flujo_salida:
+                subprocess.run(
+                    comando,
+                    env=entorno,
+                    stdout=flujo_salida,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                )
+        except subprocess.CalledProcessError as exc:
+            stderr = (exc.stderr or b'').decode('utf-8', errors='ignore')
+            raise RuntimeError(f'Error en mysqldump: {stderr}') from exc
+
+        ruta_archivo_comprimido = _comprimir_respaldo_sql(ruta_archivo_sql, FORMATO_COMPRESION_RESPALDO_BD)
+        ruta_archivo_sql.unlink(missing_ok=True)
+
+        eliminados = _limpiar_respaldos_antiguos(carpeta_respaldos, RETENCION_DIAS_RESPALDO_BD)
+        tamanio_bytes = ruta_archivo_comprimido.stat().st_size if ruta_archivo_comprimido.exists() else 0
+        adjuntar_respaldo = int(tamanio_bytes) <= int(LIMITE_ADJUNTO_CORREO_RESPALDO_BD_BYTES)
+        tamano_mb = float(tamanio_bytes) / (1024 * 1024) if tamanio_bytes else 0
+
+        cuerpo_exito = (
+            'Respaldo automatico de base de datos ejecutado correctamente.\n\n'
+            f'Fecha: {fecha_ejecucion.strftime("%Y-%m-%d %H:%M:%S")}\n'
+            f'Base de datos: {nombre_bd}\n'
+            f'Archivo comprimido: {ruta_archivo_comprimido}\n'
+            f'Tamano: {tamano_mb:.2f} MB\n'
+            f'Adjunto incluido: {"SI" if adjuntar_respaldo else "NO (supera 25 MB)"}\n'
+            f'Respaldos antiguos eliminados: {int(eliminados)}\n'
+        )
+
+        _enviar_correo_respaldo_bd(
+            destinatarios=destinatarios,
+            asunto=ASUNTO_CORREO_RESPALDO_BD_EXITO,
+            cuerpo=cuerpo_exito,
+            ruta_adjunto=ruta_archivo_comprimido if adjuntar_respaldo else None,
+        )
+
+        resumen = {
+            'status': 'ok',
+            'archivo_respaldo': str(ruta_archivo_comprimido),
+            'bytes': int(tamanio_bytes),
+            'adjunto_enviado': bool(adjuntar_respaldo),
+            'destinatarios': destinatarios,
+            'respaldos_eliminados': int(eliminados),
+        }
+        logger.info(f"[BACKUP BD] Respaldo generado y notificado: {resumen}")
+        return resumen
+
+    except Exception as exc:
+        texto_error = str(exc)
+        logger.error(f"[BACKUP BD] Fallo en respaldo: {texto_error}")
+
+        if destinatarios:
+            try:
+                cuerpo_fallo = (
+                    'ALERTA: el respaldo automatico de base de datos fallo.\n\n'
+                    f'Fecha: {fecha_ejecucion.strftime("%Y-%m-%d %H:%M:%S")}\n'
+                    f'Error: {texto_error}\n'
+                    'Accion requerida: revisar logs de Celery Worker y conectividad de BD/SMTP.\n'
+                )
+                _enviar_correo_respaldo_bd(
+                    destinatarios=destinatarios,
+                    asunto=ASUNTO_CORREO_RESPALDO_BD_FALLO,
+                    cuerpo=cuerpo_fallo,
+                    ruta_adjunto=None,
+                )
+            except Exception as exc_correo:
+                logger.error(f"[BACKUP BD] Fallo enviando correo de alerta: {exc_correo}")
+
+        raise RuntimeError(f'Fallo en respaldo automatico de BD: {texto_error}') from exc
