@@ -1,6 +1,16 @@
-Version del sistema: 2.20.0
+Version del sistema: 2.22.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.22.0
+- Autor: Cy tamayo
+- Descripcion: Se completo la limpieza de branding y persistencia en frontend para operar solo con BinsurMX, eliminando compatibilidad legacy de llaves locales binsur_mx en store de sesion, guard global de rutas e interceptor API.
+
+- Fecha: 2026-04-16
+- Version: 2.21.0
+- Autor: Cy tamayo
+- Descripcion: Se homologo integralmente el branding del frontend a BinsurMX, actualizando textos visibles (titulo principal, topbar, login y footer), estandarizando identificadores tecnicos de sesion/exportacion en cliente y manteniendo compatibilidad de lectura con llaves locales legadas para no romper sesiones existentes.
 
 - Fecha: 2026-04-16
 - Version: 2.20.0
