@@ -4,12 +4,18 @@ La tarea principal es el cierre automático del día contable al alcanzar la hor
 configurada en ConfiguracionGlobal.
 """
 import logging
+import os
+import shutil
+import subprocess
+from datetime import datetime
 from celery import shared_task
 from django.core.mail import get_connection
+from django.core.management import call_command
 from django.db import transaction
 from django.utils import timezone
 from django.db.models import Sum
 import calendar
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -362,4 +368,146 @@ def enviar_cierre_mensual_ejecutivo(self, anio=None, mes=None):
         'errores': errores,
     }
     logger.info(f"[CORREO MENSUAL] Finalizado: {resumen}")
+    return resumen
+
+
+# 1) Para que sirve: refrescar diariamente el horario de envio diario leyendo HORARIO_CIERRE en BD.
+# 2) Como funciona: reusa el comando de sincronizacion de disparadores con update idempotente.
+# 3) Que hace: evita que el envio diario quede con una hora vieja despues de cambiar configuracion global.
+# 4) Como editarla: agrega parametros al call_command si necesitas variantes por entorno.
+@shared_task(bind=True, name='reportes_diarios.sincronizar_horario_correo_diario', max_retries=1)
+def sincronizar_horario_correo_diario(self):
+    try:
+        call_command('sincronizar_disparadores_correos_ejecutivos')
+        mensaje = 'Sincronizacion de horario diario completada desde HORARIO_CIERRE.'
+        logger.info(f"[SYNC HORARIO CORREO] {mensaje}")
+        return {'status': 'ok', 'mensaje': mensaje}
+    except Exception as exc:
+        texto_error = f'Sincronizacion de horario diario fallida: {exc}'
+        logger.error(f"[SYNC HORARIO CORREO] {texto_error}")
+        raise
+
+
+# 1) Para que sirve: localizar ejecutable mysqldump disponible en servidor Windows.
+# 2) Como funciona: prioriza variable MYSQLDUMP_PATH y despues rutas conocidas.
+# 3) Que hace: evita fallos por diferencia de instalacion entre entornos.
+# 4) Como editarla: agrega nuevas rutas si cambias distribucion de MySQL.
+def _resolver_ruta_mysqldump():
+    ruta_preferida = os.getenv('MYSQLDUMP_PATH')
+    if ruta_preferida:
+        ruta_normalizada = Path(ruta_preferida)
+        if ruta_normalizada.exists():
+            return str(ruta_normalizada)
+
+    comando_en_path = shutil.which('mysqldump')
+    if comando_en_path:
+        return str(comando_en_path)
+
+    rutas_candidatas = [
+        Path('C:/xampp/mysql/bin/mysqldump.exe'),
+        Path('C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe'),
+    ]
+    for ruta_candidata in rutas_candidatas:
+        if ruta_candidata.exists():
+            return str(ruta_candidata)
+
+    return None
+
+
+# 1) Para que sirve: limpiar respaldos viejos para controlar crecimiento de disco.
+# 2) Como funciona: elimina archivos .sql con antiguedad mayor a retencion_dias.
+# 3) Que hace: conserva solo ventana reciente de backups completos.
+# 4) Como editarla: cambia patron o metrica de antiguedad si se comprime a zip.
+def _limpiar_respaldos_antiguos(carpeta_respaldos, retencion_dias):
+    if int(retencion_dias) <= 0:
+        return 0
+
+    ahora = timezone.localtime(timezone.now())
+    eliminados = 0
+
+    for archivo in carpeta_respaldos.glob('backup_*.sql'):
+        modificado = timezone.make_aware(datetime.fromtimestamp(archivo.stat().st_mtime), timezone.get_current_timezone())
+        antiguedad = (ahora - modificado).days
+        if antiguedad > int(retencion_dias):
+            archivo.unlink(missing_ok=True)
+            eliminados += 1
+
+    return eliminados
+
+
+# 1) Para que sirve: generar respaldo completo diario de la base de datos MySQL.
+# 2) Como funciona: ejecuta mysqldump con credenciales de settings y guarda archivo .sql.
+# 3) Que hace: asegura punto de recuperacion diario para contingencias operativas.
+# 4) Como editarla: agrega compresion/replicacion externa si se requiere DR avanzado.
+@shared_task(bind=True, name='reportes_diarios.ejecutar_backup_bd', max_retries=1)
+def ejecutar_backup_bd(self):
+    from django.conf import settings
+    from reportes_diarios.configuracion_correos_ejecutivos import (
+        RETENCION_DIAS_RESPALDO_BD,
+        RUTA_RESPALDOS_BD_RELATIVA,
+    )
+
+    configuracion_db = settings.DATABASES.get('default', {})
+    engine = str(configuracion_db.get('ENGINE') or '')
+    if 'mysql' not in engine:
+        mensaje = f'Backup omitido: engine no soportado para esta tarea ({engine}).'
+        logger.warning(f"[BACKUP BD] {mensaje}")
+        return {'status': 'omitido', 'mensaje': mensaje}
+
+    ruta_mysqldump = _resolver_ruta_mysqldump()
+    if not ruta_mysqldump:
+        raise RuntimeError('No se encontro mysqldump. Define MYSQLDUMP_PATH en entorno del servidor.')
+
+    carpeta_respaldos = Path(settings.BASE_DIR) / str(RUTA_RESPALDOS_BD_RELATIVA)
+    carpeta_respaldos.mkdir(parents=True, exist_ok=True)
+
+    marca_tiempo = timezone.localtime(timezone.now()).strftime('%Y%m%d_%H%M%S')
+    nombre_bd = str(configuracion_db.get('NAME') or 'base_datos')
+    nombre_archivo = f'backup_{nombre_bd}_{marca_tiempo}.sql'
+    ruta_archivo = carpeta_respaldos / nombre_archivo
+
+    host = str(configuracion_db.get('HOST') or '127.0.0.1')
+    puerto = str(configuracion_db.get('PORT') or '3306')
+    usuario = str(configuracion_db.get('USER') or '')
+    password = str(configuracion_db.get('PASSWORD') or '')
+
+    comando = [
+        ruta_mysqldump,
+        f'--host={host}',
+        f'--port={puerto}',
+        f'--user={usuario}',
+        '--single-transaction',
+        '--skip-lock-tables',
+        '--routines',
+        '--triggers',
+        nombre_bd,
+    ]
+
+    entorno = os.environ.copy()
+    if password:
+        entorno['MYSQL_PWD'] = password
+
+    try:
+        with ruta_archivo.open('wb') as flujo_salida:
+            subprocess.run(
+                comando,
+                env=entorno,
+                stdout=flujo_salida,
+                stderr=subprocess.PIPE,
+                check=True,
+            )
+    except subprocess.CalledProcessError as exc:
+        stderr = (exc.stderr or b'').decode('utf-8', errors='ignore')
+        raise RuntimeError(f'Error en mysqldump: {stderr}') from exc
+
+    eliminados = _limpiar_respaldos_antiguos(carpeta_respaldos, RETENCION_DIAS_RESPALDO_BD)
+    tamanio_bytes = ruta_archivo.stat().st_size if ruta_archivo.exists() else 0
+
+    resumen = {
+        'status': 'ok',
+        'archivo': str(ruta_archivo),
+        'bytes': int(tamanio_bytes),
+        'respaldos_eliminados': int(eliminados),
+    }
+    logger.info(f"[BACKUP BD] Respaldo generado: {resumen}")
     return resumen

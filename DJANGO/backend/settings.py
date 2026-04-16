@@ -201,16 +201,18 @@ MEDIA_URL = f'{SUBCARPETA_BASE_APEX}/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
 # ── Celery ──────────────────────────────────────────────────────────────────
-# Broker: Redis. Asegúrate de tener Redis corriendo en localhost:6379.
-# Para iniciar rápido: docker run -d -p 6379:6379 redis
-CELERY_BROKER_URL         = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND     = 'redis://localhost:6379/0'
+# Broker por defecto en servidor: RabbitMQ.
+# Formato recomendado: amqp://usuario:password@host:5672/vhost
+CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'amqp://guest:guest@127.0.0.1:5672//')
+# RabbitMQ no requiere backend de resultados para este flujo, por eso se usa rpc://.
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'rpc://')
 CELERY_TIMEZONE           = 'America/Mexico_City'
 CELERY_ENABLE_UTC         = False
 CELERY_ACCEPT_CONTENT     = ['json']
 CELERY_TASK_SERIALIZER    = 'json'
 CELERY_RESULT_SERIALIZER  = 'json'
 CELERY_BEAT_SCHEDULER     = 'django_celery_beat.schedulers:DatabaseScheduler'
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 # ── django-simple-history ───────────────────────────────────────────────────
 HISTORY_USER_MODEL = AUTH_USER_MODEL

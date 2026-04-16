@@ -1,6 +1,11 @@
-Version del sistema: 2.22.0
+Version del sistema: 2.23.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.23.0
+- Autor: Cy tamayo
+- Descripcion: Se habilito operacion de tareas programadas con RabbitMQ para Windows Server, agregando sincronizacion dinamica del envio diario de correos ejecutivos desde ConfiguracionGlobal.HORARIO_CIERRE, programacion mensual fija el dia 1 a las 08:00, respaldo completo diario de base de datos a las 23:59 mediante tarea Celery y script unico PowerShell para levantar waitress, worker y beat en una sola ejecucion.
 
 - Fecha: 2026-04-16
 - Version: 2.22.0
