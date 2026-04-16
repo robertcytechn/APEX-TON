@@ -1,6 +1,8 @@
 from rest_framework import viewsets, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from core.permisos import EsDirectorOAdministradorEnEscritura
 from .models import FondoFijo, SucursalFondoFijo
 from .serializers import FondoFijoSerializer, SucursalFondoFijoSerializer
 
@@ -19,6 +21,8 @@ def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success"
 # 4) Cómo editarla: incluye validaciones de negocio en create/update según reglas financieras.
 class FondoFijoViewSet(viewsets.ViewSet):
     """CRUD completo para FondoFijo."""
+
+    permission_classes = [IsAuthenticated, EsDirectorOAdministradorEnEscritura]
 
     def list(self, request):
         queryset = FondoFijo.objects.all()
@@ -66,6 +70,8 @@ class FondoFijoViewSet(viewsets.ViewSet):
 # 4) Cómo editarla: agrega reglas de unicidad o vigencia en create/update según operación.
 class SucursalFondoFijoViewSet(viewsets.ViewSet):
     """CRUD completo para la asignación de fondos fijos por sucursal."""
+
+    permission_classes = [IsAuthenticated, EsDirectorOAdministradorEnEscritura]
 
     def list(self, request):
         queryset = SucursalFondoFijo.objects.select_related('sucursal', 'fondo_fijo').all()

@@ -218,6 +218,11 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
         verbose_name="Es Staff",
         help_text="Indica si el usuario tiene acceso al sitio de administración de Django."
     )
+    requiere_cambio_password = models.BooleanField(
+        default=False,
+        verbose_name="Requiere cambio de contraseña",
+        help_text="Indica si el usuario debe cambiar su contraseña de forma obligatoria al iniciar sesión."
+    )
     creado_en = models.DateTimeField(
         auto_now_add=True,
         verbose_name="Creado en",

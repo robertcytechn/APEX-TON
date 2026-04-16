@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Credenciales de acceso BinsurMX</title>
+</head>
+<body style="margin:0;padding:0;background:#f8fafc;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;background:#f8fafc;">
+        <tr>
+            <td align="center">
+                <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:96%;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+                    <tr>
+                        <td style="padding:22px 24px;background:linear-gradient(120deg,#0f172a,#0ea5e9);color:#ffffff;font-family:Segoe UI,Tahoma,sans-serif;">
+                            <div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.9;">BinsurMX</div>
+                            <h1 style="margin:8px 0 0 0;font-size:26px;line-height:1.2;">Credenciales de acceso</h1>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:22px 24px;font-family:Segoe UI,Tahoma,sans-serif;color:#0f172a;">
+                            <p style="margin:0 0 12px 0;">Hola <strong>{{ nombre_usuario }}</strong>,</p>
+
+                            {% if es_reinicio %}
+                            <p style="margin:0 0 12px 0;">Tu acceso a BinsurMX fue reiniciado por un director. Usa las siguientes credenciales para entrar.</p>
+                            {% else %}
+                            <p style="margin:0 0 12px 0;">Bienvenido a BinsurMX. Tu usuario fue creado correctamente.</p>
+                            {% endif %}
+
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:10px;margin:14px 0;">
+                                <tr>
+                                    <td style="padding:12px 14px;font-size:14px;border-bottom:1px solid #e2e8f0;">
+                                        <strong>Usuario:</strong> {{ username }}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:12px 14px;font-size:14px;">
+                                        <strong>Contrasena:</strong> {{ contrasena_visible }}
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <p style="margin:0 0 8px 0;font-size:14px;">Enlaces de acceso:</p>
+                            <ul style="margin:0 0 14px 18px;padding:0;">
+                                <li style="margin:0 0 6px 0;"><a href="{{ enlace_dashboard }}" style="color:#0284c7;">Dashboard</a></li>
+                                <li style="margin:0;"><a href="{{ enlace_login }}" style="color:#0284c7;">Login</a></li>
+                            </ul>
+
+                            <div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:12px 14px;font-size:13px;">
+                                Debes iniciar sesion y cambiar tu contrasena de inmediato desde tu perfil.
+                            </div>
+
+                            <p style="margin:16px 0 0 0;font-size:13px;color:#475569;">Equipo BinsurMX</p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

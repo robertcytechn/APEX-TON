@@ -1,7 +1,10 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+
+from core.permisos import EsDirectorOAdministradorEnEscritura
 
 from .models import CategoriaOperativa, Concepto, DetalleParametrizado
 from .serializers import (
@@ -34,6 +37,8 @@ class CategoriaOperativaViewSet(viewsets.ViewSet):
     Acciones extra:
       - activar / desactivar / bloquear → Cambios de estado de ciclo de vida.
     """
+
+    permission_classes = [IsAuthenticated, EsDirectorOAdministradorEnEscritura]
 
     def list(self, request):
         qs = CategoriaOperativa.objects.all()
@@ -102,6 +107,8 @@ class ConceptoViewSet(viewsets.ViewSet):
     Soporta filtrado opcional por categoría via query param: ?categoria_id=<id>
     """
 
+    permission_classes = [IsAuthenticated, EsDirectorOAdministradorEnEscritura]
+
     def list(self, request):
         qs = Concepto.objects.all()
         categoria_id = request.query_params.get('categoria_id')
@@ -151,6 +158,8 @@ class DetalleParametrizadoViewSet(viewsets.ViewSet):
     CRUD completo para DetalleParametrizado.
     Soporta filtrado opcional por categoría via query param: ?categoria_id=<id>
     """
+
+    permission_classes = [IsAuthenticated, EsDirectorOAdministradorEnEscritura]
 
     def list(self, request):
         qs = DetalleParametrizado.objects.all()

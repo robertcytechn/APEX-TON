@@ -107,3 +107,70 @@ class EsAdministrador(BasePermission):
             ).exists() or request.user.is_superuser
         except Exception:
             return request.user.is_superuser
+
+
+# 1) Para qué sirve: validar pertenencia de rol de forma reutilizable para permisos DRF.
+# 2) Cómo funciona: consulta tabla usuario_roles por nombre de rol ignorando mayúsculas/minúsculas.
+# 3) Qué hace: devuelve True si el usuario tiene el rol solicitado o es superusuario.
+# 4) Cómo editarla: agrega lógica adicional aquí si en el futuro se habilitan alias de roles.
+def usuario_tiene_rol(usuario, nombre_rol):
+    if not usuario or not usuario.is_authenticated:
+        return False
+
+    if usuario.is_superuser:
+        return True
+
+    try:
+        return usuario.usuario_roles.filter(rol__nombre__iexact=nombre_rol).exists()
+    except Exception:
+        return False
+
+
+# 1) Para qué sirve: evaluar pertenencia contra múltiples roles aceptados.
+# 2) Cómo funciona: itera roles permitidos y usa usuario_tiene_rol para cada uno.
+# 3) Qué hace: simplifica reglas OR de autorización por rol.
+# 4) Cómo editarla: cambia la estrategia de evaluación si se requieren reglas jerárquicas.
+def usuario_tiene_alguno_roles(usuario, nombres_roles):
+    return any(usuario_tiene_rol(usuario, nombre_rol) for nombre_rol in (nombres_roles or []))
+
+
+# 1) Para qué sirve: permitir acceso únicamente a usuarios con rol DIRECTOR.
+# 2) Cómo funciona: valida autenticación y consulta rol DIRECTOR en usuario_roles.
+# 3) Qué hace: habilita módulos exclusivos de cabina para directores.
+# 4) Cómo editarla: extiende roles permitidos si negocio habilita subtipos directivos.
+class EsDirector(BasePermission):
+    """Permiso estricto para rol DIRECTOR."""
+
+    message = 'Tu usuario no cuenta con permisos de director para esta operación.'
+
+    def has_permission(self, request, view):
+        return usuario_tiene_rol(request.user, 'DIRECTOR')
+
+
+# 1) Para qué sirve: autorizar acciones para DIRECTOR o ADMINISTRADOR.
+# 2) Cómo funciona: evalúa autenticación y rol contra lista permitida.
+# 3) Qué hace: habilita operaciones compartidas de cabina entre dirección y administración.
+# 4) Cómo editarla: agrega/quita roles en la lista base según política de seguridad.
+class EsDirectorOAdministrador(BasePermission):
+    """Permiso para módulos compartidos entre DIRECTOR y ADMINISTRADOR."""
+
+    message = 'No tienes permisos para realizar esta operación en cabina.'
+
+    def has_permission(self, request, view):
+        return usuario_tiene_alguno_roles(request.user, ['DIRECTOR', 'ADMINISTRADOR'])
+
+
+# 1) Para qué sirve: permitir lectura a usuarios autenticados y restringir escrituras a dirección/admin.
+# 2) Cómo funciona: deja pasar GET/HEAD/OPTIONS y valida rol en POST/PUT/PATCH/DELETE.
+# 3) Qué hace: protege catálogos de configuración sin bloquear consultas operativas.
+# 4) Cómo editarla: ajusta METODOS_ESCRITURA si se agregan métodos HTTP personalizados.
+class EsDirectorOAdministradorEnEscritura(BasePermission):
+    """Permite lectura autenticada; escritura sólo para DIRECTOR o ADMINISTRADOR."""
+
+    METODOS_ESCRITURA = ('POST', 'PUT', 'PATCH', 'DELETE')
+    message = 'No tienes permisos para modificar este catálogo.'
+
+    def has_permission(self, request, view):
+        if request.method not in self.METODOS_ESCRITURA:
+            return bool(request.user and request.user.is_authenticated)
+        return usuario_tiene_alguno_roles(request.user, ['DIRECTOR', 'ADMINISTRADOR'])

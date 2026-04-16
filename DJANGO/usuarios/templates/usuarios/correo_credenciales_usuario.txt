@@ -1,0 +1,20 @@
+Hola {{ nombre_usuario }},
+
+{% if es_reinicio %}
+Tu acceso a BinsurMX fue reiniciado por un director.
+{% else %}
+Bienvenido a BinsurMX. Tu usuario fue creado correctamente.
+{% endif %}
+
+Credenciales de acceso:
+- Usuario: {{ username }}
+- Contrasena: {{ contrasena_visible }}
+
+Enlaces:
+- Dashboard: {{ enlace_dashboard }}
+- Login: {{ enlace_login }}
+
+Importante:
+Debes iniciar sesion y cambiar tu contrasena de inmediato en tu perfil.
+
+Equipo BinsurMX

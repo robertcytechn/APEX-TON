@@ -1,6 +1,16 @@
-Version del sistema: 2.24.0
+Version del sistema: 2.26.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.26.0
+- Autor: Cy tamayo
+- Descripcion: Se completo el onboarding de usuarios operativos de cabina director con envio de correo reutilizable en alta y reinicio de contrasena (plantilla HTML/TXT con usuario, contrasena visible y enlaces a dashboard/login), se agrego bandera de primer inicio para forzar cambio de contrasena, se incluyo bloqueo backend para impedir continuar sin actualizar contrasena, se reforzo el guard global/frontend con redireccion automatica a perfil y alerta roja obligatoria, y se habilito en cabina director la edicion de usuarios junto con accion de reiniciar password en un clic con nuevo envio de credenciales.
+
+- Fecha: 2026-04-16
+- Version: 2.25.0
+- Autor: Cy tamayo
+- Descripcion: Se implemento la nueva cabina de administracion exclusiva para DIRECTOR con rutas y menu dedicados en frontend (sucursales con asistente paso a paso y asignacion automatica de fondos fijos, alta de usuarios operativos CONTADOR/GERENTE con una sola sucursal, un solo rol, correo obligatorio, estado activo por defecto y contrasena aleatoria de 8 digitos mostrada al crear, edicion de configuraciones globales limitada solo al valor, alta/edicion de rubros contables con padre y tipo obligatorios, y acceso al catalogo operativo en formato amigable), ademas de endurecer reglas de backend con endpoints dedicados para director y bloqueo de escrituras de catalogo operativo/fondos a roles DIRECTOR o ADMINISTRADOR.
 
 - Fecha: 2026-04-16
 - Version: 2.24.0
@@ -188,6 +198,10 @@ Version del sistema: 2.24.0
 - Descripcion: Se normalizo el campo padre de rubros contables a un catalogo dinamico con tabla propia, migracion de datos conservando relaciones existentes, nuevos endpoints CRUD de padres y ajuste de serializers/views para operar padres por id o clave sin perder compatibilidad de consumo.
 
 ## Cambios Menores
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se corrigio la importacion de Cropper en la vista de perfil para usar el modulo ESM de cropperjs y evitar el error en runtime sobre export default al abrir la pagina de Perfil de Usuario.
 
 - Fecha: 2026-04-16
 - Autor: Cy tamayo

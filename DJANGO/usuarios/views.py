@@ -62,6 +62,7 @@ def construir_datos_sesion(usuario, request=None):
             "foto_perfil_url": construir_url_foto_perfil(usuario, request),
             "is_superuser": usuario.is_superuser,
             "is_staff": usuario.is_staff,
+            "requiere_cambio_password": usuario.requiere_cambio_password,
         },
         "roles": [
             {"id": rol['rol__id'], "nombre": rol['rol__nombre']}
@@ -272,6 +273,7 @@ class UsuarioViewSet(viewsets.ViewSet):
             "foto_perfil_url": construir_url_foto_perfil(usuario, request),
             "is_superuser": usuario.is_superuser,
             "is_staff": usuario.is_staff,
+            "requiere_cambio_password": usuario.requiere_cambio_password,
         }
 
     # 1) Para qué sirve: consultar y actualizar perfil del usuario autenticado.
@@ -308,6 +310,14 @@ class UsuarioViewSet(viewsets.ViewSet):
 
         campos_actualizar = []
         cambio_password = any([password_actual, password_nueva, password_confirmacion])
+
+        if usuario.requiere_cambio_password and not cambio_password:
+            return respuesta_estandar(
+                data={"password": ["Debes cambiar tu contraseña para continuar usando el sistema."]},
+                mensaje="Cambio de contraseña obligatorio.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
 
         if correo is not None:
             correo_limpio = str(correo).strip()
@@ -374,6 +384,9 @@ class UsuarioViewSet(viewsets.ViewSet):
 
             usuario.set_password(password_nueva)
             campos_actualizar.append('password')
+            if usuario.requiere_cambio_password:
+                usuario.requiere_cambio_password = False
+                campos_actualizar.append('requiere_cambio_password')
 
         if not campos_actualizar:
             return respuesta_estandar(
