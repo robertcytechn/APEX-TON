@@ -135,7 +135,7 @@ class SucursalDirectorCabinaSerializer(serializers.ModelSerializer):
         model = Sucursal
         fields = (
             'id', 'nombre', 'clave', 'direccion', 'ciudad', 'estado_republica',
-            'telefono', 'correo', 'encargado', 'fondo_inicial',
+            'telefono', 'correo', 'encargado',
             'fondos_asignados', 'fondos_asignados_detalle',
             'creado_en', 'actualizado_en'
         )

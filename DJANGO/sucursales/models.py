@@ -55,12 +55,6 @@ class Sucursal(ModeloBase):
         verbose_name="Responsable / Encargado",
         help_text="Nombre del responsable operativo de la sucursal."
     )
-    fondo_inicial = models.DecimalField(
-        max_digits=18, decimal_places=2,
-        default=0.00,
-        verbose_name="Fondo Inicial",
-        help_text="Monto inicial asignado al fondo fijo de la sucursal en moneda nacional (MXN)."
-    )
     fondos_fijos = models.ManyToManyField(
         'fondos_fijos.FondoFijo',
         through='fondos_fijos.SucursalFondoFijo',

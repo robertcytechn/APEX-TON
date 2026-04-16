@@ -1,6 +1,11 @@
-Version del sistema: 2.26.0
+Version del sistema: 2.27.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.27.0
+- Autor: Cy tamayo
+- Descripcion: Se elimino el saldo inicial global por sucursal y se migro el control a saldo inicial mensual por categoria con arrastre automatico, incorporando en backend el campo usa_saldo_inicial en categoria operativa, el nuevo modelo de saldo mensual por sucursal/categoria con bloqueo de edicion, endpoints dedicados para consulta y captura manual inicial, y en frontend la limpieza total de fondo_inicial en cabinas de sucursales (admin/director), el nuevo check de uso de saldo inicial en catalogo operativo y el panel de captura operativa para gestionar saldo inicial mensual por categoria.
 
 - Fecha: 2026-04-16
 - Version: 2.26.0

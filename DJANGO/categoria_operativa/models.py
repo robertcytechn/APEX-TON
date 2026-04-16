@@ -1,6 +1,7 @@
 from django.db import models
 from core.models import ModeloBase
 from configuraciones_globales.models import RubroContable
+from sucursales.models import Sucursal
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -46,6 +47,11 @@ class CategoriaOperativa(ModeloBase):
         default=0,
         verbose_name="Orden de Visualización",
         help_text="Número de posición para ordenar las categorías en la interfaz. Menor número = aparece primero."
+    )
+    usa_saldo_inicial = models.BooleanField(
+        default=False,
+        verbose_name="¿Usa saldo inicial mensual?",
+        help_text="Indica si la categoría requiere manejo de saldo inicial mensual con arrastre automático entre meses."
     )
 
     def __str__(self):
@@ -203,3 +209,71 @@ class DetalleParametrizado(ModeloBase):
         db_table = "detalles_parametrizados"
         unique_together = ('categoria', 'clave')
         ordering = ['categoria', 'nombre']
+
+
+class SaldoInicialCategoriaMensual(ModeloBase):
+    """
+    Define el saldo inicial por sucursal/categoría para un mes contable.
+
+    Reglas:
+    - Solo aplica a categorías con `usa_saldo_inicial=True`.
+    - El primer saldo puede capturarse manualmente cuando no existe arrastre previo.
+    - Los meses siguientes se generan automáticamente desde el saldo final del mes anterior.
+    - Una vez definido, queda bloqueado para mantener trazabilidad.
+    """
+
+    class OrigenSaldoInicial(models.TextChoices):
+        MANUAL = 'MANUAL', 'Manual'
+        AUTOMATICO = 'AUTOMATICO', 'Automático'
+
+    sucursal = models.ForeignKey(
+        Sucursal,
+        on_delete=models.PROTECT,
+        related_name='saldos_iniciales_categoria_mensual',
+        verbose_name='Sucursal',
+        help_text='Sucursal a la que corresponde este saldo inicial mensual por categoría.'
+    )
+    categoria = models.ForeignKey(
+        CategoriaOperativa,
+        on_delete=models.PROTECT,
+        related_name='saldos_iniciales_mensuales',
+        verbose_name='Categoría Operativa',
+        help_text='Categoría operativa que usa este saldo inicial de arrastre mensual.'
+    )
+    anio = models.PositiveSmallIntegerField(
+        verbose_name='Año',
+        help_text='Año contable del saldo inicial mensual (ej. 2026).'
+    )
+    mes = models.PositiveSmallIntegerField(
+        verbose_name='Mes',
+        help_text='Mes contable del saldo inicial (1=Enero ... 12=Diciembre).'
+    )
+    saldo_inicial = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        default=0.00,
+        verbose_name='Saldo Inicial del Mes',
+        help_text='Saldo de arrastre con el que inicia la categoría en el mes contable para la sucursal.'
+    )
+    origen_saldo_inicial = models.CharField(
+        max_length=20,
+        choices=OrigenSaldoInicial.choices,
+        default=OrigenSaldoInicial.MANUAL,
+        verbose_name='Origen del Saldo Inicial',
+        help_text='Define si el saldo inicial fue capturado manualmente o generado de forma automática.'
+    )
+    bloqueado_edicion = models.BooleanField(
+        default=True,
+        verbose_name='¿Bloqueado para edición?',
+        help_text='Cuando está activo, el saldo inicial del mes no puede modificarse de forma manual.'
+    )
+
+    def __str__(self):
+        return f"Saldo {self.anio}/{self.mes:02d} - {self.sucursal.nombre} - {self.categoria.nombre}"
+
+    class Meta:
+        verbose_name = 'Saldo Inicial de Categoría Mensual'
+        verbose_name_plural = 'Saldos Iniciales de Categoría Mensual'
+        db_table = 'saldos_iniciales_categoria_mensual'
+        unique_together = ('sucursal', 'categoria', 'anio', 'mes')
+        ordering = ['-anio', '-mes', 'sucursal', 'categoria']

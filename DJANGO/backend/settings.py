@@ -141,7 +141,7 @@ DATABASES = {
         'NAME': 'apex_ton',
         'USER': 'robert',
         'PASSWORD': 'Chido1993$',
-        'HOST': 'cytechn.ddns.net', #ip servidor en red local 192.168.1.69
+        'HOST': '192.168.1.69', #ip servidor en red local 192.168.1.69
         'PORT': '3306',
     }
 }

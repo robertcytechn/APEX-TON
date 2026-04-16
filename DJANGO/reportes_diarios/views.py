@@ -13,7 +13,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
-from categoria_operativa.models import Concepto, CategoriaOperativa
+from categoria_operativa.models import Concepto, CategoriaOperativa, SaldoInicialCategoriaMensual
 from core.permisos import VentanaHorariaPermiso, EsAdministrador
 from .models import ReporteDiario, MovimientoDiario
 from .serializers import (
@@ -139,6 +139,151 @@ def _a_flotante(valor):
         return float(valor or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+# 1) Para qué sirve: obtener periodo contable (año y mes) desde una fecha objetivo.
+# 2) Cómo funciona: extrae year/month del objeto date recibido.
+# 3) Qué hace: unifica la resolución de periodo para saldos mensuales por categoría.
+# 4) Cómo editarla: centraliza aquí cambios de calendario contable por periodo.
+def _resolver_periodo_anio_mes(fecha_objetivo):
+    return int(fecha_objetivo.year), int(fecha_objetivo.month)
+
+
+# 1) Para qué sirve: calcular el periodo anterior (mes previo) de un año/mes dado.
+# 2) Cómo funciona: ajusta rollover de enero hacia diciembre del año previo.
+# 3) Qué hace: permite buscar arrastre automático desde el mes inmediato anterior.
+# 4) Cómo editarla: adapta lógica si se define un calendario fiscal no mensual.
+def _resolver_periodo_anterior(anio, mes):
+    if int(mes) == 1:
+        return int(anio) - 1, 12
+    return int(anio), int(mes) - 1
+
+
+# 1) Para qué sirve: agregar ingresos/egresos de una categoría en un mes por sucursal.
+# 2) Cómo funciona: consulta movimientos del periodo y separa por tipo de concepto.
+# 3) Qué hace: devuelve ingresos, egresos y neto para cálculo de saldo final mensual.
+# 4) Cómo editarla: agrega filtros extra (estado, rubro) si cambian reglas contables.
+def _calcular_totales_categoria_mes(sucursal_id, categoria_id, anio, mes):
+    movimientos = MovimientoDiario.objects.filter(
+        reporte__sucursal_id=sucursal_id,
+        reporte__fecha_contable__year=anio,
+        reporte__fecha_contable__month=mes,
+        concepto__categoria_id=categoria_id,
+        eliminado_en__isnull=True,
+    )
+
+    ingresos = _a_decimal(movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'])
+    egresos = _a_decimal(movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'])
+    resultado_neto = ingresos - egresos
+    return ingresos, egresos, resultado_neto
+
+
+# 1) Para qué sirve: calcular saldo final mensual de un registro de saldo inicial por categoría.
+# 2) Cómo funciona: suma saldo inicial + neto del mes de su sucursal/categoría/periodo.
+# 3) Qué hace: produce la base de arrastre para el siguiente mes.
+# 4) Cómo editarla: aplica redondeo adicional aquí si negocio lo exige.
+def _calcular_saldo_final_registro_categoria(registro_saldo):
+    ingresos_mes, egresos_mes, resultado_neto_mes = _calcular_totales_categoria_mes(
+        sucursal_id=registro_saldo.sucursal_id,
+        categoria_id=registro_saldo.categoria_id,
+        anio=registro_saldo.anio,
+        mes=registro_saldo.mes,
+    )
+    saldo_final_mes = _a_decimal(registro_saldo.saldo_inicial) + resultado_neto_mes
+    return ingresos_mes, egresos_mes, resultado_neto_mes, saldo_final_mes
+
+
+# 1) Para qué sirve: obtener o generar saldo inicial mensual por categoría para un periodo.
+# 2) Cómo funciona: busca registro del mes; si no existe intenta arrastre automático del mes previo.
+# 3) Qué hace: habilita flujo manual inicial y continuidad automática de meses subsecuentes.
+# 4) Cómo editarla: cambia la estrategia de arrastre aquí si se agrega cierre fiscal formal.
+def _obtener_o_generar_saldo_categoria_mes(sucursal_id, categoria_id, anio, mes, usuario=None):
+    registro_mes = SaldoInicialCategoriaMensual.objects.filter(
+        sucursal_id=sucursal_id,
+        categoria_id=categoria_id,
+        anio=anio,
+        mes=mes,
+    ).first()
+    if registro_mes:
+        return registro_mes, 'EXISTENTE'
+
+    anio_anterior, mes_anterior = _resolver_periodo_anterior(anio, mes)
+    registro_anterior = SaldoInicialCategoriaMensual.objects.filter(
+        sucursal_id=sucursal_id,
+        categoria_id=categoria_id,
+        anio=anio_anterior,
+        mes=mes_anterior,
+    ).first()
+
+    if registro_anterior is None:
+        return None, 'REQUIERE_CAPTURA_MANUAL'
+
+    _, _, _, saldo_final_mes_anterior = _calcular_saldo_final_registro_categoria(registro_anterior)
+
+    datos_creacion = {
+        'sucursal_id': sucursal_id,
+        'categoria_id': categoria_id,
+        'anio': anio,
+        'mes': mes,
+        'saldo_inicial': saldo_final_mes_anterior,
+        'origen_saldo_inicial': SaldoInicialCategoriaMensual.OrigenSaldoInicial.AUTOMATICO,
+        'bloqueado_edicion': True,
+    }
+
+    if usuario and getattr(usuario, 'is_authenticated', False):
+        datos_creacion['creado_por'] = usuario
+        datos_creacion['actualizado_por'] = usuario
+
+    registro_mes = SaldoInicialCategoriaMensual.objects.create(**datos_creacion)
+    return registro_mes, 'GENERADO_AUTOMATICO'
+
+
+# 1) Para qué sirve: serializar el estado de saldo mensual por categoría para frontend.
+# 2) Cómo funciona: con registro existente calcula neto/saldo final; sin registro deja captura manual.
+# 3) Qué hace: entrega payload único para pintar tarjeta de arrastre en captura operativa.
+# 4) Cómo editarla: agrega campos informativos de auditoría según evolucione la UI.
+def _construir_estado_saldo_categoria(registro_saldo, sucursal_id, categoria_id, anio, mes):
+    if registro_saldo is None:
+        ingresos_mes, egresos_mes, resultado_neto_mes = _calcular_totales_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=categoria_id,
+            anio=anio,
+            mes=mes,
+        )
+        return {
+            'registro_id': None,
+            'sucursal_id': sucursal_id,
+            'categoria_id': categoria_id,
+            'anio': anio,
+            'mes': mes,
+            'saldo_inicial': 0.0,
+            'ingresos_mes': _a_flotante(ingresos_mes),
+            'egresos_mes': _a_flotante(egresos_mes),
+            'resultado_neto_mes': _a_flotante(resultado_neto_mes),
+            'saldo_final_mes': _a_flotante(resultado_neto_mes),
+            'origen_saldo_inicial': 'PENDIENTE_MANUAL',
+            'bloqueado_edicion': False,
+            'requiere_captura_manual': True,
+            'permite_captura_manual': True,
+        }
+
+    ingresos_mes, egresos_mes, resultado_neto_mes, saldo_final_mes = _calcular_saldo_final_registro_categoria(registro_saldo)
+    return {
+        'registro_id': registro_saldo.id,
+        'sucursal_id': sucursal_id,
+        'categoria_id': categoria_id,
+        'anio': anio,
+        'mes': mes,
+        'saldo_inicial': _a_flotante(registro_saldo.saldo_inicial),
+        'ingresos_mes': _a_flotante(ingresos_mes),
+        'egresos_mes': _a_flotante(egresos_mes),
+        'resultado_neto_mes': _a_flotante(resultado_neto_mes),
+        'saldo_final_mes': _a_flotante(saldo_final_mes),
+        'origen_saldo_inicial': registro_saldo.origen_saldo_inicial,
+        'bloqueado_edicion': bool(registro_saldo.bloqueado_edicion),
+        'requiere_captura_manual': False,
+        'permite_captura_manual': False,
+    }
 
 
 # 1) Para qué sirve: resolver filtros efectivos de consulta según rol y parámetros enviados.
@@ -478,6 +623,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             'cerrar',
             'cerrar_actual',
             'reabrir',
+            'establecer_saldo_inicial_categoria_manual',
         )
 
         if self.action in acciones_escritura:
@@ -716,6 +862,257 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 'filas': filas,
             },
             mensaje='Libro operativo diario obtenido correctamente.'
+        )
+
+    @action(detail=False, methods=['get'], url_path='saldo-inicial-categoria')
+    def saldo_inicial_categoria(self, request):
+        """
+        Consulta el estado de saldo inicial mensual para una categoría.
+
+        Flujo:
+        - Si la categoría no usa saldo inicial, responde con flag desactivado.
+        - Si usa saldo inicial y existe registro del mes, lo devuelve.
+        - Si no existe y hay mes anterior, genera arrastre automático y lo devuelve.
+        - Si no existe arrastre previo, habilita captura manual inicial.
+        """
+        sucursal_id = request.query_params.get('sucursal_id')
+        categoria_id = request.query_params.get('categoria_id')
+
+        if not sucursal_id or not categoria_id:
+            return respuesta_estandar(
+                mensaje="Los parámetros 'sucursal_id' y 'categoria_id' son obligatorios.",
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            sucursal_id = int(sucursal_id)
+            categoria_id = int(categoria_id)
+        except (TypeError, ValueError):
+            return respuesta_estandar(
+                mensaje="Los parámetros 'sucursal_id' y 'categoria_id' deben ser enteros válidos.",
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            fecha_contable = _parsear_fecha_contable(request.query_params.get('fecha_contable'))
+        except ValueError as error:
+            return respuesta_estandar(
+                mensaje=str(error),
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        fecha_objetivo = fecha_contable or _dia_contable_actual()
+        if fecha_objetivo > _dia_contable_actual():
+            return respuesta_estandar(
+                mensaje='No se permite consultar saldos iniciales en fechas contables futuras.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sucursal = Sucursal.objects.filter(id=sucursal_id).first()
+        if not sucursal:
+            return respuesta_estandar(
+                mensaje='No existe la sucursal solicitada.',
+                estado='error',
+                codigo=status.HTTP_404_NOT_FOUND,
+            )
+
+        categoria = CategoriaOperativa.objects.filter(id=categoria_id, eliminado_en__isnull=True).first()
+        if not categoria:
+            return respuesta_estandar(
+                mensaje='No existe la categoría operativa solicitada.',
+                estado='error',
+                codigo=status.HTTP_404_NOT_FOUND,
+            )
+
+        anio, mes = _resolver_periodo_anio_mes(fecha_objetivo)
+
+        if not bool(categoria.usa_saldo_inicial):
+            data = {
+                'sucursal_id': sucursal_id,
+                'categoria_id': categoria_id,
+                'anio': anio,
+                'mes': mes,
+                'categoria_usa_saldo_inicial': False,
+                'requiere_captura_manual': False,
+                'permite_captura_manual': False,
+            }
+            return respuesta_estandar(data=data, mensaje='La categoría seleccionada no utiliza saldo inicial mensual.')
+
+        registro_saldo, estado_generacion = _obtener_o_generar_saldo_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=categoria_id,
+            anio=anio,
+            mes=mes,
+            usuario=request.user,
+        )
+
+        data = _construir_estado_saldo_categoria(
+            registro_saldo=registro_saldo,
+            sucursal_id=sucursal_id,
+            categoria_id=categoria_id,
+            anio=anio,
+            mes=mes,
+        )
+        data['categoria_usa_saldo_inicial'] = True
+        data['estado_generacion'] = estado_generacion
+        data['categoria_nombre'] = categoria.nombre
+
+        mensaje = 'Saldo inicial mensual de categoría obtenido.'
+        if estado_generacion == 'GENERADO_AUTOMATICO':
+            mensaje = 'Saldo inicial mensual generado automáticamente con arrastre del mes anterior.'
+        elif estado_generacion == 'REQUIERE_CAPTURA_MANUAL':
+            mensaje = 'Aún no existe arrastre previo. Captura manual requerida para iniciar el saldo mensual de la categoría.'
+
+        return respuesta_estandar(data=data, mensaje=mensaje)
+
+    @action(detail=False, methods=['post'], url_path='saldo-inicial-categoria/manual')
+    def establecer_saldo_inicial_categoria_manual(self, request):
+        """
+        Define manualmente el saldo inicial mensual de una categoría.
+
+        Solo se permite cuando no existe saldo previo que habilite arrastre automático.
+        Al guardarse, queda bloqueado para mantener trazabilidad.
+        """
+        sucursal_id = request.data.get('sucursal_id')
+        categoria_id = request.data.get('categoria_id')
+        fecha_contable = request.data.get('fecha_contable')
+        saldo_inicial = request.data.get('saldo_inicial')
+
+        if not sucursal_id or not categoria_id or fecha_contable in (None, ''):
+            return respuesta_estandar(
+                mensaje="Los campos 'sucursal_id', 'categoria_id' y 'fecha_contable' son obligatorios.",
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            sucursal_id = int(sucursal_id)
+            categoria_id = int(categoria_id)
+        except (TypeError, ValueError):
+            return respuesta_estandar(
+                mensaje="Los campos 'sucursal_id' y 'categoria_id' deben ser enteros válidos.",
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            fecha_objetivo = _parsear_fecha_contable(fecha_contable)
+        except ValueError as error:
+            return respuesta_estandar(
+                mensaje=str(error),
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if fecha_objetivo > _dia_contable_actual():
+            return respuesta_estandar(
+                mensaje='No se permite capturar saldo inicial manual en fechas contables futuras.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if _fecha_contable_bloqueada_por_antiguedad(fecha_objetivo):
+            return respuesta_estandar(
+                mensaje='No se permite capturar saldo inicial manual en fechas contables con más de 5 días de antigüedad.',
+                estado='error',
+                codigo=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            saldo_inicial_decimal = _a_decimal(saldo_inicial)
+        except Exception:
+            return respuesta_estandar(
+                mensaje="El campo 'saldo_inicial' no tiene un formato numérico válido.",
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        sucursal = Sucursal.objects.filter(id=sucursal_id).first()
+        if not sucursal:
+            return respuesta_estandar(
+                mensaje='No existe la sucursal solicitada.',
+                estado='error',
+                codigo=status.HTTP_404_NOT_FOUND,
+            )
+
+        categoria = CategoriaOperativa.objects.filter(id=categoria_id, eliminado_en__isnull=True).first()
+        if not categoria:
+            return respuesta_estandar(
+                mensaje='No existe la categoría operativa solicitada.',
+                estado='error',
+                codigo=status.HTTP_404_NOT_FOUND,
+            )
+
+        if not bool(categoria.usa_saldo_inicial):
+            return respuesta_estandar(
+                mensaje='La categoría seleccionada no está configurada para usar saldo inicial mensual.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        anio, mes = _resolver_periodo_anio_mes(fecha_objetivo)
+
+        existente = SaldoInicialCategoriaMensual.objects.filter(
+            sucursal_id=sucursal_id,
+            categoria_id=categoria_id,
+            anio=anio,
+            mes=mes,
+        ).first()
+        if existente:
+            return respuesta_estandar(
+                mensaje='El saldo inicial de este mes ya fue definido y se encuentra bloqueado para edición.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        anio_anterior, mes_anterior = _resolver_periodo_anterior(anio, mes)
+        registro_anterior = SaldoInicialCategoriaMensual.objects.filter(
+            sucursal_id=sucursal_id,
+            categoria_id=categoria_id,
+            anio=anio_anterior,
+            mes=mes_anterior,
+        ).first()
+        if registro_anterior:
+            return respuesta_estandar(
+                mensaje='Ya existe arrastre del mes anterior. El saldo inicial de este mes debe generarse automáticamente.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        datos_creacion = {
+            'sucursal_id': sucursal_id,
+            'categoria_id': categoria_id,
+            'anio': anio,
+            'mes': mes,
+            'saldo_inicial': saldo_inicial_decimal,
+            'origen_saldo_inicial': SaldoInicialCategoriaMensual.OrigenSaldoInicial.MANUAL,
+            'bloqueado_edicion': True,
+        }
+        if request.user and request.user.is_authenticated:
+            datos_creacion['creado_por'] = request.user
+            datos_creacion['actualizado_por'] = request.user
+
+        registro_saldo = SaldoInicialCategoriaMensual.objects.create(**datos_creacion)
+
+        data = _construir_estado_saldo_categoria(
+            registro_saldo=registro_saldo,
+            sucursal_id=sucursal_id,
+            categoria_id=categoria_id,
+            anio=anio,
+            mes=mes,
+        )
+        data['categoria_usa_saldo_inicial'] = True
+        data['estado_generacion'] = 'MANUAL_CONFIRMADO'
+        data['categoria_nombre'] = categoria.nombre
+
+        return respuesta_estandar(
+            data=data,
+            mensaje='Saldo inicial manual guardado y bloqueado correctamente para la categoría en el mes actual.',
+            codigo=status.HTTP_201_CREATED,
         )
 
     @action(detail=False, methods=['get'], url_path='actual')

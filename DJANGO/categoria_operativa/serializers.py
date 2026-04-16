@@ -105,4 +105,4 @@ class CategoriaOperativaListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CategoriaOperativa
-        fields = ('id', 'clave', 'nombre', 'tipo', 'orden', 'estado')
+        fields = ('id', 'clave', 'nombre', 'tipo', 'orden', 'usa_saldo_inicial', 'estado')
