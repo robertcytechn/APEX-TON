@@ -67,6 +67,11 @@ class ConfiguracionGlobal(ModeloBase):
         help_text="Determina cómo debe ser interpretado o parseado el contenido del campo valor."
     )
     descripcion = models.TextField(null=True, blank=True, verbose_name="Descripción", help_text="Explicación detallada del propósito u observaciones de esta configuración.")
+    visible_para_director = models.BooleanField(
+        default=True,
+        verbose_name="¿Visible para Director?",
+        help_text="Indica si esta variable global puede ser consultada y editada por usuarios con rol DIRECTOR desde su cabina."
+    )
 
     @property
     def valor_tipado(self):

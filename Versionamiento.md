@@ -1,6 +1,11 @@
-Version del sistema: 2.27.0
+Version del sistema: 2.28.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.28.0
+- Autor: Cy tamayo
+- Descripcion: Se agrego en ConfiguracionGlobal la bandera visible_para_director para controlar si una variable global puede ser consultada y editada en la cabina de DIRECTOR; se actualizo backend (modelo, migracion, serializers y filtros de API) para que director solo vea/edite variables habilitadas por administracion, y se modifico frontend de cabina ADMINISTRADOR y DIRECTOR para capturar y reflejar este control de acceso por variable.
 
 - Fecha: 2026-04-16
 - Version: 2.27.0

@@ -210,10 +210,11 @@ class ConfiguracionGlobalDirectorCabinaSerializer(serializers.ModelSerializer):
             'valor',
             'tipo_valor',
             'descripcion',
+            'visible_para_director',
             'valor_tipado',
             'actualizado_en',
         )
-        read_only_fields = ('clave', 'tipo_valor', 'descripcion', 'valor_tipado', 'actualizado_en')
+        read_only_fields = ('clave', 'tipo_valor', 'descripcion', 'visible_para_director', 'valor_tipado', 'actualizado_en')
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -221,7 +222,7 @@ class ConfiguracionGlobalDirectorCabinaSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('No tienes permiso para crear nuevas variables globales.')
 
         errores = {}
-        for campo in ('clave', 'tipo_valor', 'descripcion'):
+        for campo in ('clave', 'tipo_valor', 'descripcion', 'visible_para_director'):
             if campo not in self.initial_data:
                 continue
             valor_enviado = self.initial_data.get(campo)

@@ -424,12 +424,16 @@ class UsuarioDirectorCabinaViewSet(BaseCabinaDirectorViewSet):
 
 
 class ConfiguracionGlobalDirectorCabinaViewSet(BaseCabinaDirectorViewSet):
+    def obtener_queryset_visible_director(self):
+        return ConfiguracionGlobal.objects.filter(visible_para_director=True)
+
     def list(self, request):
-        data = ConfiguracionGlobalDirectorCabinaSerializer(ConfiguracionGlobal.objects.all(), many=True).data
+        queryset = self.obtener_queryset_visible_director()
+        data = ConfiguracionGlobalDirectorCabinaSerializer(queryset, many=True).data
         return respuesta_estandar(data=data, mensaje='Configuraciones globales obtenidas para director.')
 
     def retrieve(self, request, pk=None):
-        obj = get_object_or_404(ConfiguracionGlobal, pk=pk)
+        obj = get_object_or_404(self.obtener_queryset_visible_director(), pk=pk)
         return respuesta_estandar(data=ConfiguracionGlobalDirectorCabinaSerializer(obj).data, mensaje='Configuracion global obtenida para director.')
 
     def create(self, request):
@@ -440,7 +444,7 @@ class ConfiguracionGlobalDirectorCabinaViewSet(BaseCabinaDirectorViewSet):
         )
 
     def update(self, request, pk=None):
-        obj = get_object_or_404(ConfiguracionGlobal, pk=pk)
+        obj = get_object_or_404(self.obtener_queryset_visible_director(), pk=pk)
         serializer = ConfiguracionGlobalDirectorCabinaSerializer(obj, data=request.data)
         if serializer.is_valid():
             serializer.save(actualizado_por=request.user)
@@ -448,7 +452,7 @@ class ConfiguracionGlobalDirectorCabinaViewSet(BaseCabinaDirectorViewSet):
         return respuesta_estandar(data=serializer.errors, mensaje='Error al actualizar valor de configuracion.', estado='error', codigo=status.HTTP_400_BAD_REQUEST)
 
     def partial_update(self, request, pk=None):
-        obj = get_object_or_404(ConfiguracionGlobal, pk=pk)
+        obj = get_object_or_404(self.obtener_queryset_visible_director(), pk=pk)
         serializer = ConfiguracionGlobalDirectorCabinaSerializer(obj, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save(actualizado_por=request.user)
