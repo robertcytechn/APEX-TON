@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from unittest.mock import patch
+
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -86,3 +89,67 @@ class CabinaArquitecturaTests(APITestCase):
 
         configuracion = ConfiguracionGlobal.objects.get(clave='CFG_MANTENIMIENTO_PRIVADO')
         self.assertFalse(configuracion.visible_para_director)
+
+    def test_director_no_puede_acceder_centro_control(self):
+        self.client.force_authenticate(user=self.usuario_director)
+        url = '/api/cabina-arquitectura/centro-control/estado-aplicacion/'
+        respuesta = self.client.get(url)
+
+        self.assertEqual(respuesta.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_consulta_estado_centro_control(self):
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/centro-control/estado-aplicacion/'
+        respuesta = self.client.get(url)
+
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+        self.assertEqual(respuesta.data.get('status'), 'success')
+        data = respuesta.data.get('data') or {}
+        self.assertIn('estado_aplicacion', data)
+        self.assertIn('catalogos', data)
+        self.assertIn('plantillas', data.get('catalogos', {}))
+
+    def test_admin_actualiza_estado_centro_control(self):
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/centro-control/estado-aplicacion/'
+        payload = {
+            'estado_aplicacion': 'actualizacion_software',
+            'titulo': 'Actualizacion controlada',
+            'mensaje': 'Se aplican mejoras para reforzar estabilidad.',
+            'etiqueta': 'Ventana tecnica',
+            'icono': 'pi pi-cloud-upload',
+            'decoradores': ['Parches', 'Monitoreo'],
+            'recomendaciones': ['Espera reactivacion', 'No recargar pestañas'],
+            'inicio_actualizacion': '2026-04-16T10:00:00',
+            'fin_actualizacion': '2026-04-16T12:00:00',
+        }
+
+        respuesta = self.client.put(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+        self.assertEqual(respuesta.data.get('status'), 'success')
+
+        cfg_estado = ConfiguracionGlobal.objects.get(clave='ESTADO_APLICACION')
+        cfg_decoradores = ConfiguracionGlobal.objects.get(clave='DECORADORES_ACTUALIZACION')
+        self.assertEqual(cfg_estado.valor, 'actualizacion_software')
+        self.assertEqual(cfg_decoradores.valor, 'Parches, Monitoreo')
+        self.assertFalse(cfg_estado.visible_para_director)
+
+    @patch('cabina_arquitectura.views.CentroControlAdminViewSet._encolar_tarea')
+    def test_admin_ejecuta_tarea_manual_centro_control(self, mock_encolar_tarea):
+        mock_encolar_tarea.return_value = (SimpleNamespace(id='task-123'), {'anio': 2026, 'mes': 4})
+
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/centro-control/ejecutar-tarea/'
+        payload = {
+            'tarea': 'enviar_cierre_mensual_ejecutivo',
+            'anio': 2026,
+            'mes': 4,
+        }
+
+        respuesta = self.client.post(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(respuesta.data.get('status'), 'success')
+        self.assertEqual((respuesta.data.get('data') or {}).get('task_id'), 'task-123')
+        mock_encolar_tarea.assert_called_once()

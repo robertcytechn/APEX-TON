@@ -1,6 +1,16 @@
-Version del sistema: 2.28.0
+Version del sistema: 2.30.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-16
+- Version: 2.30.0
+- Autor: Cy tamayo
+- Descripcion: Se implemento el nuevo Centro de Control exclusivo para ADMINISTRADOR con seguridad dual (router frontend + permisos backend), incluyendo un formulario operativo para gestionar variables del estado de aplicacion con selectores y plantillas predefinidas, gatillos manuales para las tareas Celery activas del modulo reportes_diarios (cierre diario, resumen diario, cierre mensual, sincronizacion de horario y respaldo BD), y un tablero de salud del servidor con metricas de CPU/RAM/disco, estado de base de datos y disponibilidad de workers Celery.
+
+- Fecha: 2026-04-16
+- Version: 2.29.0
+- Autor: Cy tamayo
+- Descripcion: Se refactorizo el control de mantenimiento para consumir en tiempo real las variables de ConfiguracionesGlobales (estado, titulo, mensaje, etiqueta, icono, decoradores, recomendaciones, inicio y fin de actualizacion), eliminando la dependencia de ajustes manuales en archivo; se agrego liberacion automatica local a produccion al alcanzar FIN_ACTUALIZACION y un bypass de contingencia por atajo de teclado en dos pasos (Ctrl+Alt y dentro de 1 segundo Ctrl+Alt+Y) para permitir acceso operativo temporal sin editar base de datos.
 
 - Fecha: 2026-04-16
 - Version: 2.28.0

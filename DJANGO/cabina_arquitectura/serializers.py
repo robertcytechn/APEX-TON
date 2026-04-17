@@ -236,6 +236,130 @@ class ConfiguracionGlobalDirectorCabinaSerializer(serializers.ModelSerializer):
         return attrs
 
 
+OPCIONES_ESTADO_APLICACION_CENTRO_CONTROL = [
+    ('PRODUCCION', 'Operacion normal'),
+    ('mantenimiento_general', 'Mantenimiento general'),
+    ('actualizacion_software', 'Actualizacion de software'),
+    ('mantenimiento_infraestructura', 'Mantenimiento de infraestructura'),
+    ('migracion_datos', 'Migracion de datos'),
+    ('contingencia_operativa', 'Contingencia operativa'),
+]
+
+
+OPCIONES_TAREA_CELERY_CENTRO_CONTROL = [
+    ('cerrar_dia_contable', 'Cerrar dia contable'),
+    ('enviar_resumen_diario_ejecutivo', 'Enviar resumen diario ejecutivo'),
+    ('enviar_cierre_mensual_ejecutivo', 'Enviar cierre mensual ejecutivo'),
+    ('sincronizar_horario_correo_diario', 'Sincronizar horario de correo diario'),
+    ('ejecutar_backup_bd', 'Ejecutar respaldo de base de datos'),
+]
+
+
+class CentroControlEstadoAplicacionSerializer(serializers.Serializer):
+    estado_aplicacion = serializers.ChoiceField(
+        choices=OPCIONES_ESTADO_APLICACION_CENTRO_CONTROL,
+        help_text='Clave del estado operativo global que se aplicara en todo el sistema.'
+    )
+    titulo = serializers.CharField(
+        max_length=180,
+        trim_whitespace=True,
+        help_text='Titulo principal mostrado en la pantalla de mantenimiento.'
+    )
+    mensaje = serializers.CharField(
+        max_length=1200,
+        trim_whitespace=True,
+        help_text='Mensaje principal mostrado al operador durante contingencia o mantenimiento.'
+    )
+    etiqueta = serializers.CharField(
+        max_length=180,
+        trim_whitespace=True,
+        help_text='Etiqueta corta para identificar el contexto del estado activo.'
+    )
+    icono = serializers.CharField(
+        max_length=80,
+        trim_whitespace=True,
+        help_text='Icono PrimeVue que se mostrara en mantenimiento (ej. pi pi-cloud-upload).'
+    )
+    decoradores = serializers.ListField(
+        child=serializers.CharField(max_length=120, trim_whitespace=True),
+        required=False,
+        allow_empty=True,
+        default=list,
+        help_text='Lista de textos cortos de apoyo visual para el estado activo.'
+    )
+    recomendaciones = serializers.ListField(
+        child=serializers.CharField(max_length=220, trim_whitespace=True),
+        required=False,
+        allow_empty=True,
+        default=list,
+        help_text='Lista de recomendaciones operativas visibles para usuarios finales.'
+    )
+    inicio_actualizacion = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+        help_text='Fecha/hora de inicio del mantenimiento o actualizacion en formato ISO local.'
+    )
+    fin_actualizacion = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+        help_text='Fecha/hora de fin planificada para liberar automaticamente la operacion.'
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        inicio = attrs.get('inicio_actualizacion')
+        fin = attrs.get('fin_actualizacion')
+
+        if inicio and fin and fin <= inicio:
+            raise serializers.ValidationError({'fin_actualizacion': 'La fecha final debe ser mayor a la fecha de inicio.'})
+
+        return attrs
+
+
+class CentroControlEjecucionTareaSerializer(serializers.Serializer):
+    tarea = serializers.ChoiceField(
+        choices=OPCIONES_TAREA_CELERY_CENTRO_CONTROL,
+        help_text='Identificador de la tarea Celery autorizada para ejecucion manual.'
+    )
+    fecha_contable = serializers.DateField(
+        required=False,
+        allow_null=True,
+        help_text='Fecha contable opcional para envio manual de resumen diario.'
+    )
+    anio = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=2000,
+        max_value=3000,
+        help_text='Anio opcional para el cierre mensual manual (debe enviarse junto con mes).'
+    )
+    mes = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        max_value=12,
+        help_text='Mes opcional para el cierre mensual manual (debe enviarse junto con anio).'
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        tarea = attrs.get('tarea')
+        fecha_contable = attrs.get('fecha_contable')
+        anio = attrs.get('anio')
+        mes = attrs.get('mes')
+
+        if tarea != 'enviar_resumen_diario_ejecutivo' and fecha_contable is not None:
+            raise serializers.ValidationError({'fecha_contable': 'Solo aplica para la tarea de resumen diario.'})
+
+        if tarea == 'enviar_cierre_mensual_ejecutivo':
+            if (anio is None) ^ (mes is None):
+                raise serializers.ValidationError({'anio': 'Debes enviar anio y mes juntos para cierre mensual manual.'})
+        elif anio is not None or mes is not None:
+            raise serializers.ValidationError({'anio': 'Los campos anio y mes solo aplican para cierre mensual manual.'})
+
+        return attrs
+
+
 class UsuarioDirectorCabinaSerializer(serializers.ModelSerializer):
     correo = serializers.EmailField(required=True, allow_blank=False)
     sucursal = serializers.PrimaryKeyRelatedField(queryset=Sucursal.objects.all(), required=True, allow_null=False)

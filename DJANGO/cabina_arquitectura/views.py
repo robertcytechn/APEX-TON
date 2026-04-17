@@ -1,5 +1,15 @@
+import platform
+import shutil
+import socket
+import time
+from pathlib import Path
+from urllib.parse import urlparse
+
+from django.conf import settings
+from django.db import connections
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -13,8 +23,12 @@ from usuarios.models import Rol, Usuario
 from usuarios.servicios_correo_credenciales import enviar_correo_credenciales_usuario
 
 from .serializers import (
+    CentroControlEjecucionTareaSerializer,
+    CentroControlEstadoAplicacionSerializer,
     ConfiguracionGlobalCabinaSerializer,
     ConfiguracionGlobalDirectorCabinaSerializer,
+    OPCIONES_ESTADO_APLICACION_CENTRO_CONTROL,
+    OPCIONES_TAREA_CELERY_CENTRO_CONTROL,
     PadreRubroContableCabinaSerializer,
     RolCabinaSerializer,
     RubroContableCabinaSerializer,
@@ -23,6 +37,11 @@ from .serializers import (
     UsuarioDirectorCabinaSerializer,
     UsuarioCabinaSerializer,
 )
+
+try:
+    import psutil
+except Exception:  # pragma: no cover - fallback en entornos sin psutil
+    psutil = None
 
 
 def respuesta_estandar(data=None, mensaje='Operacion exitosa', estado='success', codigo=status.HTTP_200_OK):
@@ -188,6 +207,537 @@ class ConfiguracionGlobalCabinaViewSet(BaseCabinaAdminViewSet):
         obj = get_object_or_404(ConfiguracionGlobal, pk=pk)
         obj.eliminar_logico(usuario=request.user)
         return respuesta_estandar(mensaje='Configuracion global eliminada (baja logica).')
+
+
+class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
+    CLAVES_CONFIG = {
+        'estado_aplicacion': ['ESTADO_APLICACION', 'ESTADO_APPLICACION'],
+        'titulo': ['TITULO_ESTADO_APLICACION_POR_ACTUALIZACION'],
+        'mensaje': ['MENSAJE_APLICACION_POR_ACTUALIZACION'],
+        'etiqueta': ['ETIQUETA_POR_ACTUALIZACION'],
+        'icono': ['ICONO_ACTUALIZACION'],
+        'decoradores': ['DECORADORES_ACTUALIZACION'],
+        'recomendaciones': ['RECOMENDACIONES_ACTUALIZACION'],
+        'inicio_actualizacion': ['INICIO_ACTUALIZACION'],
+        'fin_actualizacion': ['FIN_ACTUALIZACION'],
+    }
+
+    METADATOS_CONFIG = {
+        'estado_aplicacion': {'tipo_valor': 'STRING', 'descripcion': 'Estado operativo global de la aplicacion.'},
+        'titulo': {'tipo_valor': 'STRING', 'descripcion': 'Titulo principal de mantenimiento mostrado en frontend.'},
+        'mensaje': {'tipo_valor': 'STRING', 'descripcion': 'Mensaje principal de mantenimiento mostrado en frontend.'},
+        'etiqueta': {'tipo_valor': 'STRING', 'descripcion': 'Etiqueta operativa para la pantalla de mantenimiento.'},
+        'icono': {'tipo_valor': 'STRING', 'descripcion': 'Icono PrimeVue para la pantalla de mantenimiento.'},
+        'decoradores': {'tipo_valor': 'STRING', 'descripcion': 'Decoradores de mantenimiento separados por coma.'},
+        'recomendaciones': {'tipo_valor': 'STRING', 'descripcion': 'Recomendaciones de mantenimiento separadas por coma.'},
+        'inicio_actualizacion': {'tipo_valor': 'DATETIME', 'descripcion': 'Fecha y hora de inicio de actualizacion.'},
+        'fin_actualizacion': {'tipo_valor': 'DATETIME', 'descripcion': 'Fecha y hora de fin de actualizacion.'},
+    }
+
+    PLANTILLAS_RAPIDAS = [
+        {
+            'clave': 'operacion_normal',
+            'nombre': 'Operacion normal',
+            'estado_aplicacion': 'PRODUCCION',
+            'titulo': 'Sistema en operacion normal',
+            'mensaje': 'La plataforma esta disponible para captura y consulta en tiempo real.',
+            'etiqueta': 'Operacion habilitada',
+            'icono': 'pi pi-check-circle',
+            'decoradores': ['Servicios activos', 'Sin incidencias criticas'],
+            'recomendaciones': ['Puedes continuar con tu operacion habitual.'],
+        },
+        {
+            'clave': 'mantenimiento_general',
+            'nombre': 'Mantenimiento general',
+            'estado_aplicacion': 'mantenimiento_general',
+            'titulo': 'Mantenimiento general del sistema',
+            'mensaje': 'Estamos aplicando ajustes preventivos para mejorar estabilidad y rendimiento.',
+            'etiqueta': 'Intervencion preventiva',
+            'icono': 'pi pi-wrench',
+            'decoradores': ['Ajustes de rendimiento', 'Reinicio de servicios', 'Validacion final'],
+            'recomendaciones': ['Espera la reactivacion programada.', 'Evita recargas continuas durante la intervencion.'],
+        },
+        {
+            'clave': 'actualizacion_software',
+            'nombre': 'Actualizacion de software',
+            'estado_aplicacion': 'actualizacion_software',
+            'titulo': 'Actualizacion de software en progreso',
+            'mensaje': 'Se estan desplegando nuevas funciones y correcciones de seguridad en el sistema.',
+            'etiqueta': 'Actualizacion programada de software',
+            'icono': 'pi pi-cloud-upload',
+            'decoradores': ['Actualizacion de UX', 'Parches de seguridad', 'Monitoreo post-despliegue'],
+            'recomendaciones': ['Espera el tiempo determinado para la reactivacion.', 'Consulta soporte si la ventana se extiende.'],
+        },
+        {
+            'clave': 'mantenimiento_infraestructura',
+            'nombre': 'Mantenimiento de infraestructura',
+            'estado_aplicacion': 'mantenimiento_infraestructura',
+            'titulo': 'Mantenimiento de infraestructura',
+            'mensaje': 'Se estan optimizando recursos de red y servidores para mantener continuidad operativa.',
+            'etiqueta': 'Operacion de plataforma',
+            'icono': 'pi pi-server',
+            'decoradores': ['Ajuste de red', 'Balanceo de carga', 'Monitoreo de nodos'],
+            'recomendaciones': ['Los servicios pueden responder de forma intermitente.', 'Reintenta acceso al finalizar la ventana.'],
+        },
+        {
+            'clave': 'migracion_datos',
+            'nombre': 'Migracion de datos',
+            'estado_aplicacion': 'migracion_datos',
+            'titulo': 'Migracion de datos en ejecucion',
+            'mensaje': 'Estamos migrando informacion para mejorar consistencia y trazabilidad.',
+            'etiqueta': 'Proceso critico de datos',
+            'icono': 'pi pi-database',
+            'decoradores': ['Respaldo incremental', 'Validacion de integridad', 'Sincronizacion de tablas'],
+            'recomendaciones': ['No intentes modificar registros durante la migracion.', 'Escala a soporte si detectas datos faltantes.'],
+        },
+        {
+            'clave': 'contingencia_operativa',
+            'nombre': 'Contingencia operativa',
+            'estado_aplicacion': 'contingencia_operativa',
+            'titulo': 'Contingencia operativa temporal',
+            'mensaje': 'Se detecto una incidencia tecnica y estamos aplicando acciones de estabilizacion.',
+            'etiqueta': 'Atencion prioritaria',
+            'icono': 'pi pi-exclamation-triangle',
+            'decoradores': ['Diagnostico activo', 'Mitigacion de impacto', 'Recuperacion de servicio'],
+            'recomendaciones': ['Mantente atento al tiempo estimado de recuperacion.', 'Reporta a administracion si persiste la incidencia.'],
+        },
+    ]
+
+    TAREAS_DISPONIBLES = [
+        {
+            'clave': 'cerrar_dia_contable',
+            'nombre': 'Cerrar dia contable',
+            'descripcion': 'Cierra automaticamente reportes del dia contable para todas las sucursales activas.',
+            'parametros': [],
+        },
+        {
+            'clave': 'enviar_resumen_diario_ejecutivo',
+            'nombre': 'Enviar resumen diario ejecutivo',
+            'descripcion': 'Genera y envia correo diario ejecutivo; puede forzarse para una fecha contable.',
+            'parametros': ['fecha_contable'],
+        },
+        {
+            'clave': 'enviar_cierre_mensual_ejecutivo',
+            'nombre': 'Enviar cierre mensual ejecutivo',
+            'descripcion': 'Genera y envia correo de cierre mensual; acepta anio y mes opcionales.',
+            'parametros': ['anio', 'mes'],
+        },
+        {
+            'clave': 'sincronizar_horario_correo_diario',
+            'nombre': 'Sincronizar horario de correo diario',
+            'descripcion': 'Sincroniza en django_celery_beat la hora de envio diario desde HORARIO_CIERRE.',
+            'parametros': [],
+        },
+        {
+            'clave': 'ejecutar_backup_bd',
+            'nombre': 'Ejecutar respaldo de base de datos',
+            'descripcion': 'Genera respaldo MySQL comprimido y notifica resultado por correo.',
+            'parametros': [],
+        },
+    ]
+
+    @staticmethod
+    def _normalizar_clave(valor):
+        return str(valor or '').strip().upper()
+
+    @staticmethod
+    def _texto_a_lista(texto):
+        valor = str(texto or '').strip()
+        if not valor:
+            return []
+        return [item.strip() for item in valor.split(',') if item.strip()]
+
+    @staticmethod
+    def _lista_a_texto(valores):
+        return ', '.join([str(valor).strip() for valor in (valores or []) if str(valor).strip()])
+
+    @staticmethod
+    def _formatear_datetime(valor):
+        if not valor:
+            return ''
+        if timezone.is_naive(valor):
+            valor = timezone.make_aware(valor, timezone.get_current_timezone())
+        return timezone.localtime(valor).replace(microsecond=0).isoformat()
+
+    @staticmethod
+    def _bytes_a_mb(valor_bytes):
+        return round(float(valor_bytes) / (1024 * 1024), 2)
+
+    @staticmethod
+    def _bytes_a_gb(valor_bytes):
+        return round(float(valor_bytes) / (1024 * 1024 * 1024), 2)
+
+    def _obtener_mapa_configuraciones(self):
+        mapa = {}
+        for configuracion in ConfiguracionGlobal.objects.all():
+            mapa[self._normalizar_clave(configuracion.clave)] = configuracion
+        return mapa
+
+    def _buscar_configuracion(self, mapa, aliases):
+        for alias in aliases:
+            configuracion = mapa.get(self._normalizar_clave(alias))
+            if configuracion:
+                return configuracion
+        return None
+
+    def _leer_valor_configuracion(self, mapa, campo, valor_default=''):
+        configuracion = self._buscar_configuracion(mapa, self.CLAVES_CONFIG[campo])
+        if not configuracion or configuracion.valor is None:
+            return valor_default
+        return str(configuracion.valor)
+
+    def _guardar_valor_configuracion(self, mapa, campo, valor, usuario):
+        aliases = self.CLAVES_CONFIG[campo]
+        metadatos = self.METADATOS_CONFIG[campo]
+        configuracion = self._buscar_configuracion(mapa, aliases)
+        valor_texto = '' if valor is None else str(valor)
+
+        if configuracion:
+            configuracion.valor = valor_texto
+            configuracion.tipo_valor = metadatos['tipo_valor']
+            configuracion.descripcion = metadatos['descripcion']
+            configuracion.visible_para_director = False
+            configuracion.actualizado_por = usuario
+            configuracion.save(update_fields=['valor', 'tipo_valor', 'descripcion', 'visible_para_director', 'actualizado_por', 'actualizado_en'])
+            return configuracion
+
+        configuracion = ConfiguracionGlobal.objects.create(
+            clave=aliases[0],
+            valor=valor_texto,
+            tipo_valor=metadatos['tipo_valor'],
+            descripcion=metadatos['descripcion'],
+            visible_para_director=False,
+            creado_por=usuario,
+            actualizado_por=usuario,
+        )
+        mapa[self._normalizar_clave(configuracion.clave)] = configuracion
+        return configuracion
+
+    def _plantilla_por_estado(self, estado):
+        estado_normalizado = str(estado or '').strip().lower()
+        for plantilla in self.PLANTILLAS_RAPIDAS:
+            if str(plantilla.get('estado_aplicacion') or '').strip().lower() == estado_normalizado:
+                return plantilla
+
+        for plantilla in self.PLANTILLAS_RAPIDAS:
+            if plantilla.get('estado_aplicacion') == 'actualizacion_software':
+                return plantilla
+
+        return self.PLANTILLAS_RAPIDAS[0]
+
+    def _construir_catalogos_predefinidos(self):
+        titulos = []
+        mensajes = []
+        etiquetas = []
+        iconos = []
+        decoradores = []
+        recomendaciones = []
+
+        for plantilla in self.PLANTILLAS_RAPIDAS:
+            titulo = plantilla.get('titulo')
+            mensaje = plantilla.get('mensaje')
+            etiqueta = plantilla.get('etiqueta')
+            icono = plantilla.get('icono')
+
+            if titulo and titulo not in titulos:
+                titulos.append(titulo)
+            if mensaje and mensaje not in mensajes:
+                mensajes.append(mensaje)
+            if etiqueta and etiqueta not in etiquetas:
+                etiquetas.append(etiqueta)
+            if icono and icono not in iconos:
+                iconos.append(icono)
+
+            for decorador in plantilla.get('decoradores', []):
+                if decorador and decorador not in decoradores:
+                    decoradores.append(decorador)
+            for recomendacion in plantilla.get('recomendaciones', []):
+                if recomendacion and recomendacion not in recomendaciones:
+                    recomendaciones.append(recomendacion)
+
+        return {
+            'estados': [
+                {'value': valor, 'label': etiqueta}
+                for valor, etiqueta in OPCIONES_ESTADO_APLICACION_CENTRO_CONTROL
+            ],
+            'titulos': titulos,
+            'mensajes': mensajes,
+            'etiquetas': etiquetas,
+            'iconos': iconos,
+            'decoradores': decoradores,
+            'recomendaciones': recomendaciones,
+            'plantillas': self.PLANTILLAS_RAPIDAS,
+        }
+
+    def _construir_payload_estado(self, mapa):
+        estado_actual = self._leer_valor_configuracion(mapa, 'estado_aplicacion', 'PRODUCCION') or 'PRODUCCION'
+        plantilla_default = self._plantilla_por_estado(estado_actual)
+
+        valor_decoradores = self._texto_a_lista(
+            self._leer_valor_configuracion(
+                mapa,
+                'decoradores',
+                self._lista_a_texto(plantilla_default.get('decoradores', []))
+            )
+        )
+        valor_recomendaciones = self._texto_a_lista(
+            self._leer_valor_configuracion(
+                mapa,
+                'recomendaciones',
+                self._lista_a_texto(plantilla_default.get('recomendaciones', []))
+            )
+        )
+
+        return {
+            'estado_aplicacion': estado_actual,
+            'titulo': self._leer_valor_configuracion(mapa, 'titulo', plantilla_default.get('titulo') or ''),
+            'mensaje': self._leer_valor_configuracion(mapa, 'mensaje', plantilla_default.get('mensaje') or ''),
+            'etiqueta': self._leer_valor_configuracion(mapa, 'etiqueta', plantilla_default.get('etiqueta') or ''),
+            'icono': self._leer_valor_configuracion(mapa, 'icono', plantilla_default.get('icono') or ''),
+            'decoradores': valor_decoradores,
+            'recomendaciones': valor_recomendaciones,
+            'inicio_actualizacion': self._leer_valor_configuracion(mapa, 'inicio_actualizacion', ''),
+            'fin_actualizacion': self._leer_valor_configuracion(mapa, 'fin_actualizacion', ''),
+            'catalogos': self._construir_catalogos_predefinidos(),
+        }
+
+    @staticmethod
+    def _encolar_tarea(clave_tarea, datos):
+        from reportes_diarios.tareas import (
+            cerrar_dia_contable,
+            ejecutar_backup_bd,
+            enviar_cierre_mensual_ejecutivo,
+            enviar_resumen_diario_ejecutivo,
+            sincronizar_horario_correo_diario,
+        )
+
+        if clave_tarea == 'cerrar_dia_contable':
+            return cerrar_dia_contable.delay(), {}
+
+        if clave_tarea == 'enviar_resumen_diario_ejecutivo':
+            fecha_contable = datos.get('fecha_contable')
+            parametros = {'fecha_contable': fecha_contable.isoformat()} if fecha_contable else {}
+            if fecha_contable:
+                return enviar_resumen_diario_ejecutivo.delay(fecha_contable.isoformat()), parametros
+            return enviar_resumen_diario_ejecutivo.delay(), parametros
+
+        if clave_tarea == 'enviar_cierre_mensual_ejecutivo':
+            anio = datos.get('anio')
+            mes = datos.get('mes')
+            parametros = {'anio': anio, 'mes': mes} if anio is not None and mes is not None else {}
+            if anio is not None and mes is not None:
+                return enviar_cierre_mensual_ejecutivo.delay(int(anio), int(mes)), parametros
+            return enviar_cierre_mensual_ejecutivo.delay(), parametros
+
+        if clave_tarea == 'sincronizar_horario_correo_diario':
+            return sincronizar_horario_correo_diario.delay(), {}
+
+        if clave_tarea == 'ejecutar_backup_bd':
+            return ejecutar_backup_bd.delay(), {}
+
+        raise ValueError('La tarea solicitada no esta permitida en Centro de Control.')
+
+    def list(self, request):
+        data = {
+            'modulo': 'Centro de Control',
+            'acciones_disponibles': [
+                'GET/PUT cabina-arquitectura/centro-control/estado-aplicacion/',
+                'GET cabina-arquitectura/centro-control/tareas-disponibles/',
+                'POST cabina-arquitectura/centro-control/ejecutar-tarea/',
+                'GET cabina-arquitectura/centro-control/salud-servidor/',
+            ],
+        }
+        return respuesta_estandar(data=data, mensaje='Centro de Control disponible para administracion.')
+
+    @action(detail=False, methods=['get', 'put', 'patch'], url_path='estado-aplicacion')
+    def estado_aplicacion(self, request):
+        if request.method == 'GET':
+            data = self._construir_payload_estado(self._obtener_mapa_configuraciones())
+            return respuesta_estandar(data=data, mensaje='Estado de aplicacion obtenido correctamente.')
+
+        serializer = CentroControlEstadoAplicacionSerializer(data=request.data)
+        if not serializer.is_valid():
+            return respuesta_estandar(
+                data=serializer.errors,
+                mensaje='Error de validacion al guardar estado de aplicacion.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        datos = serializer.validated_data
+        estado_aplicacion = datos['estado_aplicacion']
+        inicio_actualizacion = self._formatear_datetime(datos.get('inicio_actualizacion'))
+        fin_actualizacion = self._formatear_datetime(datos.get('fin_actualizacion'))
+
+        if estado_aplicacion == 'PRODUCCION':
+            inicio_actualizacion = ''
+            fin_actualizacion = ''
+
+        mapa = self._obtener_mapa_configuraciones()
+        self._guardar_valor_configuracion(mapa, 'estado_aplicacion', estado_aplicacion, request.user)
+        self._guardar_valor_configuracion(mapa, 'titulo', datos['titulo'], request.user)
+        self._guardar_valor_configuracion(mapa, 'mensaje', datos['mensaje'], request.user)
+        self._guardar_valor_configuracion(mapa, 'etiqueta', datos['etiqueta'], request.user)
+        self._guardar_valor_configuracion(mapa, 'icono', datos['icono'], request.user)
+        self._guardar_valor_configuracion(mapa, 'decoradores', self._lista_a_texto(datos.get('decoradores')), request.user)
+        self._guardar_valor_configuracion(mapa, 'recomendaciones', self._lista_a_texto(datos.get('recomendaciones')), request.user)
+        self._guardar_valor_configuracion(mapa, 'inicio_actualizacion', inicio_actualizacion, request.user)
+        self._guardar_valor_configuracion(mapa, 'fin_actualizacion', fin_actualizacion, request.user)
+
+        payload_actualizado = self._construir_payload_estado(self._obtener_mapa_configuraciones())
+        return respuesta_estandar(data=payload_actualizado, mensaje='Estado de aplicacion actualizado correctamente.')
+
+    @action(detail=False, methods=['get'], url_path='tareas-disponibles')
+    def tareas_disponibles(self, request):
+        data = {
+            'opciones': [
+                {'value': valor, 'label': etiqueta}
+                for valor, etiqueta in OPCIONES_TAREA_CELERY_CENTRO_CONTROL
+            ],
+            'tareas': self.TAREAS_DISPONIBLES,
+        }
+        return respuesta_estandar(data=data, mensaje='Tareas disponibles obtenidas correctamente.')
+
+    @action(detail=False, methods=['post'], url_path='ejecutar-tarea')
+    def ejecutar_tarea(self, request):
+        serializer = CentroControlEjecucionTareaSerializer(data=request.data)
+        if not serializer.is_valid():
+            return respuesta_estandar(
+                data=serializer.errors,
+                mensaje='Error de validacion para ejecutar la tarea solicitada.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        datos = serializer.validated_data
+        clave_tarea = datos['tarea']
+
+        try:
+            resultado_tarea, parametros = self._encolar_tarea(clave_tarea, datos)
+        except Exception as exc:
+            return respuesta_estandar(
+                data={'tarea': clave_tarea, 'error': str(exc)},
+                mensaje='No fue posible encolar la tarea en Celery.',
+                estado='error',
+                codigo=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        data = {
+            'tarea': clave_tarea,
+            'task_id': str(getattr(resultado_tarea, 'id', '')),
+            'parametros': parametros,
+            'solicitado_por': request.user.username,
+            'solicitado_en': timezone.localtime(timezone.now()).isoformat(),
+        }
+        return respuesta_estandar(
+            data=data,
+            mensaje='Tarea enviada a cola Celery correctamente.',
+            codigo=status.HTTP_202_ACCEPTED,
+        )
+
+    @action(detail=False, methods=['get'], url_path='salud-servidor')
+    def salud_servidor(self, request):
+        ruta_disco = Path(settings.BASE_DIR).anchor or str(Path(settings.BASE_DIR))
+        disco_total, disco_usado, disco_libre = shutil.disk_usage(ruta_disco)
+
+        recursos = {
+            'cpu_porcentaje': None,
+            'memoria_total_mb': None,
+            'memoria_disponible_mb': None,
+            'memoria_usada_porcentaje': None,
+            'disco_ruta': ruta_disco,
+            'disco_total_gb': self._bytes_a_gb(disco_total),
+            'disco_usado_gb': self._bytes_a_gb(disco_usado),
+            'disco_libre_gb': self._bytes_a_gb(disco_libre),
+            'disco_usado_porcentaje': round((disco_usado / disco_total) * 100, 2) if disco_total else 0,
+            'psutil_disponible': bool(psutil),
+        }
+
+        if psutil:
+            memoria = psutil.virtual_memory()
+            recursos.update(
+                {
+                    'cpu_porcentaje': round(float(psutil.cpu_percent(interval=0.25)), 2),
+                    'memoria_total_mb': self._bytes_a_mb(memoria.total),
+                    'memoria_disponible_mb': self._bytes_a_mb(memoria.available),
+                    'memoria_usada_porcentaje': round(float(memoria.percent), 2),
+                }
+            )
+
+        db_config = settings.DATABASES.get('default', {})
+        inicio_db = time.perf_counter()
+        estado_bd = {
+            'ok': False,
+            'motor': db_config.get('ENGINE'),
+            'nombre': db_config.get('NAME'),
+            'host': db_config.get('HOST') or '127.0.0.1',
+            'puerto': str(db_config.get('PORT') or ''),
+            'latencia_ms': None,
+            'mensaje': 'Sin verificar',
+        }
+        try:
+            with connections['default'].cursor() as cursor:
+                cursor.execute('SELECT 1')
+                cursor.fetchone()
+            estado_bd['ok'] = True
+            estado_bd['latencia_ms'] = round((time.perf_counter() - inicio_db) * 1000, 2)
+            estado_bd['mensaje'] = 'Conexion a base de datos establecida correctamente.'
+        except Exception as exc:
+            estado_bd['mensaje'] = f'Error de conexion a base de datos: {exc}'
+
+        estado_celery = {
+            'ok': False,
+            'workers': [],
+            'broker_host': None,
+            'broker_puerto': None,
+            'broker_alcanzable': False,
+            'mensaje': 'Sin verificar',
+        }
+        try:
+            from backend.celery import app as celery_app
+
+            broker_url = str(getattr(settings, 'CELERY_BROKER_URL', '') or '')
+            broker_parseado = urlparse(broker_url)
+            broker_host = broker_parseado.hostname or '127.0.0.1'
+            broker_puerto = int(broker_parseado.port or 5672)
+
+            estado_celery['broker_host'] = broker_host
+            estado_celery['broker_puerto'] = broker_puerto
+
+            try:
+                with socket.create_connection((broker_host, broker_puerto), timeout=1.0):
+                    estado_celery['broker_alcanzable'] = True
+            except OSError as exc_broker:
+                estado_celery['mensaje'] = (
+                    f'Broker Celery no disponible en {broker_host}:{broker_puerto}. '
+                    f'Inicia RabbitMQ para habilitar workers y beat. Detalle: {exc_broker}'
+                )
+
+            if estado_celery['broker_alcanzable']:
+                respuesta_ping = celery_app.control.ping(timeout=1.0)
+                estado_celery['ok'] = bool(respuesta_ping)
+                estado_celery['workers'] = respuesta_ping or []
+                estado_celery['mensaje'] = (
+                    'Workers Celery en linea.'
+                    if respuesta_ping
+                    else 'Broker disponible, pero no se detectaron workers Celery activos.'
+                )
+        except Exception as exc:
+            estado_celery['mensaje'] = f'No fue posible consultar estado de Celery: {exc}'
+
+        data = {
+            'fecha_hora_servidor': timezone.localtime(timezone.now()).isoformat(),
+            'servidor': {
+                'hostname': socket.gethostname(),
+                'plataforma': platform.platform(),
+                'python_version': platform.python_version(),
+            },
+            'recursos': recursos,
+            'base_datos': estado_bd,
+            'celery': estado_celery,
+            'estado_general': 'saludable' if estado_bd['ok'] and estado_celery['ok'] else 'atencion',
+        }
+        return respuesta_estandar(data=data, mensaje='Salud de servidor obtenida correctamente.')
 
 
 class RubroContableCabinaViewSet(BaseCabinaAdminViewSet):

@@ -1,6 +1,6 @@
 param(
-    [string]$BrokerUrl = 'amqp://guest:guest@127.0.0.1:5672//',
-    [string]$ResultBackend = 'rpc://'
+    [string]$BrokerUrl = '',
+    [string]$ResultBackend = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +16,20 @@ $RutaPython = Join-Path $RutaVenvScripts 'python.exe'
 
 if (-not (Test-Path $RutaPython)) {
     throw "No se encontro python del entorno virtual en: $RutaPython"
+}
+
+if ([string]::IsNullOrWhiteSpace($BrokerUrl)) {
+    $BrokerUrl = $env:CELERY_BROKER_URL
+}
+if ([string]::IsNullOrWhiteSpace($BrokerUrl)) {
+    $BrokerUrl = 'amqp://guest:guest@127.0.0.1:5672//'
+}
+
+if ([string]::IsNullOrWhiteSpace($ResultBackend)) {
+    $ResultBackend = $env:CELERY_RESULT_BACKEND
+}
+if ([string]::IsNullOrWhiteSpace($ResultBackend)) {
+    $ResultBackend = 'rpc://'
 }
 
 # 1) Para que sirve: garantizar broker RabbitMQ para worker y beat en este arranque.

@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+from urllib.parse import quote
 
 import pymysql
 pymysql.install_as_MySQLdb()
@@ -141,7 +142,7 @@ DATABASES = {
         'NAME': 'apex_ton',
         'USER': 'robert',
         'PASSWORD': 'Chido1993$',
-        'HOST': '192.168.1.69', #ip servidor en red local 192.168.1.69
+        'HOST': '192.168.1.69', #ip servidor en red local 192.168.1.69 o para internet cytechn.ddns.net
         'PORT': '3306',
     }
 }
@@ -203,7 +204,25 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # ── Celery ──────────────────────────────────────────────────────────────────
 # Broker por defecto en servidor: RabbitMQ.
 # Formato recomendado: amqp://usuario:password@host:5672/vhost
-CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'amqp://guest:guest@127.0.0.1:5672//')
+_celery_broker_url_directa = os.getenv('CELERY_BROKER_URL', '').strip()
+if _celery_broker_url_directa:
+    CELERY_BROKER_URL = _celery_broker_url_directa
+else:
+    _celery_broker_esquema = os.getenv('CELERY_BROKER_SCHEME', 'amqp').strip() or 'amqp'
+    _celery_broker_usuario = quote(os.getenv('CELERY_BROKER_USER', 'guest'), safe='')
+    _celery_broker_password = quote(os.getenv('CELERY_BROKER_PASSWORD', 'guest'), safe='')
+    _celery_broker_host = os.getenv('CELERY_BROKER_HOST', '127.0.0.1').strip() or '127.0.0.1'
+    _celery_broker_puerto = int(os.getenv('CELERY_BROKER_PORT', '5672'))
+    _celery_broker_vhost = os.getenv('CELERY_BROKER_VHOST', '/').strip() or '/'
+    if _celery_broker_vhost == '/':
+        _celery_broker_vhost = '//'
+    elif not _celery_broker_vhost.startswith('/'):
+        _celery_broker_vhost = f'/{_celery_broker_vhost}'
+
+    CELERY_BROKER_URL = (
+        f'{_celery_broker_esquema}://{_celery_broker_usuario}:{_celery_broker_password}'
+        f'@{_celery_broker_host}:{_celery_broker_puerto}{_celery_broker_vhost}'
+    )
 # RabbitMQ no requiere backend de resultados para este flujo, por eso se usa rpc://.
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'rpc://')
 CELERY_TIMEZONE           = 'America/Mexico_City'
