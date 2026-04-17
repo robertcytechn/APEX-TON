@@ -32,8 +32,7 @@ def construir_url_foto_perfil(usuario, request=None):
     if not getattr(usuario, 'foto_perfil', None):
         return None
 
-    if request:
-        return request.build_absolute_uri(usuario.foto_perfil.url)
+    # Se devuelve ruta relativa para evitar hosts internos cuando hay proxy inverso.
     return usuario.foto_perfil.url
 
 

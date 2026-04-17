@@ -1,6 +1,11 @@
-Version del sistema: 2.37.0
+Version del sistema: 2.37.1
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-17
+- Version: 2.37.1
+- Autor: Cy tamayo
+- Descripcion: Se corrigio la carga de imagen de perfil para despliegue con proxy inverso, evitando URLs absolutas con host interno (127.0.0.1) en `foto_perfil_url`; ahora el backend devuelve ruta relativa de media para prevenir bloqueos ORB/mixed-origin en navegador, y se reforzo el vhost de Apache con `ProxyPreserveHost` y proxy dedicado para `/apex/media/`.
 
 - Fecha: 2026-04-17
 - Version: 2.37.0

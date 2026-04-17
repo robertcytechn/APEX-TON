@@ -73,10 +73,6 @@ class UsuarioSerializer(serializers.ModelSerializer):
     def get_foto_perfil_url(self, obj):
         if not getattr(obj, 'foto_perfil', None):
             return None
-
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(obj.foto_perfil.url)
         return obj.foto_perfil.url
 
     def create(self, validated_data):
@@ -108,8 +104,4 @@ class UsuarioListSerializer(serializers.ModelSerializer):
     def get_foto_perfil_url(self, obj):
         if not getattr(obj, 'foto_perfil', None):
             return None
-
-        request = self.context.get('request')
-        if request:
-            return request.build_absolute_uri(obj.foto_perfil.url)
         return obj.foto_perfil.url
