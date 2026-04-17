@@ -9,7 +9,7 @@ import { defineConfig } from 'vite';
 // https://vitejs.dev/config/
 export default defineConfig({
     // esta base es para la ruta de producción, si se va a desplegar en un subdirectorio, se debe cambiar esta base
-    //base: '/binsur-mx/',
+    base: '/apex/',
     optimizeDeps: {
         noDiscovery: true
     },

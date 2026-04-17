@@ -1,8 +1,11 @@
 from rest_framework import viewsets, status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from .models import ConfiguracionGlobal, PadreRubroContable, RubroContable
 from .serializers import (
+    ConfiguracionGlobalPublicaSerializer,
     ConfiguracionGlobalSerializer,
     PadreRubroContableSerializer,
     RubroContableSerializer,
@@ -16,6 +19,39 @@ from .serializers import (
 def respuesta_estandar(data=None, mensaje="Operación exitosa", estado="success", codigo=status.HTTP_200_OK):
     """Genera una respuesta JSON estandarizada conforme a las reglas del proyecto."""
     return Response({"status": estado, "message": mensaje, "data": data}, status=codigo)
+
+
+CLAVES_PUBLICAS_MANTENIMIENTO = (
+    'ESTADO_APLICACION',
+    'ESTADO_APPLICACION',
+    'TITULO_ESTADO_APLICACION_POR_ACTUALIZACION',
+    'MENSAJE_APLICACION_POR_ACTUALIZACION',
+    'ETIQUETA_POR_ACTUALIZACION',
+    'ICONO_ACTUALIZACION',
+    'DECORADORES_ACTUALIZACION',
+    'RECOMENDACIONES_ACTUALIZACION',
+    'INICIO_ACTUALIZACION',
+    'FIN_ACTUALIZACION',
+)
+
+
+# 1) Para qué sirve: exponer al frontend el estado de mantenimiento sin requerir sesión.
+# 2) Cómo funciona: filtra únicamente claves públicas necesarias para modo mantenimiento.
+# 3) Qué hace: evita que la app se salte el bloqueo cuando no existe sesión activa.
+# 4) Cómo editarla: agrega o quita claves en CLAVES_PUBLICAS_MANTENIMIENTO según nuevas reglas.
+class ConfiguracionGlobalPublicaMantenimientoAPIView(APIView):
+    """Lectura pública de configuraciones mínimas para modo mantenimiento."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request):
+        queryset = ConfiguracionGlobal.objects.filter(clave__in=CLAVES_PUBLICAS_MANTENIMIENTO).order_by('clave')
+        serializer = ConfiguracionGlobalPublicaSerializer(queryset, many=True)
+        return respuesta_estandar(
+            data=serializer.data,
+            mensaje='Configuraciones públicas de mantenimiento obtenidas correctamente.'
+        )
 
 
 # ─────────────────────────────────────────────

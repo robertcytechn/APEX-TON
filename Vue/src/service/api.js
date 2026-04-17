@@ -1,9 +1,28 @@
 import axios from 'axios';
 import router from '@/router';
 
-// Configuración de la URL base para la API, se puede configurar mediante una variable de entorno.
-// Por defecto usa /api para desarrollo local.
-const baseURL = import.meta.env.VITE_API_BASE_URL || 'api';
+// Configuracion de URL base para la API.
+// Si no se define VITE_API_BASE_URL:
+// - Desarrollo: /api/ (usa proxy de Vite)
+// - Produccion: /apex/api/ (usa proxy inverso de Apache)
+const URL_BASE_API_PREDETERMINADA = import.meta.env.PROD ? '/apex/api/' : '/api/';
+
+function normalizarUrlBaseApi(urlBase) {
+    const texto = String(urlBase || '').trim();
+    if (!texto) {
+        return '/api/';
+    }
+
+    if (/^https?:\/\//i.test(texto) || texto.startsWith('//')) {
+        return texto.endsWith('/') ? texto : `${texto}/`;
+    }
+
+    const textoSinPuntoInicial = texto.startsWith('./') ? texto.slice(1) : texto;
+    const conSlashInicial = textoSinPuntoInicial.startsWith('/') ? textoSinPuntoInicial : `/${textoSinPuntoInicial}`;
+    return conSlashInicial.endsWith('/') ? conSlashInicial : `${conSlashInicial}/`;
+}
+
+const baseURL = normalizarUrlBaseApi(import.meta.env.VITE_API_BASE_URL || URL_BASE_API_PREDETERMINADA);
 let redireccionandoLogin = false;
 const CLAVE_SESION = 'binsurmx_sesion';
 

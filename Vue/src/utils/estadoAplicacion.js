@@ -1,11 +1,33 @@
 import { reactive } from 'vue';
 
-const URL_BASE_API = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
+const URL_BASE_API_PREDETERMINADA = import.meta.env.PROD ? '/apex/api/' : '/api/';
+
+function normalizarUrlBaseApi(urlBase) {
+    const texto = String(urlBase || '').trim();
+    if (!texto) {
+        return '/api/';
+    }
+
+    if (/^https?:\/\//i.test(texto) || texto.startsWith('//')) {
+        return texto.endsWith('/') ? texto : `${texto}/`;
+    }
+
+    const textoSinPuntoInicial = texto.startsWith('./') ? texto.slice(1) : texto;
+    const conSlashInicial = textoSinPuntoInicial.startsWith('/') ? textoSinPuntoInicial : `/${textoSinPuntoInicial}`;
+    return conSlashInicial.endsWith('/') ? conSlashInicial : `${conSlashInicial}/`;
+}
+
+const URL_BASE_API = normalizarUrlBaseApi(import.meta.env.VITE_API_BASE_URL || URL_BASE_API_PREDETERMINADA).replace(/\/$/, '');
 
 const CLAVE_BYPASS_MANTENIMIENTO = 'binsurmx_bypass_mantenimiento_hasta';
 const DURACION_BYPASS_MS = 60 * 60 * 1000;
 const VENTANA_ATAJO_SEGUNDO_PASO_MS = 1000;
 const INTERVALO_MINIMO_SINCRONIZACION_MS = 30000;
+const INTERVALO_REINTENTO_SINCRONIZACION_ERROR_MS = 5000;
+const RUTAS_API_CONFIGURACION_MANTENIMIENTO = [
+    '/configuraciones-globales/publicas/mantenimiento/',
+    '/configuraciones-globales/configuraciones/'
+];
 
 const CONFIG_KEYS = {
     estadoAplicacion: ['ESTADO_APLICACION', 'ESTADO_APPLICACION'],
@@ -94,7 +116,8 @@ const ESTADO_APLICACION_BASE = {
 // 4) Como editarla: ajusta claves de CONFIG_KEYS y plantillas de ESTADO_APLICACION_BASE.
 export const ESTADO_APLICACION = reactive(clonarObjeto(ESTADO_APLICACION_BASE));
 
-let ultimaSincronizacionMs = 0;
+let ultimaSincronizacionExitosaMs = 0;
+let ultimaSincronizacionErrorMs = 0;
 let promesaSincronizacion = null;
 let listenerBypassRegistrado = false;
 let marcaPasoUnoAtajoMs = 0;
@@ -254,21 +277,39 @@ function aplicarEstadoAplicacion(estadoNuevo) {
     ESTADO_APLICACION.temporizadorReactivacion = estadoNuevo?.temporizadorReactivacion || clonarObjeto(ESTADO_APLICACION_BASE.temporizadorReactivacion);
 }
 
-async function obtenerConfiguracionesGlobalesDesdeApi() {
-    const respuesta = await fetch(`${URL_BASE_API}/configuraciones-globales/configuraciones/`, {
+async function leerConfiguracionesDesdeRutaApi(rutaApi) {
+    const respuesta = await fetch(`${URL_BASE_API}${rutaApi}`, {
         method: 'GET',
         credentials: 'include',
+        cache: 'no-store',
         headers: {
             Accept: 'application/json'
         }
     });
 
-    if (!respuesta.ok) {
-        throw new Error(`No se pudo leer configuraciones globales. HTTP ${respuesta.status}`);
+    return respuesta;
+}
+
+async function obtenerConfiguracionesGlobalesDesdeApi() {
+    let ultimoError = null;
+
+    for (const rutaApi of RUTAS_API_CONFIGURACION_MANTENIMIENTO) {
+        const respuesta = await leerConfiguracionesDesdeRutaApi(rutaApi);
+
+        if (!respuesta.ok) {
+            ultimoError = new Error(`No se pudo leer configuraciones globales. HTTP ${respuesta.status} en ${rutaApi}`);
+            continue;
+        }
+
+        const payload = await respuesta.json();
+        return Array.isArray(payload?.data) ? payload.data : [];
     }
 
-    const payload = await respuesta.json();
-    return Array.isArray(payload?.data) ? payload.data : [];
+    if (ultimoError) {
+        throw ultimoError;
+    }
+
+    throw new Error('No se pudo leer configuraciones globales de mantenimiento.');
 }
 
 function intentarLiberacionLocalPorFin() {
@@ -293,7 +334,12 @@ function intentarLiberacionLocalPorFin() {
 // 4) Como editarla: ajusta INTERVALO_MINIMO_SINCRONIZACION_MS o agrega nuevas claves en CONFIG_KEYS.
 export async function sincronizarEstadoAplicacion({ forzar = false } = {}) {
     const ahoraMs = Date.now();
-    if (!forzar && (ahoraMs - ultimaSincronizacionMs) < INTERVALO_MINIMO_SINCRONIZACION_MS) {
+    if (!forzar && (ahoraMs - ultimaSincronizacionExitosaMs) < INTERVALO_MINIMO_SINCRONIZACION_MS) {
+        intentarLiberacionLocalPorFin();
+        return ESTADO_APLICACION;
+    }
+
+    if (!forzar && (ahoraMs - ultimaSincronizacionErrorMs) < INTERVALO_REINTENTO_SINCRONIZACION_ERROR_MS) {
         intentarLiberacionLocalPorFin();
         return ESTADO_APLICACION;
     }
@@ -307,10 +353,11 @@ export async function sincronizarEstadoAplicacion({ forzar = false } = {}) {
             const configuraciones = await obtenerConfiguracionesGlobalesDesdeApi();
             const estadoReconstruido = construirEstadoDesdeConfiguraciones(configuraciones);
             aplicarEstadoAplicacion(estadoReconstruido);
+            ultimaSincronizacionExitosaMs = Date.now();
         } catch {
+            ultimaSincronizacionErrorMs = Date.now();
             intentarLiberacionLocalPorFin();
         } finally {
-            ultimaSincronizacionMs = Date.now();
             promesaSincronizacion = null;
         }
 

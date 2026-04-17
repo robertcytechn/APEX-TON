@@ -231,6 +231,18 @@ Version del sistema: 2.32.0
 
 - Fecha: 2026-04-16
 - Autor: Cy tamayo
+- Descripcion: Se corrigio el modo mantenimiento en frontend para usuarios sin sesion, agregando endpoint publico backend de configuraciones de mantenimiento y reintento rapido de sincronizacion para evitar que la aplicacion muestre login por defecto cuando la base de datos indica mantenimiento activo.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se corrigio la construccion de URL base de API en frontend para evitar rutas relativas en Apache (ejemplo /apex/auth/apex/api), normalizando VITE_API_BASE_URL a ruta absoluta y usando por defecto /apex/api/ en produccion y /api/ en desarrollo.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se corrigio el despliegue frontend para evitar errores MIME en modulos JS, fijando base publica configurable en Vite (por defecto /apex/) y agregando redireccion legacy de /binsur-mx hacia /apex en Apache.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
 - Descripcion: Se agrego STATIC_ROOT en DJANGO/backend/settings.py para habilitar django.contrib.staticfiles y evitar el error ImproperlyConfigured al ejecutar collectstatic.
 
 - Fecha: 2026-04-16

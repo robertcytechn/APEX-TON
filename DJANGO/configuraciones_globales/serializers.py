@@ -16,6 +16,14 @@ class ConfiguracionGlobalSerializer(serializers.ModelSerializer):
                             'valor_anterior', 'valor_actual')
 
 
+class ConfiguracionGlobalPublicaSerializer(serializers.ModelSerializer):
+    """Serializador acotado para lectura publica del estado operativo."""
+
+    class Meta:
+        model = ConfiguracionGlobal
+        fields = ('id', 'clave', 'valor', 'tipo_valor', 'descripcion')
+
+
 class PadreRubroContableSerializer(serializers.ModelSerializer):
     """Serializador completo para el modelo PadreRubroContable."""
 
