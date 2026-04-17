@@ -419,10 +419,10 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-columns mr-1 text-primary"></i>Columnas visibles</label>
-                    <MultiSelect v-model="columnasVisiblesSucursales" :options="columnasDisponiblesSucursales" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opcion..." />
+                    <MultiSelect v-model="columnasVisiblesSucursales" :options="columnasDisponiblesSucursales" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                     <Select v-model="filasPorPaginaSucursales" :options="opcionesFilasMostrarSucursales" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
                 </div>
             </div>
@@ -464,10 +464,10 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-columns mr-1 text-primary"></i>Columnas visibles</label>
-                    <MultiSelect v-model="columnasVisiblesFondos" :options="columnasDisponiblesFondos" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opcion..." />
+                    <MultiSelect v-model="columnasVisiblesFondos" :options="columnasDisponiblesFondos" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                     <Select v-model="filasPorPaginaFondos" :options="opcionesFilasMostrarFondos" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
                 </div>
             </div>
@@ -508,10 +508,10 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-columns mr-1 text-primary"></i>Columnas visibles</label>
-                    <MultiSelect v-model="columnasVisiblesAsignaciones" :options="columnasDisponiblesAsignaciones" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opcion..." />
+                    <MultiSelect v-model="columnasVisiblesAsignaciones" :options="columnasDisponiblesAsignaciones" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                     <Select v-model="filasPorPaginaAsignaciones" :options="opcionesFilasMostrarAsignaciones" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
                 </div>
             </div>
@@ -610,11 +610,11 @@ onMounted(async () => {
             <div class="space-y-4">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-building mr-1 text-primary"></i>Sucursal <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <Select v-model="formularioAsignacion.sucursal" :options="opcionesSucursales" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona sucursal" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formularioAsignacion.sucursal" :options="opcionesSucursales" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona sucursal" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-wallet mr-1 text-primary"></i>Fondo fijo <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <Select v-model="formularioAsignacion.fondo_fijo" :options="opcionesFondos" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona fondo fijo" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formularioAsignacion.fondo_fijo" :options="opcionesFondos" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona fondo fijo" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-dollar mr-1 text-primary"></i>Monto asignado <span class="text-red-500">*</span> <small class="text-surface-500">(formato monetario obligatorio)</small></label>
@@ -642,6 +642,7 @@ onMounted(async () => {
         </Dialog>
     </section>
 </template>
+
 
 
 

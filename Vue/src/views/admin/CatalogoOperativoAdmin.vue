@@ -605,7 +605,7 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-sitemap mr-1 text-primary"></i>Categoria operativa activa</label>
-                    <Select v-model="categoriaSeleccionadaId" :options="opcionesCategoriasSelect" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona categoria" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="categoriaSeleccionadaId" :options="opcionesCategoriasSelect" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona categoría" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-info-circle mr-1 text-primary"></i>Contexto actual</label>
@@ -621,10 +621,10 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-columns mr-1 text-primary"></i>Columnas visibles</label>
-                    <MultiSelect v-model="columnasVisiblesCategorias" :options="columnasDisponiblesCategorias" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opcion..." />
+                    <MultiSelect v-model="columnasVisiblesCategorias" :options="columnasDisponiblesCategorias" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                     <Select v-model="filasPorPaginaCategorias" :options="opcionesFilasCategorias" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
                 </div>
             </div>
@@ -677,10 +677,10 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-columns mr-1 text-primary"></i>Columnas visibles</label>
-                    <MultiSelect v-model="columnasVisiblesConceptos" :options="columnasDisponiblesConceptos" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opcion..." />
+                    <MultiSelect v-model="columnasVisiblesConceptos" :options="columnasDisponiblesConceptos" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                     <Select v-model="filasPorPaginaConceptos" :options="opcionesFilasConceptos" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
                 </div>
             </div>
@@ -732,10 +732,10 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-columns mr-1 text-primary"></i>Columnas visibles</label>
-                    <MultiSelect v-model="columnasVisiblesDetalles" :options="columnasDisponiblesDetalles" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opcion..." />
+                    <MultiSelect v-model="columnasVisiblesDetalles" :options="columnasDisponiblesDetalles" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                     <Select v-model="filasPorPaginaDetalles" :options="opcionesFilasDetalles" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
                 </div>
             </div>
@@ -785,7 +785,7 @@ onMounted(async () => {
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-arrows-v mr-1 text-primary"></i>Tipo <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <Select v-model="formularioCategoria.tipo" :options="opcionesTipoCategoria" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona tipo" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formularioCategoria.tipo" :options="opcionesTipoCategoria" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona tipo" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-sort-numeric-up mr-1 text-primary"></i>Orden <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
@@ -815,11 +815,11 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-table mr-1 text-primary"></i>Categoria operativa <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <Select v-model="formularioConcepto.categoria" :options="opcionesCategoriasSelect" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona categoria" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formularioConcepto.categoria" :options="opcionesCategoriasSelect" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona categoría" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-bookmark mr-1 text-primary"></i>Rubro contable <small class="text-surface-500">(opcional)</small></label>
-                    <Select v-model="formularioConcepto.rubro_contable" :options="rubros" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona rubro" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formularioConcepto.rubro_contable" :options="rubros" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona rubro" filter filterPlaceholder="Buscar opción..." />
                     <Message v-if="rubroNoContableSeleccionado" severity="warn" :closable="false" class="mt-2">
                         {{ mensajeRubroNoContable }}
                     </Message>
@@ -842,7 +842,7 @@ onMounted(async () => {
                         class="w-full"
                         placeholder="Selecciona tipo"
                         filter
-                        filterPlaceholder="Buscar opcion..."
+                        filterPlaceholder="Buscar opción..."
                         :disabled="tipoConceptoBloqueadoPorCategoria"
                     />
                     <small class="text-surface-500 block mt-2">{{ textoReglaTipoConcepto }}</small>
@@ -878,7 +878,7 @@ onMounted(async () => {
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-table mr-1 text-primary"></i>Categoria operativa <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <Select v-model="formularioDetalle.categoria" :options="opcionesCategoriasSelect" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona categoria" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formularioDetalle.categoria" :options="opcionesCategoriasSelect" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona categoría" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-file mr-1 text-primary"></i>Nombre del campo <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
@@ -890,7 +890,7 @@ onMounted(async () => {
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-sliders-h mr-1 text-primary"></i>Tipo de valor <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <Select v-model="formularioDetalle.tipo_valor" :options="opcionesTipoValorDetalle" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona tipo" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formularioDetalle.tipo_valor" :options="opcionesTipoValorDetalle" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona tipo" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-key mr-1 text-primary"></i>Valor por defecto <small class="text-surface-500">(opcional)</small></label>
@@ -917,6 +917,7 @@ onMounted(async () => {
         </Dialog>
     </section>
 </template>
+
 
 
 

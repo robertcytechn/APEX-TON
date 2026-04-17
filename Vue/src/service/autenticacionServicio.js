@@ -1,5 +1,14 @@
 import api from '@/service/api';
 
+function obtenerConfiguracionNotificacionSilenciosa() {
+    return {
+        notificacionToast: {
+            exito: false,
+            error: false
+        }
+    };
+}
+
 function obtenerCookie(nombreCookie) {
     if (typeof document === 'undefined') {
         return '';
@@ -35,13 +44,16 @@ export async function iniciarSesion(payload) {
     const tokenCookie = obtenerCookie('csrftoken');
     const tokenFinal = tokenCookie || tokenCsrf;
 
+    const configuracionBase = obtenerConfiguracionNotificacionSilenciosa();
+
     const configuracion = tokenFinal
         ? {
+            ...configuracionBase,
             headers: {
                 'X-CSRFToken': tokenFinal
             }
         }
-        : undefined;
+        : configuracionBase;
 
     return api.post('/usuarios/iniciar-sesion/', payload, configuracion);
 }
@@ -51,7 +63,7 @@ export async function iniciarSesion(payload) {
 // 3) Qué hace: invalida la sesión activa del navegador.
 // 4) Cómo editarla: modifica la ruta si se versiona el endpoint de logout.
 export function cerrarSesion() {
-    return api.post('/usuarios/cerrar-sesion/');
+    return api.post('/usuarios/cerrar-sesion/', null, obtenerConfiguracionNotificacionSilenciosa());
 }
 
 // 1) Para qué sirve: consultar la sesión actual sin pedir credenciales nuevamente.

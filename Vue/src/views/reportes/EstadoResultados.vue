@@ -88,10 +88,10 @@ const etiquetaFuenteAnual = computed(() => {
 
     const unicas = [...new Set(fuentes)];
     if (unicas.length === 1) {
-        return unicas[0] === 'snapshot_historico' ? 'Historico cerrado' : 'Tiempo real';
+        return unicas[0] === 'snapshot_historico' ? 'Histórico cerrado' : 'Tiempo real';
     }
 
-    return 'Mixto (historico y tiempo real)';
+    return 'Mixto (histórico y tiempo real)';
 });
 
 const hayInformacionExportable = computed(() => Array.isArray(gruposRubrosAnuales.value) && gruposRubrosAnuales.value.length > 0);
@@ -386,7 +386,7 @@ const cargarEstadoResultadosAnual = async () => {
         reportesPorMes.value = mapaMeses;
 
         if (mesesConError.length === 12) {
-            throw new Error('No se pudo consultar ningun mes del anio seleccionado.');
+            throw new Error('No se pudo consultar ningún mes del año seleccionado.');
         }
 
         if (mesesConError.length > 0) {
@@ -786,7 +786,7 @@ async function exportarExcelEstadoResultadosAnual() {
         const nombreCasino = obtenerNombreCasinoExportacion();
         const tabla = referenciaTablaEstadoResultados.value;
         if (!tabla) {
-            throw new Error('No se encontro la tabla anual para exportar.');
+            throw new Error('No se encontró la tabla anual para exportar.');
         }
 
         const tablaClon = tabla.cloneNode(true);
@@ -808,7 +808,7 @@ async function exportarExcelEstadoResultadosAnual() {
         });
 
         XLSX.writeFile(libro, nombreArchivo);
-        mensajeExitoExportacion.value = 'Exportacion Excel completada correctamente con estilos y tabla completa.';
+        mensajeExitoExportacion.value = 'Exportación Excel completada correctamente con estilos y tabla completa.';
     } catch (error) {
         mensajeErrorExportacion.value = error?.message || 'No se pudo exportar el archivo Excel.';
     } finally {
@@ -904,12 +904,12 @@ function dibujarPaginaPdfEstadoResultados({
     documento.setTextColor(51, 65, 85);
     documento.setFont('helvetica', 'normal');
     documento.setFontSize(10);
-    documento.text(`Fecha de exportacion: ${fechaExportacion}`, margen, margen + 36);
+    documento.text(`Fecha de exportación: ${fechaExportacion}`, margen, margen + 36);
     documento.text(`Periodo: ${periodo}`, margen, margen + 52);
     documento.text(`Casino: ${casino}`, margen, margen + 68);
     documento.text(`Moneda visible: ${moneda}`, margen, margen + 84);
     documento.text(`Total anual: ${formatearMontoExportacion(totalAnual)}`, anchoPagina - margen, margen + 52, { align: 'right' });
-    documento.text(`Pagina ${numeroPagina} de ${totalPaginas}`, anchoPagina - margen, margen + 68, { align: 'right' });
+    documento.text(`Página ${numeroPagina} de ${totalPaginas}`, anchoPagina - margen, margen + 68, { align: 'right' });
 
     documento.setFillColor(15, 23, 42);
     documento.rect(margen, inicioTablaY, anchoContenido, altoEncabezadoTabla, 'F');
@@ -1003,7 +1003,7 @@ function dibujarPaginaPdfEstadoResultados({
 // 1) Para que sirve: exportar el estado anual a PDF multipagina en vector directo.
 // 2) Como funciona: dibuja cada pagina en jsPDF sin conversion intermedia a SVG.
 // 3) Que hace: evita errores de dependencias ESM y mantiene nitidez en la salida.
-// 4) Como editarla: ajusta formato, orientacion o densidad de filas por pagina.
+// 4) Cómo editarla: ajusta formato, orientación o densidad de filas por página.
 async function exportarPdfEstadoResultadosAnual() {
     if (!hayInformacionExportable.value) {
         mensajeErrorExportacion.value = 'No hay datos en pantalla para exportar a PDF.';
@@ -1070,7 +1070,7 @@ async function exportarPdfEstadoResultadosAnual() {
         });
 
         documento.save(nombreArchivo);
-        mensajeExitoExportacion.value = 'Exportacion PDF completada correctamente.';
+        mensajeExitoExportacion.value = 'Exportación PDF completada correctamente.';
     } catch (error) {
         mensajeErrorExportacion.value = error?.message || 'No se pudo exportar el PDF.';
     } finally {
@@ -1295,7 +1295,7 @@ onMounted(async () => {
 
         <div v-if="!cargando && !gruposRubrosAnuales.length" class="card rounded-xl p-10 text-center border border-dashed border-slate-300 bg-slate-50">
             <i class="pi pi-folder-open text-4xl text-slate-300 mb-4"></i>
-            <h3 class="text-lg font-bold text-slate-700 mb-1">Sin informacion anual</h3>
+            <h3 class="text-lg font-bold text-slate-700 mb-1">Sin información anual</h3>
             <p class="text-slate-500 text-sm">No se encontraron movimientos para el año y casino seleccionados.</p>
         </div>
     </section>

@@ -10,7 +10,7 @@ import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
                 <i class="pi pi-map"></i>
                 Error 404
             </div>
-            <h1 class="text-3xl lg:text-4xl font-bold text-surface-900 dark:text-surface-0">Pagina no encontrada</h1>
+            <h1 class="text-3xl lg:text-4xl font-bold text-surface-900 dark:text-surface-0">Página no encontrada</h1>
             <p class="mt-3 text-surface-600 dark:text-surface-300">
                 La ruta que intentas abrir no existe o fue movida.
             </p>

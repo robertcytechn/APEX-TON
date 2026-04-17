@@ -21,7 +21,7 @@ const model = computed(() => {
             to: '/'
         },
         {
-            label: 'Plantilla vacia',
+            label: 'Plantilla vacía',
             icon: 'pi pi-fw pi-file-edit',
             to: '/pages/empty'
         },
@@ -36,7 +36,7 @@ const model = computed(() => {
             to: '/reportes/reporte-diario'
         },
         {
-            label: 'Dias contables',
+            label: 'Días contables',
             icon: 'pi pi-fw pi-calendar-plus',
             to: '/reportes/dias-contables'
         }
@@ -44,7 +44,7 @@ const model = computed(() => {
 
     if (sesionStore.cumpleAlgunoRoles(['DIRECTOR', 'ADMINISTRADOR', 'SUPERUSUARIO'])) {
         itemsPrincipal.push({
-            label: 'Estadisticas',
+            label: 'Estadísticas',
             icon: 'pi pi-fw pi-chart-bar',
             to: '/reportes/estadisticas'
         });
@@ -62,7 +62,7 @@ const model = computed(() => {
             visiblePara: ['AUTENTICADO'],
             items: [
                 {
-                    label: 'Pagina no encontrada',
+                    label: 'Página no encontrada',
                     icon: 'pi pi-fw pi-question-circle',
                     to: '/pages/notfound'
                 }
@@ -178,7 +178,7 @@ const model = computed(() => {
 // Menu corto de referencia para altas o bajas rapidas:
 // const menuCorto = [
 //     { label: 'Principal', items: [{ label: 'Inicio', icon: 'pi pi-home', to: '/' }] },
-//     { label: 'Acceso', items: [{ label: 'Iniciar sesion', icon: 'pi pi-sign-in', to: '/auth/login' }] }
+//     { label: 'Acceso', items: [{ label: 'Iniciar sesión', icon: 'pi pi-sign-in', to: '/auth/login' }] }
 // ];
 
 // Menu completo de referencia:

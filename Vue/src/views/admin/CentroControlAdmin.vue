@@ -242,7 +242,7 @@ async function cargarInicial() {
         ]);
         mostrarMensaje('Centro de Control cargado correctamente.', 'success');
     } catch (error) {
-        const detalle = error?.response?.data?.message || 'No se pudo cargar la informacion inicial del Centro de Control.';
+        const detalle = error?.response?.data?.message || 'No se pudo cargar la información inicial del Centro de Control.';
         mostrarMensaje(detalle, 'error');
     } finally {
         cargandoInicial.value = false;
@@ -284,9 +284,9 @@ async function guardarEstado() {
         sincronizarCatalogos(payloadRespuesta.catalogos || {});
         hidratarEstado(payloadRespuesta);
 
-        mostrarMensaje('Estado de aplicacion guardado correctamente.', 'success');
+        mostrarMensaje('Estado de aplicación guardado correctamente.', 'success');
     } catch (error) {
-        const detalle = error?.response?.data?.message || 'No se pudo guardar el estado de aplicacion.';
+        const detalle = error?.response?.data?.message || 'No se pudo guardar el estado de aplicación.';
         mostrarMensaje(detalle, 'error');
     } finally {
         guardandoEstado.value = false;
@@ -410,7 +410,7 @@ onBeforeUnmount(() => {
             <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h1 class="text-2xl font-semibold">Centro de Control</h1>
-                    <p class="text-surface-600 mt-1">Panel exclusivo para ADMINISTRADOR con gestion de estado operativo, tareas Celery y salud del servidor.</p>
+                    <p class="text-surface-600 mt-1">Panel exclusivo para ADMINISTRADOR con gestión de estado operativo, tareas Celery y salud del servidor.</p>
                 </div>
                 <div class="flex flex-wrap gap-2">
                     <Tag :value="estatusSalud.etiqueta" :severity="estatusSalud.severidad" />
@@ -425,13 +425,13 @@ onBeforeUnmount(() => {
 
         <div class="card space-y-5">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h2 class="text-xl font-semibold">Estado de aplicacion</h2>
+                <h2 class="text-xl font-semibold">Estado de aplicación</h2>
                 <Tag value="Solo administrador" severity="danger" />
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-th-large mr-1 text-primary"></i>Plantilla rapida <small class="text-surface-500">(opcional)</small></label>
+                    <label class="block text-sm mb-2"><i class="pi pi-th-large mr-1 text-primary"></i>Plantilla rápida <small class="text-surface-500">(opcional)</small></label>
                     <Select
                         v-model="seleccionPlantilla"
                         :options="opcionesPlantillas"
@@ -460,16 +460,16 @@ onBeforeUnmount(() => {
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-bookmark mr-1 text-primary"></i>Titulo predefinido <small class="text-surface-500">(selector)</small></label>
+                    <label class="block text-sm mb-2"><i class="pi pi-bookmark mr-1 text-primary"></i>Título predefinido <small class="text-surface-500">(selector)</small></label>
                     <Select
                         v-model="seleccionTituloPredefinido"
                         :options="opcionesTitulos"
                         optionLabel="label"
                         optionValue="value"
                         class="w-full"
-                        placeholder="Selecciona titulo"
+                        placeholder="Selecciona título"
                         filter
-                        filterPlaceholder="Buscar titulo..."
+                        filterPlaceholder="Buscar título..."
                     />
                 </div>
                 <div>
@@ -489,12 +489,12 @@ onBeforeUnmount(() => {
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-heading mr-1 text-primary"></i>Titulo visible <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <InputText v-model="formularioEstado.titulo" class="w-full" placeholder="Ej. Actualizacion de software en progreso" />
+                    <label class="block text-sm mb-2"><i class="pi pi-heading mr-1 text-primary"></i>Título visible <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
+                    <InputText v-model="formularioEstado.titulo" class="w-full" placeholder="Ej. Actualización de software en progreso" />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-star mr-1 text-primary"></i>Etiqueta visible <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <InputText v-model="formularioEstado.etiqueta" class="w-full" placeholder="Ej. Intervencion preventiva" />
+                    <InputText v-model="formularioEstado.etiqueta" class="w-full" placeholder="Ej. Intervención preventiva" />
                 </div>
             </div>
 
@@ -520,9 +520,9 @@ onBeforeUnmount(() => {
                         optionLabel="label"
                         optionValue="value"
                         class="w-full"
-                        placeholder="Selecciona icono"
+                        placeholder="Selecciona ícono"
                         filter
-                        filterPlaceholder="Buscar icono..."
+                        filterPlaceholder="Buscar ícono..."
                     >
                         <template #option="slotProps">
                             <div class="flex items-center gap-2">
@@ -541,7 +541,7 @@ onBeforeUnmount(() => {
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Decoradores visibles <small class="text-surface-500">(seleccion multiple)</small></label>
+                    <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Decoradores visibles <small class="text-surface-500">(selección múltiple)</small></label>
                     <MultiSelect
                         v-model="formularioEstado.decoradores"
                         :options="catalogos.decoradores"
@@ -553,7 +553,7 @@ onBeforeUnmount(() => {
                     />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-check-square mr-1 text-primary"></i>Recomendaciones visibles <small class="text-surface-500">(seleccion multiple)</small></label>
+                    <label class="block text-sm mb-2"><i class="pi pi-check-square mr-1 text-primary"></i>Recomendaciones visibles <small class="text-surface-500">(selección múltiple)</small></label>
                     <MultiSelect
                         v-model="formularioEstado.recomendaciones"
                         :options="catalogos.recomendaciones"
@@ -568,11 +568,11 @@ onBeforeUnmount(() => {
 
             <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-calendar-plus mr-1 text-primary"></i>Inicio actualizacion <small class="text-surface-500">(opcional)</small></label>
+                    <label class="block text-sm mb-2"><i class="pi pi-calendar-plus mr-1 text-primary"></i>Inicio actualización <small class="text-surface-500">(opcional)</small></label>
                     <DatePicker v-model="formularioEstado.inicio_actualizacion" class="w-full" showTime hourFormat="24" dateFormat="yy-mm-dd" showIcon placeholder="YYYY-MM-DD HH:mm:ss" />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-calendar-times mr-1 text-primary"></i>Fin actualizacion <small class="text-surface-500">(opcional)</small></label>
+                    <label class="block text-sm mb-2"><i class="pi pi-calendar-times mr-1 text-primary"></i>Fin actualización <small class="text-surface-500">(opcional)</small></label>
                     <DatePicker v-model="formularioEstado.fin_actualizacion" class="w-full" showTime hourFormat="24" dateFormat="yy-mm-dd" showIcon placeholder="YYYY-MM-DD HH:mm:ss" />
                 </div>
             </div>
@@ -581,7 +581,7 @@ onBeforeUnmount(() => {
                 <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                     <div class="flex items-center gap-2">
                         <i :class="formularioEstado.icono || 'pi pi-info-circle'"></i>
-                        <strong>{{ formularioEstado.titulo || 'Sin titulo' }}</strong>
+                        <strong>{{ formularioEstado.titulo || 'Sin título' }}</strong>
                     </div>
                     <Tag :value="formularioEstado.etiqueta || 'Sin etiqueta'" severity="contrast" />
                 </div>
@@ -634,7 +634,7 @@ onBeforeUnmount(() => {
                     />
                 </div>
                 <div>
-                    <label class="block text-sm mb-2"><i class="pi pi-hashtag mr-1 text-primary"></i>Anio cierre mensual</label>
+                    <label class="block text-sm mb-2"><i class="pi pi-hashtag mr-1 text-primary"></i>Año cierre mensual</label>
                     <InputNumber v-model="parametrosTareas.anio" class="w-full" :useGrouping="false" :min="2000" :max="3000" placeholder="Ej. 2026" />
                 </div>
                 <div>
@@ -661,7 +661,7 @@ onBeforeUnmount(() => {
 
                     <div class="flex flex-wrap gap-2">
                         <Tag v-for="parametro in tarea.parametros" :key="`${tarea.clave}-${parametro}`" :value="parametro" severity="contrast" />
-                        <Tag v-if="!tarea.parametros.length" value="Sin parametros" severity="success" />
+                        <Tag v-if="!tarea.parametros.length" value="Sin parámetros" severity="success" />
                     </div>
 
                     <Message v-if="ejecucionesRecientes[tarea.clave]" severity="secondary" :closable="false">
@@ -681,7 +681,7 @@ onBeforeUnmount(() => {
                 <Button :loading="cargandoSalud" icon="pi pi-heart" label="Actualizar salud" severity="secondary" @click="cargarSaludServidor" />
             </div>
 
-            <div v-if="cargandoInicial" class="text-surface-500">Cargando metricas del servidor...</div>
+            <div v-if="cargandoInicial" class="text-surface-500">Cargando métricas del servidor...</div>
 
             <div v-else-if="saludServidor" class="space-y-4">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">

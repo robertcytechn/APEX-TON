@@ -597,7 +597,7 @@ onBeforeUnmount(() => {
                 <header>
                     <h2 class="text-xl font-semibold">Seguridad y contraseña</h2>
                     <p class="text-surface-500 mt-1">
-                        {{ requiereCambioPasswordObligatorio ? 'Tu acceso esta bloqueado hasta que cambies tu contrasena.' : 'Si no deseas cambiar contraseña, deja estos campos vacíos.' }}
+                        {{ requiereCambioPasswordObligatorio ? 'Tu acceso está bloqueado hasta que cambies tu contraseña.' : 'Si no deseas cambiar contraseña, deja estos campos vacíos.' }}
                     </p>
                 </header>
 

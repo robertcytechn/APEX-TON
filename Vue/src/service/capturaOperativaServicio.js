@@ -1,5 +1,14 @@
 import api from '@/service/api';
 
+function obtenerConfiguracionNotificacionSilenciosa() {
+    return {
+        notificacionToast: {
+            exito: false,
+            error: false
+        }
+    };
+}
+
 // 1) Para qué sirve: obtener catálogo de categorías operativas disponibles.
 // 2) Cómo funciona: consulta endpoint de categorías sin parámetros.
 // 3) Qué hace: alimenta menú/rutas de captura operativa.
@@ -84,14 +93,17 @@ export function listarMovimientosDiarios(params = {}) {
 // 3) Qué hace: crea/actualiza movimiento y opcionalmente adjunta archivo de respaldo.
 // 4) Cómo editarla: actualiza manejo de headers si backend cambia recepción de archivos.
 export function guardarCapturaRapida(payload) {
+    const configuracionNotificacionSilenciosa = obtenerConfiguracionNotificacionSilenciosa();
+
     if (payload instanceof FormData) {
         return api.post('/movimientos-diarios/captura-rapida/', payload, {
+            ...configuracionNotificacionSilenciosa,
             headers: {
                 'Content-Type': 'multipart/form-data'
             }
         });
     }
-    return api.post('/movimientos-diarios/captura-rapida/', payload);
+    return api.post('/movimientos-diarios/captura-rapida/', payload, configuracionNotificacionSilenciosa);
 }
 
 // 1) Para qué sirve: eliminar un movimiento diario específico desde captura operativa.

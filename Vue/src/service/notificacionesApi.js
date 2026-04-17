@@ -1,5 +1,47 @@
 const METODOS_MUTACION = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const CLAVES_NO_VALIDACION = new Set(['status', 'message', 'mensaje', 'detail', 'error', 'data', 'errors']);
+const REGLAS_LISTA_BLANCA_NOTIFICACIONES = [
+    {
+        metodos: new Set(['POST', 'PUT', 'PATCH', 'DELETE']),
+        patron: /^\/cabina-arquitectura\//,
+    },
+    {
+        metodos: new Set(['POST', 'PUT', 'PATCH', 'DELETE']),
+        patron: /^\/categorias(?:\/|$)/,
+    },
+    {
+        metodos: new Set(['POST', 'PUT', 'PATCH', 'DELETE']),
+        patron: /^\/conceptos(?:\/|$)/,
+    },
+    {
+        metodos: new Set(['POST', 'PUT', 'PATCH', 'DELETE']),
+        patron: /^\/detalles-parametrizados(?:\/|$)/,
+    },
+    {
+        metodos: new Set(['POST', 'PUT', 'PATCH', 'DELETE']),
+        patron: /^\/fondos-fijos(?:\/|$)/,
+    },
+    {
+        metodos: new Set(['POST', 'PUT', 'PATCH', 'DELETE']),
+        patron: /^\/sucursales-fondos-fijos(?:\/|$)/,
+    },
+    {
+        metodos: new Set(['POST']),
+        patron: /^\/reportes-diarios\/saldo-inicial-categoria\/manual\/?$/,
+    },
+    {
+        metodos: new Set(['POST']),
+        patron: /^\/reportes-diarios\/cerrar-actual\/?$/,
+    },
+    {
+        metodos: new Set(['DELETE']),
+        patron: /^\/movimientos-diarios\/\d+\/?$/,
+    },
+    {
+        metodos: new Set(['PATCH']),
+        patron: /^\/usuarios\/perfil-propio\/?$/,
+    },
+];
 
 let instanciaToast = null;
 
@@ -117,6 +159,7 @@ function obtenerOpcionesToast(config) {
     return {
         mostrarExito: opciones.exito !== false,
         mostrarError: opciones.error !== false,
+        forzarMostrar: opciones.forzar === true,
         resumenExito: textoLimpio(opciones.resumenExito) || 'Operacion exitosa',
         resumenError: textoLimpio(opciones.resumenError) || 'Error en la operacion',
         vidaExito: Number(opciones.vidaExito) > 0 ? Number(opciones.vidaExito) : 4500,
@@ -124,9 +167,72 @@ function obtenerOpcionesToast(config) {
     };
 }
 
+function obtenerMetodoSolicitud(config) {
+    return String(config?.method || '').trim().toUpperCase();
+}
+
+function normalizarRutaSolicitud(config) {
+    const urlCruda = String(config?.url || '').trim();
+    if (!urlCruda) {
+        return '';
+    }
+
+    let ruta = '';
+
+    try {
+        ruta = new URL(urlCruda, 'http://binsurmx.local').pathname;
+    } catch {
+        ruta = urlCruda;
+    }
+
+    ruta = String(ruta || '').split('?')[0].split('#')[0].trim();
+    if (!ruta) {
+        return '';
+    }
+
+    if (!ruta.startsWith('/')) {
+        ruta = `/${ruta}`;
+    }
+
+    if (ruta.startsWith('/apex/api/')) {
+        return `/${ruta.slice('/apex/api/'.length)}`;
+    }
+
+    if (ruta.startsWith('/api/')) {
+        return `/${ruta.slice('/api/'.length)}`;
+    }
+
+    return ruta;
+}
+
 function esMetodoMutacion(config) {
-    const metodo = String(config?.method || '').trim().toUpperCase();
+    const metodo = obtenerMetodoSolicitud(config);
     return METODOS_MUTACION.has(metodo);
+}
+
+function estaRutaEnListaBlanca(config) {
+    const metodo = obtenerMetodoSolicitud(config);
+    const ruta = normalizarRutaSolicitud(config);
+
+    if (!metodo || !ruta) {
+        return false;
+    }
+
+    return REGLAS_LISTA_BLANCA_NOTIFICACIONES.some((regla) => {
+        return regla.metodos.has(metodo) && regla.patron.test(ruta);
+    });
+}
+
+function esOperacionNotificable(config, opciones) {
+    if (!esMetodoMutacion(config)) {
+        return false;
+    }
+
+    if (opciones?.forzarMostrar) {
+        return true;
+    }
+
+    return estaRutaEnListaBlanca(config);
 }
 
 function agregarToast({ severidad, resumen, detalle, vida }) {
@@ -152,11 +258,11 @@ export function registrarInstanciaToastApi(instancia) {
 }
 
 export function procesarRespuestaExitosaConToast(response) {
-    if (!esMetodoMutacion(response?.config)) {
+    const opciones = obtenerOpcionesToast(response?.config);
+    if (!esOperacionNotificable(response?.config, opciones)) {
         return;
     }
 
-    const opciones = obtenerOpcionesToast(response?.config);
     if (!opciones.mostrarExito) {
         return;
     }
@@ -175,11 +281,11 @@ export function procesarRespuestaExitosaConToast(response) {
 }
 
 export function procesarErrorConToast(error) {
-    if (!esMetodoMutacion(error?.config)) {
+    const opciones = obtenerOpcionesToast(error?.config);
+    if (!esOperacionNotificable(error?.config, opciones)) {
         return;
     }
 
-    const opciones = obtenerOpcionesToast(error?.config);
     if (!opciones.mostrarError) {
         return;
     }

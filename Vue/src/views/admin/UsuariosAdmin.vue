@@ -212,10 +212,10 @@ const copiarContrasena = async () => {
     try {
         await navigator.clipboard.writeText(contrasenaCreada.value);
         severidadMensaje.value = 'info';
-        mensaje.value = 'Contrasena copiada al portapapeles.';
+        mensaje.value = 'Contraseña copiada al portapapeles.';
     } catch {
         severidadMensaje.value = 'warn';
-        mensaje.value = 'No fue posible copiar la contrasena automaticamente.';
+        mensaje.value = 'No fue posible copiar la contraseña automáticamente.';
     }
 };
 
@@ -242,7 +242,7 @@ onMounted(cargar);
                         :value="correoEnviado ? 'Correo enviado' : 'Correo no enviado'"
                         :severity="correoEnviado ? 'success' : 'danger'"
                     />
-                    <Tag v-if="contrasenaCreada" :value="`Contrasena generada: ${contrasenaCreada}`" severity="warn" />
+                    <Tag v-if="contrasenaCreada" :value="`Contraseña generada: ${contrasenaCreada}`" severity="warn" />
                     <Button
                         v-if="contrasenaCreada"
                         label="Copiar"
@@ -259,10 +259,10 @@ onMounted(cargar);
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
                 <label class="block text-sm mb-2"><i class="pi pi-columns mr-1 text-primary"></i>Columnas visibles</label>
-                <MultiSelect v-model="columnasVisibles" :options="columnasDisponibles" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opcion..." />
+                <MultiSelect v-model="columnasVisibles" :options="columnasDisponibles" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opción..." />
             </div>
             <div>
-                <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                 <Select v-model="filasPorPagina" :options="opcionesFilasMostrar" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
             </div>
         </div>
@@ -289,7 +289,7 @@ onMounted(cargar);
                 </template>
             </Column>
             <Column v-if="esColumnaVisible('activo')" field="is_active" header="Activo" sortable>
-                <template #body="slotProps">{{ slotProps.data.is_active ? 'Si' : 'No' }}</template>
+                <template #body="slotProps">{{ slotProps.data.is_active ? 'Sí' : 'No' }}</template>
             </Column>
             <Column header="Acciones">
                 <template #body="slotProps">
@@ -331,7 +331,7 @@ onMounted(cargar);
                         <i class="pi pi-building mr-1 text-primary"></i>
                         Sucursal <small class="text-surface-500">(opcional)</small>
                     </label>
-                    <Select v-model="formulario.sucursal" :options="sucursales" optionLabel="nombre" optionValue="id" class="w-full" placeholder="Selecciona sucursal" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formulario.sucursal" :options="sucursales" optionLabel="nombre" optionValue="id" class="w-full" placeholder="Selecciona sucursal" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2">
@@ -339,14 +339,14 @@ onMounted(cargar);
                         Rol <span class="text-red-500">*</span>
                         <small class="text-surface-500 ml-1">(obligatorio)</small>
                     </label>
-                    <MultiSelect v-model="formulario.roles_ids" :options="rolesDisponibles" optionLabel="nombre" optionValue="id" display="chip" class="w-full" placeholder="Selecciona uno o mas roles" filter filterPlaceholder="Buscar opcion..." />
+                    <MultiSelect v-model="formulario.roles_ids" :options="rolesDisponibles" optionLabel="nombre" optionValue="id" display="chip" class="w-full" placeholder="Selecciona uno o más roles" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2">
                         <i class="pi pi-lock mr-1 text-primary"></i>
-                        Contrasena <small class="text-surface-500">(opcional: si la dejas vacia se genera automaticamente)</small>
+                        Contraseña <small class="text-surface-500">(opcional: si la dejas vacía se genera automáticamente)</small>
                     </label>
-                    <Password v-model="formulario.password" :feedback="false" fluid placeholder="Minimo 8 caracteres" />
+                    <Password v-model="formulario.password" :feedback="false" fluid placeholder="Mínimo 8 caracteres" />
                 </div>
                 <div class="flex flex-col gap-2">
                     <div class="flex items-center gap-2 mt-8">

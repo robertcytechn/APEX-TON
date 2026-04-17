@@ -62,10 +62,10 @@ const CLASES_POR_ESTADO = {
 const estadoPorDefecto = {
     titulo: 'Mantenimiento del sistema',
     mensaje: 'Estamos aplicando ajustes operativos para estabilizar el servicio.',
-    etiqueta: 'Operacion interna',
+    etiqueta: 'Operación interna',
     icono: 'pi pi-cog',
-    decoradores: ['Revision tecnica'],
-    recomendaciones: ['Espera la reactivacion programada.']
+    decoradores: ['Revisión técnica'],
+    recomendaciones: ['Espera la reactivación programada.']
 };
 
 function normalizarClaveEstado(valor) {
@@ -107,6 +107,12 @@ const estadoActivo = computed(() => {
 
 const clasesEstadoActivo = computed(() => {
     return CLASES_POR_ESTADO[claveEstadoActual.value] || CLASES_POR_ESTADO.mantenimiento_general;
+});
+
+const alertaConexionBdVisible = computed(() => Boolean(ESTADO_APLICACION.alertaConexionBdVisible));
+
+const alertaConexionBdMensaje = computed(() => {
+    return String(ESTADO_APLICACION.alertaConexionBdMensaje || '').trim();
 });
 
 const fechaReactivacionProgramada = computed(() => {
@@ -277,8 +283,20 @@ onBeforeUnmount(() => {
                 {{ estadoActivo.mensaje }}
             </p>
 
+            <div v-if="alertaConexionBdVisible" class="mt-4 rounded-2xl border border-red-300 bg-red-50 p-4 sm:p-5">
+                <div class="flex items-start gap-3">
+                    <i class="pi pi-database text-red-700 text-xl mt-0.5"></i>
+                    <div>
+                        <h2 class="font-semibold text-red-800">Alerta de infraestructura</h2>
+                        <p class="text-sm text-red-700 mt-1">
+                            {{ alertaConexionBdMensaje }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             <div :class="['mt-5 rounded-2xl border p-4 sm:p-5', clasesEstadoActivo.panelDecoradores]">
-                <h2 :class="['font-semibold mb-3', clasesEstadoActivo.textoAcento]">Metricas en desarrollo</h2>
+                <h2 :class="['font-semibold mb-3', clasesEstadoActivo.textoAcento]">Métricas en desarrollo</h2>
                 <div class="flex flex-wrap gap-2">
                     <span
                         v-for="(decorador, indiceDecorador) in estadoActivo.decoradores"
@@ -293,11 +311,11 @@ onBeforeUnmount(() => {
 
             <div v-if="temporizadorVisible" :class="['mt-6 rounded-2xl border p-4 sm:p-5', clasesEstadoActivo.panelTemporizador]">
                 <div class="flex items-center justify-between gap-3 flex-wrap">
-                    <h2 :class="['font-semibold', clasesEstadoActivo.textoAcento]">Reactivacion Estimada</h2>
+                    <h2 :class="['font-semibold', clasesEstadoActivo.textoAcento]">Reactivación estimada</h2>
                     <Tag :value="reactivacionAlcanzada ? 'Tiempo cumplido' : 'Cuenta regresiva'" :severity="reactivacionAlcanzada ? 'success' : 'warn'" />
                 </div>
                 <p :class="['text-sm mt-2', clasesEstadoActivo.textoAcento]">
-                    Fecha tentativa de reactivacion: {{ fechaReactivacionTexto }}
+                    Fecha tentativa de reactivación: {{ fechaReactivacionTexto }}
                 </p>
 
                 <div class="mt-4">
@@ -307,13 +325,13 @@ onBeforeUnmount(() => {
                             :style="{ width: `${porcentajeProgreso}%` }"
                         ></div>
                     </div>
-                    <p class="mt-2 text-xs text-surface-600">Progreso estimado de la actualizacion: {{ porcentajeProgreso }}%</p>
+                    <p class="mt-2 text-xs text-surface-600">Progreso estimado de la actualización: {{ porcentajeProgreso }}%</p>
                 </div>
 
                 <div v-if="cuentaRegresiva && !reactivacionAlcanzada" class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div class="rounded-xl border border-surface-200 bg-surface-0 p-3 text-center">
                         <p :class="['text-2xl font-extrabold', clasesEstadoActivo.textoAcento]">{{ cuentaRegresiva.dias }}</p>
-                        <small class="text-surface-600">Dias</small>
+                        <small class="text-surface-600">Días</small>
                     </div>
                     <div class="rounded-xl border border-surface-200 bg-surface-0 p-3 text-center">
                         <p :class="['text-2xl font-extrabold', clasesEstadoActivo.textoAcento]">{{ darFormatoDosDigitos(cuentaRegresiva.horas) }}</p>
@@ -330,12 +348,12 @@ onBeforeUnmount(() => {
                 </div>
 
                 <div v-else class="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
-                    La fecha y hora de reactivacion ya se alcanzaron.
+                    La fecha y hora de reactivación ya se alcanzaron.
                 </div>
             </div>
 
             <div class="mt-6 rounded-2xl border border-surface-200 bg-surface-50 p-4 sm:p-5">
-                <h2 class="font-semibold text-surface-900 mb-3">Que puedes hacer mientras tanto</h2>
+                <h2 class="font-semibold text-surface-900 mb-3">Qué puedes hacer mientras tanto</h2>
                 <ul class="space-y-2 text-surface-700">
                     <li v-for="(recomendacion, indice) in estadoActivo.recomendaciones" :key="`${indice}-${recomendacion}`" class="flex items-start gap-2">
                         <i class="pi pi-check-circle text-emerald-500 mt-1"></i>
@@ -346,3 +364,4 @@ onBeforeUnmount(() => {
         </section>
     </div>
 </template>
+

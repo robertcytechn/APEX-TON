@@ -172,7 +172,7 @@ onMounted(cargar);
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-                <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                 <Select v-model="filasPorPagina" :options="opcionesFilasMostrar" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
             </div>
         </div>
@@ -235,7 +235,7 @@ onMounted(cargar);
                         class="w-full"
                         placeholder="Selecciona comportamiento"
                         filter
-                        filterPlaceholder="Buscar opcion..."
+                        filterPlaceholder="Buscar opción..."
                     />
                     <small class="text-surface-500 block mt-1">
                         Si seleccionas "No considerar", este padre se mostrará en el reporte pero no afectará los totales generales.
@@ -253,3 +253,4 @@ onMounted(cargar);
         </Dialog>
     </section>
 </template>
+

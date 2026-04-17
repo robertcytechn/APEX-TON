@@ -38,7 +38,7 @@ const enviarFormulario = async () => {
                 <div>
                     <span class="inline-flex items-center gap-2 rounded-full bg-white/15 px-4 py-1 text-sm">
                         <i class="pi pi-wallet"></i>
-                        Control de tesoreria
+                        Control de tesorería
                     </span>
                     <h1 class="text-3xl lg:text-4xl font-bold mt-6">BinsurMX</h1>
                     <p class="mt-4 text-white/90 leading-relaxed">
@@ -47,7 +47,7 @@ const enviarFormulario = async () => {
                 </div>
                 <ul class="space-y-3 text-sm mt-8">
                     <li class="flex items-center gap-2"><i class="pi pi-check-circle"></i> Acceso por perfil</li>
-                    <li class="flex items-center gap-2"><i class="pi pi-check-circle"></i> Cierre diario de operacion</li>
+                    <li class="flex items-center gap-2"><i class="pi pi-check-circle"></i> Cierre diario de operación</li>
                     <li class="flex items-center gap-2"><i class="pi pi-check-circle"></i> Estado de resultados en tiempo real</li>
                 </ul>
             </aside>
@@ -57,14 +57,14 @@ const enviarFormulario = async () => {
                     <i class="pi pi-shield text-xl"></i>
                     <span class="font-semibold">Acceso seguro</span>
                 </div>
-                <h2 class="text-2xl font-semibold text-surface-900 dark:text-surface-0">Iniciar sesion</h2>
+                <h2 class="text-2xl font-semibold text-surface-900 dark:text-surface-0">Iniciar sesión</h2>
                 <p class="text-surface-600 dark:text-surface-300 mt-2 mb-8">Ingresa tus credenciales para continuar.</p>
 
                 <form class="space-y-5" @submit.prevent="enviarFormulario">
                     <div>
                         <label for="identificador" class="block text-sm font-medium mb-2">
                             <i class="pi pi-user mr-1 text-primary"></i>
-                            Usuario o correo electronico <span class="text-red-500">*</span>
+                            Usuario o correo electrónico <span class="text-red-500">*</span>
                             <small class="text-surface-500 ml-1">(obligatorio)</small>
                         </label>
                         <IconField>
@@ -76,10 +76,10 @@ const enviarFormulario = async () => {
                     <div>
                         <label for="contrasena" class="block text-sm font-medium mb-2">
                             <i class="pi pi-lock mr-1 text-primary"></i>
-                            Contrasena <span class="text-red-500">*</span>
+                            Contraseña <span class="text-red-500">*</span>
                             <small class="text-surface-500 ml-1">(obligatorio)</small>
                         </label>
-                        <Password id="contrasena" v-model="contrasena" :feedback="false" toggleMask fluid placeholder="Ingresa tu contrasena segura" />
+                        <Password id="contrasena" v-model="contrasena" :feedback="false" toggleMask fluid placeholder="Ingresa tu contraseña segura" />
                     </div>
 
                     <small v-if="errorLogin" class="block text-red-500">{{ errorLogin }}</small>

@@ -373,10 +373,10 @@ onMounted(cargar);
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
                 <label class="block text-sm mb-2"><i class="pi pi-columns mr-1 text-primary"></i>Columnas visibles</label>
-                <MultiSelect v-model="columnasVisibles" :options="columnasDisponibles" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opcion..." />
+                <MultiSelect v-model="columnasVisibles" :options="columnasDisponibles" optionLabel="label" display="chip" class="w-full" placeholder="Selecciona columnas" filter filterPlaceholder="Buscar opción..." />
             </div>
             <div>
-                <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por pagina</label>
+                <label class="block text-sm mb-2"><i class="pi pi-list mr-1 text-primary"></i>Filas por página</label>
                 <Select v-model="filasPorPagina" :options="opcionesFilasMostrar" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona cantidad" />
             </div>
         </div>
@@ -431,7 +431,7 @@ onMounted(cargar);
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-sliders-h mr-1 text-primary"></i>Tipo de valor <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
-                    <Select v-model="formulario.tipo_valor" :options="tiposValor" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona el tipo" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-model="formulario.tipo_valor" :options="tiposValor" optionLabel="label" optionValue="value" class="w-full" placeholder="Selecciona el tipo" filter filterPlaceholder="Buscar opción..." />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-dollar mr-1 text-primary"></i>Valor <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
@@ -447,7 +447,7 @@ onMounted(cargar);
                         :placeholder="esConfiguracionMonetaria ? '0.00' : 'Ej. 19.95'"
                         @focus="limpiarDecimalMonetarioEnFoco"
                     />
-                    <Select v-else-if="formulario.tipo_valor === 'BOOLEAN'" v-model="valorBooleano" class="w-full" :options="[ { label: 'Verdadero', value: 'true' }, { label: 'Falso', value: 'false' } ]" optionLabel="label" optionValue="value" filter filterPlaceholder="Buscar opcion..." />
+                    <Select v-else-if="formulario.tipo_valor === 'BOOLEAN'" v-model="valorBooleano" class="w-full" :options="[ { label: 'Verdadero', value: 'true' }, { label: 'Falso', value: 'false' } ]" optionLabel="label" optionValue="value" filter filterPlaceholder="Buscar opción..." />
                     <DatePicker v-else-if="formulario.tipo_valor === 'DATE'" v-model="valorFecha" class="w-full" dateFormat="yy-mm-dd" showIcon placeholder="YYYY-MM-DD" />
                     <DatePicker v-else-if="formulario.tipo_valor === 'TIME'" v-model="valorHora" class="w-full" timeOnly hourFormat="24" showIcon placeholder="HH:MM:SS" />
                     <DatePicker v-else-if="formulario.tipo_valor === 'DATETIME'" v-model="valorFechaHora" class="w-full" showTime hourFormat="24" dateFormat="yy-mm-dd" showIcon placeholder="YYYY-MM-DDTHH:MM:SS" />
@@ -479,6 +479,7 @@ onMounted(cargar);
         </Dialog>
     </section>
 </template>
+
 
 
 

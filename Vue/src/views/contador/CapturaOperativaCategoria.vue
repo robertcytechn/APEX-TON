@@ -478,8 +478,8 @@ async function eliminarFilaCaptura(fila) {
     const idMovimiento = Number(estado.idMovimiento || 0);
 
     const mensajeConfirmacion = idMovimiento > 0
-        ? 'Se eliminara esta captura y su movimiento guardado en base de datos. ¿Deseas continuar?'
-        : 'Se eliminara esta fila de captura. ¿Deseas continuar?';
+        ? 'Se eliminará esta captura y su movimiento guardado en base de datos. ¿Deseas continuar?'
+        : 'Se eliminará esta fila de captura. ¿Deseas continuar?';
 
     if (!window.confirm(mensajeConfirmacion)) {
         return;
@@ -687,7 +687,7 @@ async function cerrarDiaDesdeCaptura() {
         return;
     }
 
-    const confirmado = window.confirm(`Vas a cerrar el dia contable ${fechaObjetivoCierre}. Esta accion no cerrara otros dias abiertos. ¿Deseas continuar?`);
+    const confirmado = window.confirm(`Vas a cerrar el día contable ${fechaObjetivoCierre}. Esta acción no cerrará otros días abiertos. ¿Deseas continuar?`);
     if (!confirmado) {
         return;
     }
@@ -699,10 +699,10 @@ async function cerrarDiaDesdeCaptura() {
             sucursal_id: sucursalId.value,
             fecha_contable: fechaObjetivoCierre
         });
-        mensajeCierreDiaContable.value = `Cierre de dia ejecutado correctamente para ${fechaObjetivoCierre}. El dia contable ha quedado bloqueado.`;
+        mensajeCierreDiaContable.value = `Cierre de día ejecutado correctamente para ${fechaObjetivoCierre}. El día contable ha quedado bloqueado.`;
         await cargarPantalla();
     } catch (error) {
-        mensajeCierreDiaContable.value = error?.response?.data?.message || 'No se pudo completar el cierre de dia.';
+        mensajeCierreDiaContable.value = error?.response?.data?.message || 'No se pudo completar el cierre de día.';
     } finally {
         cerrandoDiaContable.value = false;
     }
@@ -807,12 +807,12 @@ async function cargarPantalla() {
         }
 
         if (!idCategoriaActual.value) {
-            mensajePantalla.value = 'No se encontro la categoria operativa solicitada.';
+            mensajePantalla.value = 'No se encontró la categoría operativa solicitada.';
             return;
         }
 
         if (!fechaContableSeleccionadaIso.value) {
-            mensajePantalla.value = 'Selecciona un dia contable valido para continuar con la captura.';
+            mensajePantalla.value = 'Selecciona un día contable válido para continuar con la captura.';
             return;
         }
 
@@ -832,7 +832,7 @@ async function cargarPantalla() {
         tasaCambioDolaresConfiguracion.value = normalizarNumero(configuracionUsd?.valor_tipado ?? configuracionUsd?.valor ?? 0);
 
         if (!categoria.value) {
-            mensajePantalla.value = 'No se pudo cargar la categoria operativa.';
+            mensajePantalla.value = 'No se pudo cargar la categoría operativa.';
             return;
         }
 
@@ -849,7 +849,7 @@ async function cargarPantalla() {
             hidratarCapturaDesdeMovimiento(movimiento);
         }
     } catch (error) {
-        mensajePantalla.value = error?.response?.data?.message || 'Ocurrio un error al cargar la captura operativa.';
+        mensajePantalla.value = error?.response?.data?.message || 'Ocurrió un error al cargar la captura operativa.';
     } finally {
         cargando.value = false;
     }
@@ -1119,10 +1119,10 @@ onBeforeUnmount(() => {
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                     <h1 class="text-2xl font-semibold">Captura operativa automatizada</h1>
-                    <p class="text-surface-500 mt-1">Se dibuja con base en la categoria operativa y guarda automaticamente al dejar de escribir 1 segundo.</p>
+                    <p class="text-surface-500 mt-1">Se dibuja con base en la categoría operativa y guarda automáticamente al dejar de escribir 1 segundo.</p>
                 </div>
                 <div class="w-full lg:w-auto min-w-72">
-                    <label class="block text-sm font-semibold mb-2">Dia contable <span class="text-red-500">*</span></label>
+                    <label class="block text-sm font-semibold mb-2">Día contable <span class="text-red-500">*</span></label>
                     <DatePicker
                         v-model="fechaContableSeleccionada"
                         dateFormat="yy-mm-dd"
@@ -1131,16 +1131,16 @@ onBeforeUnmount(() => {
                         :manualInput="false"
                         class="w-full"
                     />
-                    <small class="text-surface-500 block mt-1">El dia donde se realiza la captura operativa. verificar sea el correcto.</small>
+                    <small class="text-surface-500 block mt-1">El día donde se realiza la captura operativa. Verifica que sea el correcto.</small>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <Tag v-if="categoria" severity="info" :value="`Categoria: ${categoria.nombre}`" />
-                    <Tag v-if="reporteActual" severity="contrast" :value="`Dia contable: ${reporteActual.fecha_contable}`" />
+                    <Tag v-if="categoria" severity="info" :value="`Categoría: ${categoria.nombre}`" />
+                    <Tag v-if="reporteActual" severity="contrast" :value="`Día contable: ${reporteActual.fecha_contable}`" />
                     <Tag v-if="reporteActual" :severity="reporteActual.estado_reporte === 'CERRADO' ? 'danger' : 'success'" :value="`Estado: ${reporteActual.estado_reporte}`" />
                     <Tag v-if="cargandoGuardado" severity="warn" value="Sincronizando cambios" />
                     <Button
                         icon="pi pi-lock"
-                        label="Cierre de dia"
+                        label="Cierre de día"
                         severity="danger"
                         :loading="cerrandoDiaContable"
                         :disabled="!puedeCerrarDiaContable"
@@ -1154,7 +1154,7 @@ onBeforeUnmount(() => {
         <Message v-if="capturaFueraHorario" severity="error" :closable="false">{{ mensajeBloqueoHorario }}</Message>
 
         <Message v-if="mensajePantalla" severity="warn" :closable="false">{{ mensajePantalla }}</Message>
-        <Message v-else-if="reporteCerrado" severity="error" :closable="false">El dia contable seleccionado esta cerrado y no admite modificaciones.</Message>
+        <Message v-else-if="reporteCerrado" severity="error" :closable="false">El día contable seleccionado está cerrado y no admite modificaciones.</Message>
 
         <div v-else class="card space-y-4">
             <div v-if="categoriaUsaSaldoInicialMensual" class="rounded-xl border border-surface-200 bg-surface-50 p-4 space-y-3">
@@ -1241,7 +1241,7 @@ onBeforeUnmount(() => {
                         class="w-full"
                         :disabled="capturaBloqueada"
                         filter
-                        filterPlaceholder="Buscar opcion..."
+                        filterPlaceholder="Buscar opción..."
                     />
                     <small v-if="categoriaPermiteConceptosDuplicados" class="text-surface-500 block mt-1">
                         Esta categoria tiene detalles parametrizados: puedes agregar el mismo concepto las veces necesarias.
@@ -1440,6 +1440,7 @@ onBeforeUnmount(() => {
         </div>
     </section>
 </template>
+
 
 
 

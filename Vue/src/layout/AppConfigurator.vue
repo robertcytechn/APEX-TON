@@ -22,7 +22,7 @@ const presetOptions = ref(Object.keys(presets));
 
 const menuMode = ref(layoutConfig.menuMode);
 const menuModeOptions = ref([
-    { label: 'Estatico', value: 'static' },
+    { label: 'Estático', value: 'static' },
     { label: 'Superpuesto', value: 'overlay' }
 ]);
 

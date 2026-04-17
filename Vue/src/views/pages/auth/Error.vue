@@ -11,13 +11,13 @@ import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
             </div>
             <h1 class="text-3xl font-bold text-surface-900 dark:text-surface-0">Error del sistema</h1>
             <p class="mt-3 text-surface-600 dark:text-surface-300">
-                Ocurrio un problema inesperado. Intenta nuevamente o reporta el incidente.
+                Ocurrió un problema inesperado. Intenta nuevamente o reporta el incidente.
             </p>
 
             <div class="mt-6 rounded-xl border border-surface-200 dark:border-surface-700 p-4 text-left text-sm">
-                <p class="font-medium mb-2">Sugerencias rapidas:</p>
+                <p class="font-medium mb-2">Sugerencias rápidas:</p>
                 <ul class="space-y-2 text-surface-600 dark:text-surface-300">
-                    <li class="flex items-center gap-2"><i class="pi pi-refresh"></i> Recarga la pagina y vuelve a intentar.</li>
+                    <li class="flex items-center gap-2"><i class="pi pi-refresh"></i> Recarga la página y vuelve a intentar.</li>
                     <li class="flex items-center gap-2"><i class="pi pi-clock"></i> Verifica si fue fuera de horario operativo.</li>
                     <li class="flex items-center gap-2"><i class="pi pi-send"></i> Contacta soporte si persiste.</li>
                 </ul>

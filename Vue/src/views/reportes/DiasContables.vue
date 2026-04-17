@@ -23,7 +23,7 @@ const puedeVerControlesAvanzados = computed(() => sesionStore.cumpleAlgunoRoles(
 const sucursalAsignadaId = computed(() => Number(sesionStore.usuario?.sucursal_id || 0));
 
 const nombresMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-const nombresDiaSemana = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+const nombresDiaSemana = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 const opcionesMes = nombresMes.map((nombre, indice) => ({ label: nombre, value: indice + 1 }));
 
@@ -120,7 +120,7 @@ const cargarSucursales = async () => {
 };
 
 // 1) Para qué sirve: consultar estados de días contables del mes seleccionado.
-// 2) Cómo funciona: envía sucursal, anio y mes al endpoint de calendario mensual.
+// 2) Cómo funciona: envía sucursal, año y mes al endpoint de calendario mensual.
 // 3) Qué hace: alimenta el tablero de colores y la leyenda operativa.
 // 4) Cómo editarla: integra paginación por rango si el backend ofrece periodos largos.
 const consultarCalendario = async () => {
@@ -136,7 +136,7 @@ const consultarCalendario = async () => {
 
     if (!filtroSucursalId.value) {
         mensaje.value = puedeVerControlesAvanzados.value
-            ? 'Selecciona un casino para consultar los dias contables.'
+            ? 'Selecciona un casino para consultar los días contables.'
             : 'Tu usuario no tiene un casino asignado. Solicita apoyo al administrador.';
         return;
     }
@@ -153,10 +153,10 @@ const consultarCalendario = async () => {
         diaContableActual.value = data?.data?.dia_contable_actual || '';
 
         if (!calendario.value.length) {
-            mensaje.value = 'No hay informacion para el mes seleccionado.';
+            mensaje.value = 'No hay información para el mes seleccionado.';
         }
     } catch (error) {
-        mensaje.value = error?.response?.data?.message || 'No fue posible consultar el calendario de dias contables.';
+        mensaje.value = error?.response?.data?.message || 'No fue posible consultar el calendario de días contables.';
     } finally {
         cargando.value = false;
     }
@@ -172,7 +172,7 @@ onMounted(async () => {
     <section class="space-y-4">
         <div class="card space-y-4">
             <div>
-                <h1 class="text-2xl font-semibold">Dias contables</h1>
+                <h1 class="text-2xl font-semibold">Días contables</h1>
                 <p class="text-surface-500 mt-1">Calendario mensual del estatus operativo de captura por casino.</p>
             </div>
 
@@ -187,7 +187,7 @@ onMounted(async () => {
                         class="w-full"
                         placeholder="Selecciona casino"
                         filter
-                        filterPlaceholder="Buscar opcion..."
+                        filterPlaceholder="Buscar opción..."
                         @change="consultarCalendario"
                     />
                 </div>
@@ -210,12 +210,12 @@ onMounted(async () => {
                             class="w-full"
                             placeholder="Selecciona mes"
                             filter
-                            filterPlaceholder="Buscar opcion..."
+                            filterPlaceholder="Buscar opción..."
                         />
                     </div>
 
                     <div>
-                        <label class="block text-sm mb-2"><i class="pi pi-hashtag mr-1 text-primary"></i>Anio <span class="text-red-500">*</span></label>
+                        <label class="block text-sm mb-2"><i class="pi pi-hashtag mr-1 text-primary"></i>Año <span class="text-red-500">*</span></label>
                         <InputNumber v-model="filtroAnio" :useGrouping="false" :min="2020" :max="2100" class="w-full" placeholder="2026" />
                     </div>
 
@@ -235,23 +235,23 @@ onMounted(async () => {
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                     <small class="text-emerald-700">Verde</small>
-                    <p class="font-semibold">{{ resumenEstados.verde }} dias</p>
+                    <p class="font-semibold">{{ resumenEstados.verde }} días</p>
                 </div>
                 <div class="rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-3">
                     <small class="text-fuchsia-700">Morado</small>
-                    <p class="font-semibold">{{ resumenEstados.morado }} dias</p>
+                    <p class="font-semibold">{{ resumenEstados.morado }} días</p>
                 </div>
                 <div class="rounded-xl border border-sky-200 bg-sky-50 p-3">
                     <small class="text-sky-700">Azul</small>
-                    <p class="font-semibold">{{ resumenEstados.azul }} dias</p>
+                    <p class="font-semibold">{{ resumenEstados.azul }} días</p>
                 </div>
                 <div class="rounded-xl border border-red-200 bg-red-50 p-3">
                     <small class="text-red-700">Rojo</small>
-                    <p class="font-semibold">{{ resumenEstados.rojo }} dias</p>
+                    <p class="font-semibold">{{ resumenEstados.rojo }} días</p>
                 </div>
             </div>
 
-            <small v-if="diaContableActual" class="text-surface-500 block">Dia contable actual del sistema: {{ diaContableActual }}</small>
+            <small v-if="diaContableActual" class="text-surface-500 block">Día contable actual del sistema: {{ diaContableActual }}</small>
         </div>
 
         <Message v-if="mensaje" severity="warn" :closable="false">{{ mensaje }}</Message>
@@ -291,10 +291,10 @@ onMounted(async () => {
         <div class="card">
             <h3 class="text-lg font-semibold mb-3">Leyenda operativa</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">Verde: llenado en tiempo correcto o dia actual disponible.</div>
-                <div class="rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-2">Morado: llenado tardio o dia pasado que sigue abierto.</div>
-                <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">Azul: dia futuro, no capturable.</div>
-                <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2">Rojo: dia pasado sin captura o cerrado por antiguedad mayor a 5 dias.</div>
+                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">Verde: llenado en tiempo correcto o día actual disponible.</div>
+                <div class="rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-2">Morado: llenado tardío o día pasado que sigue abierto.</div>
+                <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">Azul: día futuro, no capturable.</div>
+                <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2">Rojo: día pasado sin captura o cerrado por antigüedad mayor a 5 días.</div>
             </div>
         </div>
     </section>

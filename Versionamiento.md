@@ -1,6 +1,11 @@
-Version del sistema: 2.36.0
+Version del sistema: 2.37.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-17
+- Version: 2.37.0
+- Autor: Cy tamayo
+- Descripcion: Se realizo una depuracion exhaustiva de tipografia, ortografia y acentuacion en textos visibles del frontend (menu, autenticacion, reportes, captura operativa, centro de control, mantenimiento, paginas de error y formularios), corrigiendo terminos clave como ano/anio, sesion, pagina, contrasena, informacion y etiquetas de tablas/filtros para homogeneizar la experiencia en espanol de Mexico.
 
 - Fecha: 2026-04-17
 - Version: 2.36.0

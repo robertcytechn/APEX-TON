@@ -70,7 +70,7 @@ async function cerrarDiaDesdeDashboard() {
         return;
     }
 
-    const confirmado = window.confirm(`Esta accion cerrara el dia contable ${fechaObjetivoCierre} y bloqueara solo las capturas de ese dia. ¿Deseas continuar?`);
+    const confirmado = window.confirm(`Esta acción cerrará el día contable ${fechaObjetivoCierre} y bloqueará solo las capturas de ese día. ¿Deseas continuar?`);
     if (!confirmado) {
         return;
     }
@@ -82,7 +82,7 @@ async function cerrarDiaDesdeDashboard() {
             sucursal_id: sucursalId.value,
             fecha_contable: fechaObjetivoCierre,
         });
-        mensajePantalla.value = `Cierre de dia ejecutado correctamente para ${fechaObjetivoCierre}. Solo ese dia contable quedo bloqueado.`;
+        mensajePantalla.value = `Cierre de día ejecutado correctamente para ${fechaObjetivoCierre}. Solo ese día contable quedó bloqueado.`;
         await cargarResumenDiaContable();
     } catch (error) {
         mensajePantalla.value = error?.response?.data?.message || 'No se pudo completar el cierre de día.';
@@ -101,14 +101,14 @@ onMounted(async () => {
         <div class="card">
             <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div>
-                    <h1 class="text-2xl font-semibold">Resumen del dia contable</h1>
-                    <p class="text-surface-500 mt-1">Vista rapida de avances para validar si falta captura antes del cierre.</p>
+                    <h1 class="text-2xl font-semibold">Resumen del día contable</h1>
+                    <p class="text-surface-500 mt-1">Vista rápida de avances para validar si falta captura antes del cierre.</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                     <Button icon="pi pi-refresh" label="Actualizar" text :loading="cargandoResumen" @click="cargarResumenDiaContable" />
                     <Button
                         icon="pi pi-lock"
-                        label="Cierre de dia"
+                        label="Cierre de día"
                         severity="danger"
                         :loading="cerrandoDia"
                         :disabled="!puedeCerrarDia"
@@ -162,7 +162,7 @@ onMounted(async () => {
                     <small class="text-surface-500">{{ faltante.categoria_nombre }} · {{ faltante.tipo }}</small>
                 </div>
             </div>
-            <small v-else class="text-emerald-700 font-semibold">No hay conceptos recurrentes pendientes en este dia contable.</small>
+            <small v-else class="text-emerald-700 font-semibold">No hay conceptos recurrentes pendientes en este día contable.</small>
         </div>
     </section>
 
@@ -171,7 +171,7 @@ onMounted(async () => {
             <i class="pi pi-file-edit text-5xl text-primary mb-4"></i>
             <h1 class="text-3xl font-semibold text-surface-900 dark:text-surface-0 mb-3">Panel principal</h1>
             <p class="text-surface-600 dark:text-surface-300">
-                Esta pagina esta lista para construir modulos del sistema por perfil de usuario.
+                Esta página está lista para construir módulos del sistema por perfil de usuario.
             </p>
         </div>
     </section>

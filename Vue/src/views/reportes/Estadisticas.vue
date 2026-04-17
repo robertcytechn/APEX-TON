@@ -55,18 +55,18 @@ const filtros = reactive({
 
 const opcionesModoFecha = [
     { label: 'Rango de fechas', value: 'RANGO' },
-    { label: 'Un solo dia', value: 'DIA' }
+    { label: 'Un solo día', value: 'DIA' }
 ];
 
 const periodosRapidos = [
-    { label: '7 dias', dias: 7 },
-    { label: '30 dias', dias: 30 },
-    { label: '90 dias', dias: 90 },
-    { label: '180 dias', dias: 180 }
+    { label: '7 días', dias: 7 },
+    { label: '30 días', dias: 30 },
+    { label: '90 días', dias: 90 },
+    { label: '180 días', dias: 180 }
 ];
 
 const vistasDetalle = [
-    { label: 'Categorias', value: 'CATEGORIAS' },
+    { label: 'Categorías', value: 'CATEGORIAS' },
     { label: 'Rubros', value: 'RUBROS' },
     { label: 'Conceptos', value: 'CONCEPTOS' }
 ];
@@ -260,14 +260,14 @@ const etiquetasFiltrosActivos = computed(() => {
     }
 
     if (Array.isArray(filtrosAplicados.value.categoria_ids) && filtrosAplicados.value.categoria_ids.length) {
-        etiquetas.push(`Categorias filtradas: ${filtrosAplicados.value.categoria_ids.length}`);
+        etiquetas.push(`Categorías filtradas: ${filtrosAplicados.value.categoria_ids.length}`);
     } else {
-        etiquetas.push('Categorias: Todas');
+        etiquetas.push('Categorías: Todas');
     }
 
     etiquetas.push(`Tipo: ${filtrosAplicados.value.tipo_concepto || 'TODOS'}`);
-    etiquetas.push(`Dias del periodo: ${diasPeriodo.value}`);
-    etiquetas.push(`Dias con movimientos: ${diasConMovimientos.value}`);
+    etiquetas.push(`Días del período: ${diasPeriodo.value}`);
+    etiquetas.push(`Días con movimientos: ${diasConMovimientos.value}`);
 
     return etiquetas;
 });
@@ -276,7 +276,7 @@ const insightsClave = computed(() => {
     const insights = [];
 
     if (categoriaMayorImpacto.value) {
-        insights.push(`Mayor impacto por categoria: ${categoriaMayorImpacto.value.categoria_nombre} (${categoriaMayorImpacto.value.categoria_clave || 'SIN CLAVE'}).`);
+        insights.push(`Mayor impacto por categoría: ${categoriaMayorImpacto.value.categoria_nombre} (${categoriaMayorImpacto.value.categoria_clave || 'SIN CLAVE'}).`);
     }
 
     if (rubroMayorImpacto.value) {
@@ -288,11 +288,11 @@ const insightsClave = computed(() => {
     }
 
     if (mejorDia.value?.fecha) {
-        insights.push(`Mejor dia de flujo neto: ${formatearFecha(mejorDia.value.fecha)}.`);
+        insights.push(`Mejor día de flujo neto: ${formatearFecha(mejorDia.value.fecha)}.`);
     }
 
     if (peorDia.value?.fecha) {
-        insights.push(`Dia de mayor presion operativa: ${formatearFecha(peorDia.value.fecha)}.`);
+        insights.push(`Día de mayor presión operativa: ${formatearFecha(peorDia.value.fecha)}.`);
     }
 
     if (!insights.length) {
@@ -688,16 +688,16 @@ const opcionesGraficaSucursales = computed(() => ({
     }
 }));
 
-const diasSemanaOrden = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom'];
+const diasSemanaOrden = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
 const resumenSemanal = computed(() => {
     const acumulados = {
         Lun: { neto: 0, movimientos: 0 },
         Mar: { neto: 0, movimientos: 0 },
-        Mie: { neto: 0, movimientos: 0 },
+        Mié: { neto: 0, movimientos: 0 },
         Jue: { neto: 0, movimientos: 0 },
         Vie: { neto: 0, movimientos: 0 },
-        Sab: { neto: 0, movimientos: 0 },
+        Sáb: { neto: 0, movimientos: 0 },
         Dom: { neto: 0, movimientos: 0 }
     };
 
@@ -708,7 +708,7 @@ const resumenSemanal = computed(() => {
         }
 
         const indice = fecha.getDay();
-        const mapaDia = { 1: 'Lun', 2: 'Mar', 3: 'Mie', 4: 'Jue', 5: 'Vie', 6: 'Sab', 0: 'Dom' };
+        const mapaDia = { 1: 'Lun', 2: 'Mar', 3: 'Mié', 4: 'Jue', 5: 'Vie', 6: 'Sáb', 0: 'Dom' };
         const claveDia = mapaDia[indice];
         if (!claveDia) {
             continue;
@@ -1210,7 +1210,7 @@ function construirCatalogoBloquesExportacion() {
             clave: 'PULSO',
             titulo: 'Pulso semanal',
             referencia: referenciaGraficaSemanal,
-            columnas: ['Dia', 'Movimientos', 'Neto acumulado'],
+            columnas: ['Día', 'Movimientos', 'Neto acumulado'],
             filas: resumenSemanal.value.map((item) => [
                 item.dia,
                 Number(item.movimientos || 0),
@@ -1323,8 +1323,8 @@ async function exportarExcelEjecutivo() {
         const libro = XLSX.utils.book_new();
 
         const hojaResumen = XLSX.utils.aoa_to_sheet([
-            ['Tablero ejecutivo de estadisticas'],
-            ['Fecha de exportacion', formatearFecha(fechaAFormatoIso(new Date()))],
+            ['Tablero ejecutivo de estadísticas'],
+            ['Fecha de exportación', formatearFecha(fechaAFormatoIso(new Date()))],
             ['Periodo analizado', `${formatearFecha(filtrosAplicados.value.fecha_inicio)} al ${formatearFecha(filtrosAplicados.value.fecha_fin)}`],
             [],
             ['Indicador', 'Valor'],
@@ -1479,7 +1479,7 @@ async function exportarPdfVectorial() {
 
         documento.setFont('helvetica', 'bold');
         documento.setFontSize(13);
-        documento.text('Reporte Ejecutivo de Estadisticas', margen, cursorY);
+        documento.text('Reporte Ejecutivo de Estadísticas', margen, cursorY);
         cursorY += 18;
         documento.setFont('helvetica', 'normal');
         documento.setFontSize(10);
@@ -1781,7 +1781,7 @@ onMounted(async () => {
 <template>
     <section class="space-y-6 pb-10">
         <Message v-if="!puedeVerEstadisticas" severity="error" :closable="false">
-            No tienes permisos para consultar este modulo.
+            No tienes permisos para consultar este módulo.
         </Message>
 
         <template v-else>
@@ -1791,13 +1791,13 @@ onMounted(async () => {
                         <div>
                             <h1 class="text-2xl md:text-3xl font-extrabold tracking-tight">Centro de Inteligencia Operativa</h1>
                             <p class="text-slate-200 mt-1">
-                                Tablero directivo para analizar ingresos, egresos, neto y comportamiento por categoria, rubro,
+                                Tablero directivo para analizar ingresos, egresos, neto y comportamiento por categoría, rubro,
                                 concepto y casino.
                             </p>
                         </div>
                         <div class="flex flex-wrap items-center gap-2">
                             <Tag value="Exclusivo Director/Admin" severity="contrast" />
-                            <Tag :severity="severidadResultadoNeto()" :value="`Estado neto: ${resultadoNeto >= 0 ? 'Favorable' : 'Presion operativa'}`" />
+                            <Tag :severity="severidadResultadoNeto()" :value="`Estado neto: ${resultadoNeto >= 0 ? 'Favorable' : 'Presión operativa'}`" />
                             <Button
                                 icon="pi pi-file-excel"
                                 label="Exportar Excel"
@@ -1855,12 +1855,12 @@ onMounted(async () => {
 
             <div class="card rounded-2xl border border-surface-200 space-y-4">
                 <div class="flex flex-col gap-2">
-                    <h2 class="text-lg font-bold text-slate-800">Filtros analiticos avanzados</h2>
-                    <p class="text-sm text-slate-500">Selecciona ventana de tiempo, casino, categorias y tipo para recalcular todos los indicadores.</p>
+                    <h2 class="text-lg font-bold text-slate-800">Filtros analíticos avanzados</h2>
+                    <p class="text-sm text-slate-500">Selecciona ventana de tiempo, casino, categorías y tipo para recalcular todos los indicadores.</p>
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="text-sm font-semibold text-slate-700">Periodos rapidos:</span>
+                    <span class="text-sm font-semibold text-slate-700">Períodos rápidos:</span>
                     <Button
                         v-for="periodo in periodosRapidos"
                         :key="periodo.dias"
@@ -1887,7 +1887,7 @@ onMounted(async () => {
                     </div>
 
                     <div v-if="filtros.modoFecha === 'DIA'">
-                        <label class="block text-sm font-semibold mb-2">Dia contable <span class="text-red-500">*</span></label>
+                        <label class="block text-sm font-semibold mb-2">Día contable <span class="text-red-500">*</span></label>
                         <DatePicker
                             v-model="filtros.fechaUnica"
                             dateFormat="yy-mm-dd"
@@ -1939,17 +1939,17 @@ onMounted(async () => {
                     </div>
 
                     <div>
-                        <label class="block text-sm font-semibold mb-2">Categorias operativas (opcional)</label>
+                        <label class="block text-sm font-semibold mb-2">Categorías operativas (opcional)</label>
                         <MultiSelect
                             v-model="filtros.categoriaIds"
                             :options="opcionesCategorias"
                             optionLabel="label"
                             optionValue="value"
                             class="w-full"
-                            placeholder="Todas las categorias operativas"
+                            placeholder="Todas las categorías operativas"
                             display="chip"
                             filter
-                            filterPlaceholder="Buscar categoria operativa..."
+                            filterPlaceholder="Buscar categoría operativa..."
                         />
                     </div>
 
@@ -2024,7 +2024,7 @@ onMounted(async () => {
                     <div class="card rounded-2xl border border-slate-200 bg-white">
                         <small class="text-slate-700 font-semibold">Movimientos</small>
                         <p class="text-3xl font-extrabold mt-2 text-slate-800">{{ formatearNumero(totalMovimientos) }}</p>
-                        <p class="text-xs text-slate-500 mt-1">Promedio por dia: {{ formatearNumero(promedioMovimientosDia, 2) }}</p>
+                        <p class="text-xs text-slate-500 mt-1">Promedio por día: {{ formatearNumero(promedioMovimientosDia, 2) }}</p>
                     </div>
 
                     <div class="card rounded-2xl border border-slate-200 bg-white">
@@ -2036,7 +2036,7 @@ onMounted(async () => {
                     <div class="card rounded-2xl border border-slate-200 bg-white">
                         <small class="text-slate-700 font-semibold">Intensidad operativa</small>
                         <p class="text-3xl font-extrabold mt-2 text-slate-800">{{ formatearNumero(intensidadOperativa, 2) }}%</p>
-                        <p class="text-xs text-slate-500 mt-1">Dias con movimientos: {{ diasConMovimientos }} de {{ diasPeriodo }}</p>
+                        <p class="text-xs text-slate-500 mt-1">Días con movimientos: {{ diasConMovimientos }} de {{ diasPeriodo }}</p>
                     </div>
                 </div>
 
@@ -2049,7 +2049,7 @@ onMounted(async () => {
 
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div class="rounded-xl border border-surface-200 p-3">
-                                <small class="text-slate-500 block">Variacion ingresos</small>
+                                <small class="text-slate-500 block">Variación ingresos</small>
                                 <p class="font-bold text-lg" :class="claseVariacion(comparativoAnterior.variacion_porcentual?.ingresos)">
                                     {{ formatearVariacion(comparativoAnterior.variacion_porcentual?.ingresos) }}
                                 </p>
@@ -2059,7 +2059,7 @@ onMounted(async () => {
                             </div>
 
                             <div class="rounded-xl border border-surface-200 p-3">
-                                <small class="text-slate-500 block">Variacion egresos</small>
+                                <small class="text-slate-500 block">Variación egresos</small>
                                 <p class="font-bold text-lg" :class="claseVariacion(comparativoAnterior.variacion_porcentual?.egresos)">
                                     {{ formatearVariacion(comparativoAnterior.variacion_porcentual?.egresos) }}
                                 </p>
@@ -2069,7 +2069,7 @@ onMounted(async () => {
                             </div>
 
                             <div class="rounded-xl border border-surface-200 p-3">
-                                <small class="text-slate-500 block">Variacion neto</small>
+                                <small class="text-slate-500 block">Variación neto</small>
                                 <p class="font-bold text-lg" :class="claseVariacion(comparativoAnterior.variacion_porcentual?.resultado_neto)">
                                     {{ formatearVariacion(comparativoAnterior.variacion_porcentual?.resultado_neto) }}
                                 </p>
@@ -2088,7 +2088,7 @@ onMounted(async () => {
                             </div>
                         </div>
                         <div class="rounded-lg border border-slate-200 p-3 bg-slate-50 text-sm">
-                            <p class="font-semibold text-slate-700">Relacion ingresos/egresos</p>
+                            <p class="font-semibold text-slate-700">Relación ingresos/egresos</p>
                             <p class="text-slate-900 text-lg font-bold mt-1">
                                 {{ razonIngresosEgresos === null ? 'Sin base de egresos' : `${formatearNumero(razonIngresosEgresos, 2)}x` }}
                             </p>
@@ -2100,20 +2100,20 @@ onMounted(async () => {
                     <div class="card rounded-2xl border border-surface-200 xl:col-span-2">
                         <div class="flex items-center justify-between gap-3 mb-3">
                             <h3 class="text-base font-bold text-slate-800">Flujo diario: ingresos, egresos y neto</h3>
-                            <Tag severity="secondary" :value="`${seriePorDia.length} dias`" />
+                            <Tag severity="secondary" :value="`${seriePorDia.length} días`" />
                         </div>
                         <ComponenteGraficas ref="referenciaGraficaFlujo" type="line" height="360" :options="opcionesFlujoDiario" :series="seriesFlujoDiario" />
                     </div>
 
                     <div class="card rounded-2xl border border-surface-200">
-                        <h3 class="text-base font-bold text-slate-800 mb-3">Distribucion por tipo</h3>
+                        <h3 class="text-base font-bold text-slate-800 mb-3">Distribución por tipo</h3>
                         <ComponenteGraficas ref="referenciaGraficaDistribucion" type="donut" height="360" :options="opcionesDistribucionTipo" :series="seriesDistribucionTipo" />
                     </div>
                 </div>
 
                 <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
                     <div class="card rounded-2xl border border-surface-200">
-                        <h3 class="text-base font-bold text-slate-800 mb-3">Impacto por categoria operativa</h3>
+                        <h3 class="text-base font-bold text-slate-800 mb-3">Impacto por categoría operativa</h3>
                         <ComponenteGraficas ref="referenciaGraficaCategorias" type="line" height="340" :options="opcionesCategoriasImpacto" :series="seriesCategoriasImpacto" />
                     </div>
 
@@ -2137,7 +2137,7 @@ onMounted(async () => {
 
                 <div class="card rounded-2xl border border-surface-200 space-y-4">
                     <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                        <h3 class="text-base font-bold text-slate-800">Detalle analitico expandido</h3>
+                        <h3 class="text-base font-bold text-slate-800">Detalle analítico expandido</h3>
                         <div class="flex flex-wrap gap-2">
                             <Button
                                 v-for="vista in vistasDetalle"
@@ -2154,7 +2154,7 @@ onMounted(async () => {
                     <div v-if="vistaDetalleActiva === 'CATEGORIAS'" class="space-y-3">
                         <IconField iconPosition="left" class="w-full md:w-96">
                             <InputIcon class="pi pi-search" />
-                            <InputText v-model="filtrosBusquedaTablas.categorias" class="w-full" placeholder="Buscar categoria por nombre o clave" />
+                            <InputText v-model="filtrosBusquedaTablas.categorias" class="w-full" placeholder="Buscar categoría por nombre o clave" />
                         </IconField>
 
                         <DataTable
@@ -2173,7 +2173,7 @@ onMounted(async () => {
                             class="w-full"
                         >
                             <Column field="categoria_clave" header="Clave" sortable />
-                            <Column field="categoria_nombre" header="Categoria" sortable />
+                            <Column field="categoria_nombre" header="Categoría" sortable />
                             <Column field="movimientos" header="Movimientos" sortable>
                                 <template #body="slotProps">
                                     {{ formatearNumero(slotProps.data.movimientos) }}
@@ -2255,7 +2255,7 @@ onMounted(async () => {
                     <div v-else class="space-y-3">
                         <IconField iconPosition="left" class="w-full md:w-96">
                             <InputIcon class="pi pi-search" />
-                            <InputText v-model="filtrosBusquedaTablas.conceptos" class="w-full" placeholder="Buscar concepto por nombre, categoria o tipo" />
+                            <InputText v-model="filtrosBusquedaTablas.conceptos" class="w-full" placeholder="Buscar concepto por nombre, categoría o tipo" />
                         </IconField>
 
                         <DataTable
@@ -2274,7 +2274,7 @@ onMounted(async () => {
                             class="w-full"
                         >
                             <Column field="concepto_nombre" header="Concepto" sortable />
-                            <Column field="categoria_nombre" header="Categoria" sortable />
+                            <Column field="categoria_nombre" header="Categoría" sortable />
                             <Column field="concepto_tipo" header="Tipo" sortable />
                             <Column field="movimientos" header="Movimientos" sortable>
                                 <template #body="slotProps">

@@ -175,7 +175,7 @@ function obtenerPeriodoTextoExportacion() {
     const fechaFin = String(filtroAplicado.value?.fecha_fin || fechaContableVisible.value || '').trim();
 
     if (!fechaInicio && !fechaFin) {
-        return 'Sin periodo definido';
+        return 'Sin período definido';
     }
     if (fechaInicio && fechaFin && fechaInicio !== fechaFin) {
         return `${formatearFecha(fechaInicio)} al ${formatearFecha(fechaFin)}`;
@@ -220,7 +220,7 @@ async function exportarExcelLibro() {
 
         const hojaResumen = XLSX.utils.aoa_to_sheet([
             ['Reporte diario operativo'],
-            ['Fecha de exportacion', formatearFecha(fechaExportacion)],
+            ['Fecha de exportación', formatearFecha(fechaExportacion)],
             ['Casino', nombreCasino],
             ['Periodo', periodo],
             [],
@@ -229,8 +229,8 @@ async function exportarExcelLibro() {
             ['Total ingresos', Number(resumenLibro.value.total_ingresos || 0)],
             ['Total egresos', Number(resumenLibro.value.total_egresos || 0)],
             ['Saldo final', Number(resumenLibro.value.saldo_final || 0)],
-            ['Dias consultados', Number(resumenLibro.value.dias_consultados || 0)],
-            ['Dias con reporte', Number(resumenLibro.value.dias_con_reporte || 0)]
+            ['Días consultados', Number(resumenLibro.value.dias_consultados || 0)],
+            ['Días con reporte', Number(resumenLibro.value.dias_con_reporte || 0)]
         ]);
 
         const hojaLibro = XLSX.utils.json_to_sheet(construirFilasExcelLibro());
@@ -342,10 +342,10 @@ function construirSvgPaginaPdf({
 
     partes.push(`<rect x="0" y="0" width="${anchoPagina}" height="${altoPagina}" fill="#ffffff" />`);
     partes.push(`<text x="${margen}" y="${margen + 16}" font-family="Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0f172a">${escaparTextoSvg('Reporte Diario Operativo')}</text>`);
-    partes.push(`<text x="${margen}" y="${margen + 36}" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#334155">${escaparTextoSvg(`Fecha de exportacion: ${fechaExportacion}`)}</text>`);
+    partes.push(`<text x="${margen}" y="${margen + 36}" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#334155">${escaparTextoSvg(`Fecha de exportación: ${fechaExportacion}`)}</text>`);
     partes.push(`<text x="${margen}" y="${margen + 52}" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#334155">${escaparTextoSvg(`Periodo: ${periodo}`)}</text>`);
     partes.push(`<text x="${margen}" y="${margen + 68}" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#334155">${escaparTextoSvg(`Casino: ${casino}`)}</text>`);
-    partes.push(`<text x="${anchoPagina - margen}" y="${margen + 68}" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#334155">${escaparTextoSvg(`Pagina ${numeroPagina} de ${totalPaginas}`)}</text>`);
+    partes.push(`<text x="${anchoPagina - margen}" y="${margen + 68}" text-anchor="end" font-family="Helvetica, Arial, sans-serif" font-size="10" fill="#334155">${escaparTextoSvg(`Página ${numeroPagina} de ${totalPaginas}`)}</text>`);
 
     partes.push(`<rect x="${margen}" y="${inicioTablaY}" width="${anchoContenido}" height="${altoEncabezadoTabla}" fill="#0f172a" />`);
 
@@ -634,7 +634,7 @@ onMounted(async () => {
                         class="w-full"
                         placeholder="Selecciona casino"
                         filter
-                        filterPlaceholder="Buscar opcion..."
+                        filterPlaceholder="Buscar opción..."
                     />
                 </div>
 
@@ -670,7 +670,7 @@ onMounted(async () => {
                 <Tag
                     v-if="filtroAplicado?.filtro_forzado"
                     severity="warn"
-                    value="Consulta restringida a dia contable actual por rol operativo"
+                    value="Consulta restringida a día contable actual por rol operativo"
                 />
                 <div class="flex flex-wrap items-center gap-2">
                     <Button icon="pi pi-search" label="Consultar reporte" :loading="cargando" @click="consultar" />
@@ -718,7 +718,7 @@ onMounted(async () => {
                 <MontoMonedaColoreado :monto="resumenLibro.saldo_final" />
             </div>
             <div class="card space-y-1">
-                <small class="text-surface-500">Dias consultados / con reporte</small>
+                <small class="text-surface-500">Días consultados / con reporte</small>
                 <p class="font-semibold text-lg mt-1">{{ resumenLibro.dias_consultados }} / {{ resumenLibro.dias_con_reporte }}</p>
             </div>
         </div>
@@ -757,3 +757,4 @@ onMounted(async () => {
         </div>
     </section>
 </template>
+

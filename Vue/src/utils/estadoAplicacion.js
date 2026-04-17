@@ -23,6 +23,7 @@ const CLAVE_BYPASS_MANTENIMIENTO = 'binsurmx_bypass_mantenimiento_hasta';
 const DURACION_BYPASS_MS = 60 * 60 * 1000;
 const INTERVALO_MINIMO_SINCRONIZACION_MS = 30000;
 const INTERVALO_REINTENTO_SINCRONIZACION_ERROR_MS = 5000;
+const TIEMPO_MAXIMO_SOLICITUD_MANTENIMIENTO_MS = 6000;
 const RUTAS_API_CONFIGURACION_MANTENIMIENTO = [
     '/configuraciones-globales/publicas/mantenimiento/',
     '/configuraciones-globales/configuraciones/'
@@ -47,57 +48,57 @@ const ESTADO_APLICACION_BASE = {
         mantenimiento_general: {
             titulo: 'Mantenimiento general del sistema',
             mensaje: 'Estamos aplicando ajustes preventivos para mejorar estabilidad y rendimiento.',
-            etiqueta: 'Intervencion preventiva',
+            etiqueta: 'Intervención preventiva',
             icono: 'pi pi-wrench',
-            decoradores: ['Ajustes de rendimiento', 'Reinicio de servicios', 'Validacion final'],
-            recomendaciones: ['Espera la reactivacion programada.', 'Evita recargas continuas durante la intervencion.']
+            decoradores: ['Ajustes de rendimiento', 'Reinicio de servicios', 'Validación final'],
+            recomendaciones: ['Espera la reactivación programada.', 'Evita recargas continuas durante la intervención.']
         },
         actualizacion_software: {
-            titulo: 'Actualizacion de software en progreso',
-            mensaje: 'Se estan desplegando nuevas funciones y correcciones de seguridad en el sistema, estamos trabajando para minimizar el tiempo de inactividad.',
-            etiqueta: 'Actualizacion programada de software',
+            titulo: 'Actualización de software en progreso',
+            mensaje: 'Se están desplegando nuevas funciones y correcciones de seguridad en el sistema, estamos trabajando para minimizar el tiempo de inactividad.',
+            etiqueta: 'Actualización programada de software',
             icono: 'pi pi-cloud-upload',
             decoradores: [
-                'Actualizacion de UX',
+                'Actualización de UX',
                 'Mejoras de rendimiento',
                 'Parches de seguridad',
-                'Optimizacion de consultas',
-                'Refactorizacion de codigo',
-                'Implementacion de nuevas vistas',
-                'Integracion de nuevas APIs',
-                'Pruebas de regresion',
+                'Optimización de consultas',
+                'Refactorización de código',
+                'Implementación de nuevas vistas',
+                'Integración de nuevas APIs',
+                'Pruebas de regresión',
                 'Monitoreo post-despliegue'
             ],
             recomendaciones: [
-                'Por seguridad el sistema estara fuera de linea durante la actualizacion.',
-                'Espera el tiempo determinado para la reactivacion.',
-                'Si el mantenimiento se extiende, consulta con soporte para mas informacion.',
-                'Si crees que es un error, reportalo a soporte para investigacion.'
+                'Por seguridad el sistema estará fuera de línea durante la actualización.',
+                'Espera el tiempo determinado para la reactivación.',
+                'Si el mantenimiento se extiende, consulta con soporte para más información.',
+                'Si crees que es un error, repórtalo a soporte para investigación.'
             ]
         },
         mantenimiento_infraestructura: {
             titulo: 'Mantenimiento de infraestructura',
-            mensaje: 'Se estan optimizando recursos de red y servidores para mantener la continuidad operativa.',
-            etiqueta: 'Operacion de plataforma',
+            mensaje: 'Se están optimizando recursos de red y servidores para mantener la continuidad operativa.',
+            etiqueta: 'Operación de plataforma',
             icono: 'pi pi-server',
             decoradores: ['Ajuste de red', 'Balanceo de carga', 'Monitoreo de nodos'],
             recomendaciones: ['Los servicios pueden responder de forma intermitente.', 'Reintenta acceso al finalizar la ventana.']
         },
         migracion_datos: {
-            titulo: 'Migracion de datos en ejecucion',
-            mensaje: 'Estamos migrando informacion para mejorar consistencia, trazabilidad y tiempos de consulta.',
-            etiqueta: 'Proceso critico de datos',
+            titulo: 'Migración de datos en ejecución',
+            mensaje: 'Estamos migrando información para mejorar consistencia, trazabilidad y tiempos de consulta.',
+            etiqueta: 'Proceso crítico de datos',
             icono: 'pi pi-database',
-            decoradores: ['Respaldo incremental', 'Validacion de integridad', 'Sincronizacion de tablas'],
-            recomendaciones: ['No intentes modificar registros durante la migracion.', 'Consulta con soporte antes de reintentar operaciones.']
+            decoradores: ['Respaldo incremental', 'Validación de integridad', 'Sincronización de tablas'],
+            recomendaciones: ['No intentes modificar registros durante la migración.', 'Consulta con soporte antes de reintentar operaciones.']
         },
         contingencia_operativa: {
             titulo: 'Contingencia operativa temporal',
-            mensaje: 'Se detecto una incidencia tecnica y estamos aplicando acciones de estabilizacion.',
-            etiqueta: 'Atencion prioritaria',
+            mensaje: 'Se detectó una incidencia técnica y estamos aplicando acciones de estabilización.',
+            etiqueta: 'Atención prioritaria',
             icono: 'pi pi-exclamation-triangle',
-            decoradores: ['Diagnostico activo', 'Mitigacion de impacto', 'Recuperacion de servicio'],
-            recomendaciones: ['Mantente atento al tiempo estimado de recuperacion.', 'Si el incidente persiste, escalar a administracion.']
+            decoradores: ['Diagnóstico activo', 'Mitigación de impacto', 'Recuperación de servicio'],
+            recomendaciones: ['Mantente atento al tiempo estimado de recuperación.', 'Si el incidente persiste, escalar a administración.']
         }
     },
     temporizadorReactivacion: {
@@ -106,13 +107,15 @@ const ESTADO_APLICACION_BASE = {
         hora: '',
         fechaInicio: '',
         horaInicio: ''
-    }
+    },
+    alertaConexionBdVisible: false,
+    alertaConexionBdMensaje: ''
 };
 
-// 1) Para que sirve: estado reactivo global de disponibilidad del frontend.
-// 2) Como funciona: se alimenta desde ConfiguracionesGlobales y aplica fallback local.
-// 3) Que hace: bloquea o libera rutas segun estado y tiempo de fin de actualizacion.
-// 4) Como editarla: ajusta claves de CONFIG_KEYS y plantillas de ESTADO_APLICACION_BASE.
+// 1) Para qué sirve: estado reactivo global de disponibilidad del frontend.
+// 2) Cómo funciona: se alimenta desde ConfiguracionesGlobales y aplica fallback local.
+// 3) Qué hace: bloquea o libera rutas según estado y tiempo de fin de actualización.
+// 4) Cómo editarla: ajusta claves de CONFIG_KEYS y plantillas de ESTADO_APLICACION_BASE.
 export const ESTADO_APLICACION = reactive(clonarObjeto(ESTADO_APLICACION_BASE));
 
 let ultimaSincronizacionExitosaMs = 0;
@@ -273,29 +276,74 @@ function aplicarEstadoAplicacion(estadoNuevo) {
     ESTADO_APLICACION.estadoActual = estadoNuevo?.estadoActual || ESTADO_APLICACION_BASE.estadoActual;
     ESTADO_APLICACION.estadosDisponibles = estadoNuevo?.estadosDisponibles || clonarObjeto(ESTADO_APLICACION_BASE.estadosDisponibles);
     ESTADO_APLICACION.temporizadorReactivacion = estadoNuevo?.temporizadorReactivacion || clonarObjeto(ESTADO_APLICACION_BASE.temporizadorReactivacion);
+    ESTADO_APLICACION.alertaConexionBdVisible = Boolean(estadoNuevo?.alertaConexionBdVisible);
+    ESTADO_APLICACION.alertaConexionBdMensaje = String(estadoNuevo?.alertaConexionBdMensaje || '');
+}
+
+function construirMensajeErrorConexionServidor(error) {
+    const mensajeBase = 'Fue imposible conectarse a la base de datos de BinsurMX. El error proviene del servidor.';
+    const detalle = String(error?.message || '').trim();
+
+    if (!detalle) {
+        return mensajeBase;
+    }
+
+    return `${mensajeBase} Detalle tecnico: ${detalle}`;
+}
+
+function aplicarEstadoFallbackPorErrorServidor(error) {
+    ESTADO_APLICACION.modoMantenimiento = true;
+    ESTADO_APLICACION.estadoActual = 'contingencia_operativa';
+    ESTADO_APLICACION.alertaConexionBdVisible = true;
+    ESTADO_APLICACION.alertaConexionBdMensaje = construirMensajeErrorConexionServidor(error);
 }
 
 async function leerConfiguracionesDesdeRutaApi(rutaApi) {
-    const respuesta = await fetch(`${URL_BASE_API}${rutaApi}`, {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store',
-        headers: {
-            Accept: 'application/json'
-        }
-    });
+    const controlador = new AbortController();
+    const temporizador = setTimeout(() => {
+        controlador.abort();
+    }, TIEMPO_MAXIMO_SOLICITUD_MANTENIMIENTO_MS);
 
-    return respuesta;
+    try {
+        const respuesta = await fetch(`${URL_BASE_API}${rutaApi}`, {
+            method: 'GET',
+            credentials: 'include',
+            cache: 'no-store',
+            signal: controlador.signal,
+            headers: {
+                Accept: 'application/json'
+            }
+        });
+
+        return respuesta;
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error(`Tiempo de espera agotado en ${rutaApi}.`);
+        }
+        throw error;
+    } finally {
+        clearTimeout(temporizador);
+    }
 }
 
 async function obtenerConfiguracionesGlobalesDesdeApi() {
     let ultimoError = null;
 
     for (const rutaApi of RUTAS_API_CONFIGURACION_MANTENIMIENTO) {
-        const respuesta = await leerConfiguracionesDesdeRutaApi(rutaApi);
+        let respuesta = null;
+        try {
+            respuesta = await leerConfiguracionesDesdeRutaApi(rutaApi);
+        } catch (error) {
+            if (!ultimoError) {
+                ultimoError = error;
+            }
+            continue;
+        }
 
         if (!respuesta.ok) {
-            ultimoError = new Error(`No se pudo leer configuraciones globales. HTTP ${respuesta.status} en ${rutaApi}`);
+            if (!ultimoError) {
+                ultimoError = new Error(`No se pudo leer configuraciones globales. HTTP ${respuesta.status} en ${rutaApi}`);
+            }
             continue;
         }
 
@@ -352,8 +400,9 @@ export async function sincronizarEstadoAplicacion({ forzar = false } = {}) {
             const estadoReconstruido = construirEstadoDesdeConfiguraciones(configuraciones);
             aplicarEstadoAplicacion(estadoReconstruido);
             ultimaSincronizacionExitosaMs = Date.now();
-        } catch {
+        } catch (error) {
             ultimaSincronizacionErrorMs = Date.now();
+            aplicarEstadoFallbackPorErrorServidor(error);
             intentarLiberacionLocalPorFin();
         } finally {
             promesaSincronizacion = null;
