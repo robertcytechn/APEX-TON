@@ -182,7 +182,7 @@ class RolViewSet(viewsets.ViewSet):
 class UsuarioViewSet(viewsets.ViewSet):
     """CRUD completo para Usuario con gestión de roles."""
 
-    @action(detail=False, methods=['get'], url_path='csrf', permission_classes=[AllowAny])
+    @action(detail=False, methods=['get'], url_path='csrf', permission_classes=[AllowAny], authentication_classes=[])
     def csrf(self, request):
         """Inicializa la cookie CSRF para autenticacion por sesion."""
         token = get_token(request)
@@ -191,7 +191,7 @@ class UsuarioViewSet(viewsets.ViewSet):
             mensaje="Cookie CSRF configurada."
         )
 
-    @action(detail=False, methods=['post'], url_path='iniciar-sesion', permission_classes=[AllowAny])
+    @action(detail=False, methods=['post'], url_path='iniciar-sesion', permission_classes=[AllowAny], authentication_classes=[])
     def iniciar_sesion(self, request):
         """Autentica por username o correo y abre sesion nativa de Django."""
         identificador = (request.data.get('identificador') or '').strip()

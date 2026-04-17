@@ -34,11 +34,45 @@ function limpiarSesionPersistidaLocal() {
     localStorage.removeItem(CLAVE_SESION);
 }
 
+function obtenerCookie(nombreCookie) {
+    if (typeof document === 'undefined') {
+        return '';
+    }
+
+    const cookies = document.cookie ? document.cookie.split(';') : [];
+    const prefijo = `${nombreCookie}=`;
+
+    for (const cookie of cookies) {
+        const cookieLimpia = String(cookie || '').trim();
+        if (cookieLimpia.startsWith(prefijo)) {
+            return decodeURIComponent(cookieLimpia.slice(prefijo.length));
+        }
+    }
+
+    return '';
+}
+
 const api = axios.create({
     baseURL,
     withCredentials: true,
     xsrfCookieName: 'csrftoken',
     xsrfHeaderName: 'X-CSRFToken'
+});
+
+api.interceptors.request.use(async (config) => {
+    const metodo = String(config?.method || 'get').toUpperCase();
+    const requiereCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(metodo);
+    const urlSolicitud = String(config?.url || '');
+    const esEndpointCsrf = urlSolicitud.includes('/usuarios/csrf/');
+
+    if (requiereCsrf && !esEndpointCsrf && typeof window !== 'undefined') {
+        const csrfActual = obtenerCookie('csrftoken');
+        if (!csrfActual) {
+            await api.get('/usuarios/csrf/');
+        }
+    }
+
+    return config;
 });
 
 api.interceptors.response.use(

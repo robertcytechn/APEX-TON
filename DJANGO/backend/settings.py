@@ -57,7 +57,18 @@ ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'http://cytechn.ddns.net', 'cytechn.d
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    'http://localhost',
+    'https://localhost',
+    'http://127.0.0.1',
+    'https://127.0.0.1',
+    'http://192.168.1.69',
+    'https://192.168.1.69',
+    'http://cytechn.ddns.net',
+    'https://cytechn.ddns.net',
 ]
+
+# Si Apache envia X-Forwarded-Proto=https, Django reconocera peticiones seguras.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 
 # Application definition

@@ -1,5 +1,22 @@
 import api from '@/service/api';
 
+function obtenerCookie(nombreCookie) {
+    if (typeof document === 'undefined') {
+        return '';
+    }
+
+    const cookies = document.cookie ? document.cookie.split(';') : [];
+    const prefijo = `${nombreCookie}=`;
+    for (const cookie of cookies) {
+        const cookieLimpia = String(cookie || '').trim();
+        if (cookieLimpia.startsWith(prefijo)) {
+            return decodeURIComponent(cookieLimpia.slice(prefijo.length));
+        }
+    }
+
+    return '';
+}
+
 // 1) Para qué sirve: inicializar cookie/token CSRF requerido por Django SessionAuth.
 // 2) Cómo funciona: hace GET al endpoint csrf para que el navegador guarde la cookie.
 // 3) Qué hace: prepara el cliente antes de enviar credenciales.
@@ -12,8 +29,21 @@ export function obtenerCsrf() {
 // 2) Cómo funciona: envía POST y recibe usuario/roles/permisos en respuesta estándar.
 // 3) Qué hace: abre sesión Django para el cliente actual.
 // 4) Cómo editarla: actualiza payload si backend agrega campos obligatorios de login.
-export function iniciarSesion(payload) {
-    return api.post('/usuarios/iniciar-sesion/', payload);
+export async function iniciarSesion(payload) {
+    const respuestaCsrf = await obtenerCsrf();
+    const tokenCsrf = String(respuestaCsrf?.data?.data?.csrf_token || '').trim();
+    const tokenCookie = obtenerCookie('csrftoken');
+    const tokenFinal = tokenCookie || tokenCsrf;
+
+    const configuracion = tokenFinal
+        ? {
+            headers: {
+                'X-CSRFToken': tokenFinal
+            }
+        }
+        : undefined;
+
+    return api.post('/usuarios/iniciar-sesion/', payload, configuracion);
 }
 
 // 1) Para qué sirve: cerrar sesión del usuario autenticado en backend.

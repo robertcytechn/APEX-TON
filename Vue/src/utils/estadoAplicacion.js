@@ -21,7 +21,6 @@ const URL_BASE_API = normalizarUrlBaseApi(import.meta.env.VITE_API_BASE_URL || U
 
 const CLAVE_BYPASS_MANTENIMIENTO = 'binsurmx_bypass_mantenimiento_hasta';
 const DURACION_BYPASS_MS = 60 * 60 * 1000;
-const VENTANA_ATAJO_SEGUNDO_PASO_MS = 1000;
 const INTERVALO_MINIMO_SINCRONIZACION_MS = 30000;
 const INTERVALO_REINTENTO_SINCRONIZACION_ERROR_MS = 5000;
 const RUTAS_API_CONFIGURACION_MANTENIMIENTO = [
@@ -120,7 +119,6 @@ let ultimaSincronizacionExitosaMs = 0;
 let ultimaSincronizacionErrorMs = 0;
 let promesaSincronizacion = null;
 let listenerBypassRegistrado = false;
-let marcaPasoUnoAtajoMs = 0;
 
 function clonarObjeto(valor) {
     return JSON.parse(JSON.stringify(valor));
@@ -388,18 +386,39 @@ export function estaBypassMantenimientoActivo() {
 export function activarBypassMantenimiento() {
     try {
         sessionStorage.setItem(CLAVE_BYPASS_MANTENIMIENTO, String(Date.now() + DURACION_BYPASS_MS));
-        window.dispatchEvent(new CustomEvent('binsur:bypass-mantenimiento-activado'));
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('binsur:bypass-mantenimiento-activado'));
+            window.dispatchEvent(new CustomEvent('binsur:bypass-mantenimiento-cambiado', {
+                detail: { activo: true }
+            }));
+        }
     } catch {
         // Ignorar errores de almacenamiento para no romper el flujo principal.
     }
 }
 
-export function limpiarBypassMantenimiento() {
+export function limpiarBypassMantenimiento({ emitirEvento = false } = {}) {
     try {
         sessionStorage.removeItem(CLAVE_BYPASS_MANTENIMIENTO);
+        if (emitirEvento && typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('binsur:bypass-mantenimiento-desactivado'));
+            window.dispatchEvent(new CustomEvent('binsur:bypass-mantenimiento-cambiado', {
+                detail: { activo: false }
+            }));
+        }
     } catch {
         // Ignorar errores de almacenamiento para no romper el flujo principal.
     }
+}
+
+export function alternarBypassMantenimiento() {
+    if (estaBypassMantenimientoActivo()) {
+        limpiarBypassMantenimiento({ emitirEvento: true });
+        return false;
+    }
+
+    activarBypassMantenimiento();
+    return true;
 }
 
 function normalizarTecla(event) {
@@ -408,44 +427,24 @@ function normalizarTecla(event) {
         .toLowerCase();
 }
 
-function esPrimerPasoAtajo(event) {
-    const tecla = normalizarTecla(event);
-    return event.ctrlKey && event.altKey && (tecla === 'control' || tecla === 'alt');
-}
-
-function esSegundoPasoAtajo(event) {
+function esAtajoAlternarBypass(event) {
     return event.ctrlKey && event.altKey && normalizarTecla(event) === 'y';
 }
 
 function manejarAtajoBypassMantenimiento(event) {
-    const ahoraMs = Date.now();
-
-    if (esPrimerPasoAtajo(event)) {
-        marcaPasoUnoAtajoMs = ahoraMs;
+    if (!esAtajoAlternarBypass(event)) {
         return;
     }
 
-    if (
-        esSegundoPasoAtajo(event)
-        && marcaPasoUnoAtajoMs > 0
-        && (ahoraMs - marcaPasoUnoAtajoMs) <= VENTANA_ATAJO_SEGUNDO_PASO_MS
-    ) {
-        activarBypassMantenimiento();
-        marcaPasoUnoAtajoMs = 0;
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-    }
-
-    if (marcaPasoUnoAtajoMs > 0 && (ahoraMs - marcaPasoUnoAtajoMs) > VENTANA_ATAJO_SEGUNDO_PASO_MS) {
-        marcaPasoUnoAtajoMs = 0;
-    }
+    alternarBypassMantenimiento();
+    event.preventDefault();
+    event.stopPropagation();
 }
 
-// 1) Para que sirve: habilitar atajo de contingencia para saltar bloqueo de mantenimiento.
-// 2) Como funciona: escucha Ctrl+Alt y luego Ctrl+Alt+Y dentro de 1 segundo.
-// 3) Que hace: activa bypass temporal por 60 minutos solo en la sesion actual del navegador.
-// 4) Como editarla: ajusta DURACION_BYPASS_MS o la secuencia en esPrimerPasoAtajo/esSegundoPasoAtajo.
+// 1) Para que sirve: habilitar atajo de contingencia para alternar bloqueo de mantenimiento.
+// 2) Como funciona: escucha Ctrl+Alt+Y sin ventana de tiempo.
+// 3) Que hace: si no hay bypass lo activa por 60 minutos; si ya esta activo, lo desactiva.
+// 4) Como editarla: ajusta DURACION_BYPASS_MS o la combinacion en esAtajoAlternarBypass.
 export function inicializarListenerBypassMantenimiento() {
     if (listenerBypassRegistrado || typeof window === 'undefined') {
         return;

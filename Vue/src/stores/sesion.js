@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia';
-import { cerrarSesion, iniciarSesion, obtenerCsrf, obtenerSesionActual } from '@/service/autenticacionServicio';
+import { cerrarSesion, iniciarSesion, obtenerSesionActual } from '@/service/autenticacionServicio';
 
 const CLAVE_IDENTIFICADOR = 'binsurmx_ultimo_identificador';
 const CLAVE_SESION = 'binsurmx_sesion';
@@ -126,7 +126,6 @@ export const useSesionStore = defineStore('sesion', {
             this.cargandoSesion = true;
             this.errorSesion = null;
             try {
-                await obtenerCsrf();
                 const { data } = await iniciarSesion(payload);
                 this.usuario = data.data.usuario;
                 this.roles = data.data.roles || [];

@@ -2,8 +2,12 @@
 Permisos personalizados de DRF para el sistema APEX-TON.
 Centraliza la lógica de autorización reutilizable en todos los ViewSets.
 """
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework.permissions import BasePermission
+
+
+ROLES_ADMINISTRADOR_COMPATIBLES = ('ADMINISTRADOR', 'ADMIN', 'ADMINISTRACION')
 
 
 # 1) Para qué sirve: centraliza la lectura de horarios de operación desde configuración global.
@@ -98,15 +102,7 @@ class EsAdministrador(BasePermission):
     """
 
     def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return False
-        # Verificar por rol asignado en la tabla UsuarioRol
-        try:
-            return request.user.usuario_roles.filter(
-                rol__nombre__iexact='ADMINISTRADOR'
-            ).exists() or request.user.is_superuser
-        except Exception:
-            return request.user.is_superuser
+        return usuario_tiene_rol(request.user, 'ADMINISTRADOR')
 
 
 # 1) Para qué sirve: validar pertenencia de rol de forma reutilizable para permisos DRF.
@@ -121,9 +117,17 @@ def usuario_tiene_rol(usuario, nombre_rol):
         return True
 
     try:
+        nombre_rol_normalizado = str(nombre_rol or '').strip().upper()
+        if nombre_rol_normalizado == 'ADMINISTRADOR':
+            consulta_roles_admin = Q()
+            for nombre_rol_admin in ROLES_ADMINISTRADOR_COMPATIBLES:
+                consulta_roles_admin |= Q(rol__nombre__iexact=nombre_rol_admin)
+
+            return usuario.usuario_roles.filter(consulta_roles_admin).exists() or bool(usuario.is_staff)
+
         return usuario.usuario_roles.filter(rol__nombre__iexact=nombre_rol).exists()
     except Exception:
-        return False
+        return bool(usuario.is_staff) if str(nombre_rol or '').strip().upper() == 'ADMINISTRADOR' else False
 
 
 # 1) Para qué sirve: evaluar pertenencia contra múltiples roles aceptados.

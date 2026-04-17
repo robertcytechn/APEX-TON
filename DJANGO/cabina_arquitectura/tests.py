@@ -153,3 +153,48 @@ class CabinaArquitecturaTests(APITestCase):
         self.assertEqual(respuesta.data.get('status'), 'success')
         self.assertEqual((respuesta.data.get('data') or {}).get('task_id'), 'task-123')
         mock_encolar_tarea.assert_called_once()
+
+    @patch('cabina_arquitectura.views.CentroControlAdminViewSet._encolar_tarea')
+    def test_rol_admin_compatible_puede_ejecutar_tarea_manual(self, mock_encolar_tarea):
+        mock_encolar_tarea.return_value = (SimpleNamespace(id='task-456'), {})
+
+        rol_admin_compatible = Rol.objects.create(nombre='ADMIN')
+        usuario_admin_compatible = Usuario.objects.create_user(
+            username='admin_alias_cfg',
+            password='admin1234',
+            nombre='Administrador Compatible',
+            correo='admin_alias_cfg@binsur.mx',
+            is_active=True,
+        )
+        UsuarioRol.objects.create(usuario=usuario_admin_compatible, rol=rol_admin_compatible)
+
+        self.client.force_authenticate(user=usuario_admin_compatible)
+        url = '/api/cabina-arquitectura/centro-control/ejecutar-tarea/'
+        payload = {'tarea': 'sincronizar_horario_correo_diario'}
+
+        respuesta = self.client.post(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual((respuesta.data.get('data') or {}).get('task_id'), 'task-456')
+
+    @patch('cabina_arquitectura.views.CentroControlAdminViewSet._encolar_tarea')
+    def test_staff_puede_ejecutar_tarea_manual_centro_control(self, mock_encolar_tarea):
+        mock_encolar_tarea.return_value = (SimpleNamespace(id='task-789'), {})
+
+        usuario_staff = Usuario.objects.create_user(
+            username='staff_cfg',
+            password='staff1234',
+            nombre='Staff Centro Control',
+            correo='staff_cfg@binsur.mx',
+            is_active=True,
+            is_staff=True,
+        )
+
+        self.client.force_authenticate(user=usuario_staff)
+        url = '/api/cabina-arquitectura/centro-control/ejecutar-tarea/'
+        payload = {'tarea': 'ejecutar_backup_bd'}
+
+        respuesta = self.client.post(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual((respuesta.data.get('data') or {}).get('task_id'), 'task-789')

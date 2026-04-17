@@ -231,6 +231,34 @@ Version del sistema: 2.32.0
 
 - Fecha: 2026-04-16
 - Autor: Cy tamayo
+- Descripcion: Se reforzo la apertura publica del login en usuarios (acciones csrf e iniciar-sesion sin clases de autenticacion), se agregaron pruebas API para evitar regresiones de 403 en inicio de sesion y se ajusto el vhost SSL de Apache con ServerAlias localhost/127.0.0.1, Location explicito para /apex/api y X-Forwarded-Proto para despliegue HTTPS local.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se corrigio el 403 en inicio de sesion bajo despliegue HTTPS/proxy ajustando CSRF_TRUSTED_ORIGINS en backend y habilitando SECURE_PROXY_SSL_HEADER; ademas se reforzo frontend en autenticacion para obtener y enviar token CSRF explicito antes del POST de login.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se corrigio el script DJANGO/scripts/iniciar_servicios_binsurmq.ps1 para evitar cierre inesperado de la consola principal por conflicto con la variable reservada de PowerShell PID; se renombro el parametro interno de verificacion de procesos y se mantuvo el modo de consola de control persistente.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se ajusto DJANGO/scripts/iniciar_servicios_binsurmq.ps1 para iniciar waitress/worker/beat en segundo plano con ventanas ocultas y mantener una sola consola principal persistente con menu de control (estado, reinicio por servicio, reinicio total y detener todo); adicionalmente se robustecio la autorizacion de ADMINISTRADOR en backend para Centro de Control (compatibilidad de roles administrativos y staff) y se agrego bootstrap automatico de cookie CSRF en frontend antes de peticiones mutables para evitar 403 al ejecutar tareas manuales.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se ajusto DJANGO/scripts/iniciar_servicios_binsurmq.ps1 para priorizar Python del sistema en servidor (sin depender de .venv), con fallback opcional al entorno virtual, registro en log del ejecutable Python resuelto y construccion automatica de CELERY_BROKER_URL a partir de variables CELERY_BROKER_* cuando no existe URL directa.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se mejoro el bypass de mantenimiento con modo toggle por atajo Ctrl+Alt+Y (sin ventana de tiempo), permitiendo activar y desactivar al repetir la combinacion, y se agrego reaccion inmediata del router para bloquear de nuevo cuando el bypass se desactiva en mantenimiento activo.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se robustecio el script DJANGO/scripts/iniciar_servicios_binsurmq.ps1 agregando logs de arranque y archivos stdout/stderr por servicio (waitress, celery worker, celery beat) para diagnosticar errores aunque la consola se cierre.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
 - Descripcion: Se corrigio el modo mantenimiento en frontend para usuarios sin sesion, agregando endpoint publico backend de configuraciones de mantenimiento y reintento rapido de sincronizacion para evitar que la aplicacion muestre login por defecto cuando la base de datos indica mantenimiento activo.
 
 - Fecha: 2026-04-16

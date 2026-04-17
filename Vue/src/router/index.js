@@ -231,6 +231,39 @@ const router = createRouter({
     ]
 });
 
+// 1) Para qué sirve: aplicar bloqueo/desbloqueo inmediato al alternar bypass de mantenimiento.
+// 2) Cómo funciona: escucha un evento global y reevalúa estado de mantenimiento forzando sincronización.
+// 3) Qué hace: redirige a /mantenimiento al desactivar bypass y libera a / al activarlo.
+// 4) Cómo editarla: cambia rutas objetivo si la pantalla de bloqueo cambia de nombre.
+async function manejarCambioBypassMantenimiento(event) {
+    try {
+        const bypassActivo = typeof event?.detail?.activo === 'boolean'
+            ? event.detail.activo
+            : estaBypassMantenimientoActivo();
+
+        await sincronizarEstadoAplicacion({ forzar: true });
+
+        const modoMantenimientoActivo = ESTADO_APLICACION.modoMantenimiento === true;
+        const rutaActual = router.currentRoute.value;
+        const vaRutaMantenimiento = rutaActual?.name === 'mantenimiento';
+
+        if (modoMantenimientoActivo && !bypassActivo && !vaRutaMantenimiento) {
+            await router.replace({ name: 'mantenimiento' });
+            return;
+        }
+
+        if ((!modoMantenimientoActivo || bypassActivo) && vaRutaMantenimiento) {
+            await router.replace('/');
+        }
+    } catch {
+        // Ignorar errores para no romper la navegacion principal.
+    }
+}
+
+if (typeof window !== 'undefined') {
+    window.addEventListener('binsur:bypass-mantenimiento-cambiado', manejarCambioBypassMantenimiento);
+}
+
 // 1) Para qué sirve: proteger navegación por sesión, rol y privilegios administrativos.
 // 2) Cómo funciona: verifica sesión local/remota y evalúa meta campos de cada ruta.
 // 3) Qué hace: redirige a login, acceso denegado o primera captura según contexto.
