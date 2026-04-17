@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Acceso no autorizado | BinsurMX</title>
+    <style>
+        :root {
+            --fondo: #f6f5ff;
+            --tarjeta: #ffffff;
+            --texto: #1e1b42;
+            --detalle: #665d93;
+            --marca: #5d43c9;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: grid;
+            place-items: center;
+            background: radial-gradient(circle at 40% 0%, #e9e4ff 0%, var(--fondo) 44%);
+            color: var(--texto);
+            font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .panel {
+            width: min(92vw, 720px);
+            background: var(--tarjeta);
+            border: 1px solid #ddd7ff;
+            border-radius: 18px;
+            padding: 34px 28px;
+            box-shadow: 0 18px 40px rgba(54, 34, 118, 0.14);
+        }
+        .codigo {
+            font-size: 64px;
+            line-height: 1;
+            margin: 0;
+            letter-spacing: 1px;
+            color: var(--marca);
+        }
+        h1 {
+            margin: 14px 0 8px;
+            font-size: 28px;
+        }
+        p {
+            margin: 0 0 22px;
+            color: var(--detalle);
+            font-size: 17px;
+            line-height: 1.5;
+        }
+        a {
+            display: inline-block;
+            background: var(--marca);
+            color: #fff;
+            text-decoration: none;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-weight: 600;
+        }
+        small {
+            display: block;
+            margin-top: 14px;
+            color: var(--detalle);
+        }
+    </style>
+</head>
+<body>
+    <main class="panel">
+        <p class="codigo">403</p>
+        <h1>No cuentas con autorizacion para este recurso</h1>
+        <p>Tu usuario no tiene permisos suficientes para acceder a esta seccion. Inicia sesion con un perfil autorizado o contacta al administrador.</p>
+        <a href="/apex/auth/login">Ir a iniciar sesion</a>
+        <small>BinsurMX | Pagina de error personalizada</small>
+    </main>
+</body>
+</html>

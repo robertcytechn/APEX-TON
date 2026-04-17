@@ -392,7 +392,7 @@ onBeforeUnmount(() => {
 
         <div class="card space-y-5">
             <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <h2 class="text-xl font-semibold">Estado de aplicacion (Modo Dios)</h2>
+                <h2 class="text-xl font-semibold">Estado de aplicacion</h2>
                 <Tag value="Solo administrador" severity="danger" />
             </div>
 

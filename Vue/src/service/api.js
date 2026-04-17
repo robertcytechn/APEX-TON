@@ -3,7 +3,7 @@ import router from '@/router';
 
 // Configuración de la URL base para la API, se puede configurar mediante una variable de entorno.
 // Por defecto usa /api para desarrollo local.
-const baseURL = import.meta.env.VITE_API_BASE_URL || '/api';
+const baseURL = import.meta.env.VITE_API_BASE_URL || 'api';
 let redireccionandoLogin = false;
 const CLAVE_SESION = 'binsurmx_sesion';
 

@@ -1,6 +1,16 @@
-Version del sistema: 2.30.0
+Version del sistema: 2.32.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-17
+- Version: 2.32.0
+- Autor: Cy tamayo
+- Descripcion: Se adapto la configuracion real de Apache para produccion con redireccion HTTP a HTTPS (cytechn.ddns.net), activacion de SSL en el vhost 443, rutas proxy de backend bajo /apex/api y /apex/admin, bloqueo de listado de directorios (Options -Indexes) y uso de paginas de error personalizadas alojadas junto con la aplicacion en /apex/errores.
+
+- Fecha: 2026-04-16
+- Version: 2.31.0
+- Autor: Cy tamayo
+- Descripcion: Se configuro Apache (httpd y vhost) para reforzar seguridad y experiencia de errores en despliegue, desactivando listado de directorios (Index off) y agregando paginas personalizadas para errores 404 (no encontrado), 500/502/503/504 (servidor) y 401/403 (acceso no autorizado), incluyendo uso de ProxyErrorOverride para respuestas del backend proxied bajo /apex.
 
 - Fecha: 2026-04-16
 - Version: 2.30.0
@@ -218,6 +228,10 @@ Version del sistema: 2.30.0
 - Descripcion: Se normalizo el campo padre de rubros contables a un catalogo dinamico con tabla propia, migracion de datos conservando relaciones existentes, nuevos endpoints CRUD de padres y ajuste de serializers/views para operar padres por id o clave sin perder compatibilidad de consumo.
 
 ## Cambios Menores
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se agrego STATIC_ROOT en DJANGO/backend/settings.py para habilitar django.contrib.staticfiles y evitar el error ImproperlyConfigured al ejecutar collectstatic.
 
 - Fecha: 2026-04-16
 - Autor: Cy tamayo
