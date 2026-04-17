@@ -112,6 +112,180 @@ function Es-ProcesoActivo {
     return [bool](Get-Process -Id $IdProceso -ErrorAction SilentlyContinue)
 }
 
+function Obtener-DescendientesProceso {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$IdProcesoRaiz
+    )
+
+    if ($IdProcesoRaiz -le 0) {
+        return @()
+    }
+
+    $ProcesosSistema = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId
+    $MapaHijos = @{}
+
+    foreach ($ProcesoSistema in $ProcesosSistema) {
+        $IdPadre = [int]$ProcesoSistema.ParentProcessId
+        $IdHijo = [int]$ProcesoSistema.ProcessId
+
+        if (-not $MapaHijos.ContainsKey($IdPadre)) {
+            $MapaHijos[$IdPadre] = New-Object 'System.Collections.Generic.List[int]'
+        }
+
+        $null = $MapaHijos[$IdPadre].Add($IdHijo)
+    }
+
+    $Pendientes = New-Object 'System.Collections.Generic.Queue[int]'
+    $Visitados = New-Object 'System.Collections.Generic.HashSet[int]'
+    $Descendientes = New-Object 'System.Collections.Generic.List[int]'
+
+    $Pendientes.Enqueue($IdProcesoRaiz)
+    $null = $Visitados.Add($IdProcesoRaiz)
+
+    while ($Pendientes.Count -gt 0) {
+        $IdActual = $Pendientes.Dequeue()
+
+        if (-not $MapaHijos.ContainsKey($IdActual)) {
+            continue
+        }
+
+        foreach ($IdHijo in $MapaHijos[$IdActual]) {
+            $IdHijoNormalizado = [int]$IdHijo
+            if ($Visitados.Add($IdHijoNormalizado)) {
+                $null = $Descendientes.Add($IdHijoNormalizado)
+                $Pendientes.Enqueue($IdHijoNormalizado)
+            }
+        }
+    }
+
+    return @($Descendientes.ToArray())
+}
+
+function Detener-ArbolProceso {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$IdProcesoRaiz,
+        [Parameter(Mandatory = $false)]
+        [string]$Etiqueta = 'Proceso'
+    )
+
+    if ($IdProcesoRaiz -le 0) {
+        return $false
+    }
+
+    $IdsDescendientes = Obtener-DescendientesProceso -IdProcesoRaiz $IdProcesoRaiz
+    $IdsAEliminar = @()
+
+    if ($IdsDescendientes.Count -gt 0) {
+        $IdsAEliminar += ($IdsDescendientes | Sort-Object -Descending)
+    }
+    $IdsAEliminar += $IdProcesoRaiz
+
+    foreach ($IdActual in $IdsAEliminar) {
+        $IdActualNormalizado = [int]$IdActual
+        if (-not (Es-ProcesoActivo -IdProceso $IdActualNormalizado)) {
+            continue
+        }
+        Stop-Process -Id $IdActualNormalizado -Force -ErrorAction SilentlyContinue
+    }
+
+    $IdsPendientes = @()
+    foreach ($IdActual in $IdsAEliminar) {
+        $IdActualNormalizado = [int]$IdActual
+        if (Es-ProcesoActivo -IdProceso $IdActualNormalizado) {
+            $IdsPendientes += $IdActualNormalizado
+        }
+    }
+
+    if ($IdsPendientes.Count -gt 0) {
+        Escribir-Log "$Etiqueta mantiene procesos vivos tras detener arbol: $($IdsPendientes -join ', ')." 'WARN'
+        return $false
+    }
+
+    return $true
+}
+
+function Obtener-PatronesServicio {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$Servicio
+    )
+
+    switch ($Servicio.NombreProceso) {
+        'waitress' {
+            return @('waitress-serve --port=8000 backend.wsgi:application')
+        }
+        'celery_worker' {
+            return @('-A backend worker -l info')
+        }
+        'celery_beat' {
+            return @('-A backend beat -l info')
+        }
+        default {
+            return @()
+        }
+    }
+}
+
+function Obtener-ProcesosHuerfanosServicio {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$Servicio
+    )
+
+    $Patrones = Obtener-PatronesServicio -Servicio $Servicio
+    if ($Patrones.Count -eq 0) {
+        return @()
+    }
+
+    $ProcesosSistema = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, Name, CommandLine
+    $Coincidencias = @()
+
+    foreach ($ProcesoSistema in $ProcesosSistema) {
+        $LineaComando = [string]$ProcesoSistema.CommandLine
+        if ([string]::IsNullOrWhiteSpace($LineaComando)) {
+            continue
+        }
+
+        foreach ($Patron in $Patrones) {
+            if ($LineaComando -like "*$Patron*") {
+                $Coincidencias += $ProcesoSistema
+                break
+            }
+        }
+    }
+
+    return @($Coincidencias | Sort-Object ProcessId -Unique)
+}
+
+function Detener-ProcesosHuerfanosServicio {
+    param(
+        [Parameter(Mandatory = $true)]
+        [PSCustomObject]$Servicio
+    )
+
+    $ProcesosHuerfanos = Obtener-ProcesosHuerfanosServicio -Servicio $Servicio
+    if ($ProcesosHuerfanos.Count -eq 0) {
+        return 0
+    }
+
+    $Detenciones = 0
+    foreach ($ProcesoHuerfano in ($ProcesosHuerfanos | Sort-Object ProcessId -Descending)) {
+        $IdHuerfano = [int]$ProcesoHuerfano.ProcessId
+        if (-not (Es-ProcesoActivo -IdProceso $IdHuerfano)) {
+            continue
+        }
+
+        $ResultadoDetencion = Detener-ArbolProceso -IdProcesoRaiz $IdHuerfano -Etiqueta "$($Servicio.Nombre) huerfano"
+        if ($ResultadoDetencion) {
+            $Detenciones += 1
+        }
+    }
+
+    return $Detenciones
+}
+
 function Obtener-PidServicioActivo {
     param(
         [Parameter(Mandatory = $true)]
@@ -179,13 +353,32 @@ function Detener-ServicioControl {
 
     $PidServicio = Obtener-PidServicioActivo -Servicio $Servicio
     if ($PidServicio -eq 0) {
+        $DetencionesHuerfanas = Detener-ProcesosHuerfanosServicio -Servicio $Servicio
+        if ($DetencionesHuerfanas -gt 0) {
+            Escribir-Log "$($Servicio.Nombre) no tenia PID padre activo, pero se detuvieron $DetencionesHuerfanas procesos huerfanos asociados."
+            return
+        }
+
         Escribir-Log "$($Servicio.Nombre) ya estaba detenido." 'WARN'
         return
     }
 
-    Stop-Process -Id $PidServicio -Force -ErrorAction SilentlyContinue
-    if (Es-ProcesoActivo -IdProceso $PidServicio) {
+    $DetenidoArbol = Detener-ArbolProceso -IdProcesoRaiz $PidServicio -Etiqueta $Servicio.Nombre
+    $DetencionesHuerfanas = Detener-ProcesosHuerfanosServicio -Servicio $Servicio
+
+    if (-not $DetenidoArbol) {
         Escribir-Log "No fue posible detener $($Servicio.Nombre) (PID=$PidServicio)." 'WARN'
+        return
+    }
+
+    if ($DetencionesHuerfanas -gt 0) {
+        Escribir-Log "$($Servicio.Nombre): limpieza adicional de procesos huerfanos completada ($DetencionesHuerfanas)."
+    }
+
+    $ProcesosPendientes = Obtener-ProcesosHuerfanosServicio -Servicio $Servicio
+    if ($ProcesosPendientes.Count -gt 0) {
+        $IdsPendientes = ($ProcesosPendientes | ForEach-Object { [int]$_.ProcessId }) -join ', '
+        Escribir-Log "$($Servicio.Nombre) mantiene procesos asociados activos: $IdsPendientes" 'WARN'
         return
     }
 
@@ -538,7 +731,7 @@ try {
 
         # Regla solicitada: iniciar exactamente este comando para servidor.
         $ComandoWaitress = "$ComandoBaseEntorno waitress-serve --port=8000 backend.wsgi:application"
-        $ComandoWorker = "$ComandoBaseEntorno celery -A backend worker -l info --pool=solo"
+        $ComandoWorker = "$ComandoBaseEntorno celery -A backend worker -l info --pool=solo --include=reportes_diarios.tareas,reportes_diarios.tasks"
         $ComandoBeat = "$ComandoBaseEntorno celery -A backend beat -l info"
 
         $EstadoWaitress = Iniciar-ProcesoServicio -Nombre 'waitress' -Comando $ComandoWaitress

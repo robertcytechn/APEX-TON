@@ -5,9 +5,12 @@ configurada en ConfiguracionGlobal.
 """
 import logging
 import os
+import json
 import gzip
 import shutil
 import subprocess
+import tempfile
+import traceback
 import zipfile
 from datetime import datetime
 from celery import shared_task
@@ -390,6 +393,120 @@ def sincronizar_horario_correo_diario(self):
         raise
 
 
+# 1) Para que sirve: resolver ruta de bitacora diaria del respaldo BD dentro de una carpeta relativa.
+# 2) Como funciona: crea carpeta objetivo y devuelve archivo por fecha (backup_bd_YYYYMMDD.log).
+# 3) Que hace: centraliza una ruta estable para diagnosticar ejecuciones del respaldo.
+# 4) Como editarla: cambia ruta_relativa o la constante RUTA_LOGS_RESPALDO_BD_RELATIVA en configuracion.
+def _obtener_ruta_log_respaldo_bd(fecha_referencia=None, ruta_relativa=None):
+    from django.conf import settings
+    from reportes_diarios.configuracion_correos_ejecutivos import RUTA_LOGS_RESPALDO_BD_RELATIVA
+
+    fecha_log = fecha_referencia or timezone.localtime(timezone.now())
+    ruta_relativa_efectiva = str(ruta_relativa or RUTA_LOGS_RESPALDO_BD_RELATIVA or 'media/logs/backups_bd')
+    carpeta_logs = Path(settings.BASE_DIR) / ruta_relativa_efectiva
+    carpeta_logs.mkdir(parents=True, exist_ok=True)
+    return carpeta_logs / f"backup_bd_{fecha_log.strftime('%Y%m%d')}.log"
+
+
+# 1) Para que sirve: obtener una ruta de bitacora usable aun con restricciones de permisos.
+# 2) Como funciona: intenta ruta principal, luego fallback runtime y por ultimo carpeta temporal del sistema.
+# 3) Que hace: evita que la tarea falle antes de iniciar por error al crear carpeta de logs.
+# 4) Como editarla: ajusta el orden de rutas candidatas segun politicas del servidor.
+def _resolver_ruta_log_respaldo_bd_segura(fecha_referencia=None):
+    from reportes_diarios.configuracion_correos_ejecutivos import (
+        RUTA_LOGS_RESPALDO_BD_FALLBACK_RELATIVA,
+        RUTA_LOGS_RESPALDO_BD_RELATIVA,
+    )
+
+    fecha_log = fecha_referencia or timezone.localtime(timezone.now())
+    rutas_candidatas = [
+        str(RUTA_LOGS_RESPALDO_BD_RELATIVA or '').strip(),
+        str(RUTA_LOGS_RESPALDO_BD_FALLBACK_RELATIVA or '').strip(),
+    ]
+
+    errores_ruta = []
+    for ruta_relativa in rutas_candidatas:
+        if not ruta_relativa:
+            continue
+
+        try:
+            return _obtener_ruta_log_respaldo_bd(fecha_referencia=fecha_log, ruta_relativa=ruta_relativa)
+        except Exception as exc:
+            errores_ruta.append(f"{ruta_relativa}: {exc}")
+
+    try:
+        carpeta_temporal = Path(tempfile.gettempdir()) / 'binsurmx' / 'logs' / 'backups_bd'
+        carpeta_temporal.mkdir(parents=True, exist_ok=True)
+        return carpeta_temporal / f"backup_bd_{fecha_log.strftime('%Y%m%d')}.log"
+    except Exception as exc:
+        errores_ruta.append(f"tempfile: {exc}")
+
+    logger.error(
+        '[BACKUP BD] No fue posible resolver ruta de bitacora local. '
+        f'Intentos fallidos: {" | ".join(errores_ruta)}'
+    )
+    return None
+
+
+# 1) Para que sirve: serializar contexto tecnico para bitacora legible y consistente.
+# 2) Como funciona: intenta JSON y cae a str si algun dato no es serializable.
+# 3) Que hace: evita que un contexto complejo rompa escritura de logs.
+# 4) Como editarla: agrega normalizacion extra si quieres ocultar campos sensibles.
+def _serializar_contexto_bitacora(contexto):
+    if not contexto:
+        return ''
+
+    try:
+        return json.dumps(contexto, ensure_ascii=False, sort_keys=True, default=str)
+    except Exception:
+        return str(contexto)
+
+
+# 1) Para que sirve: persistir eventos tecnicos del respaldo BD aunque el logger global falle.
+# 2) Como funciona: escribe en archivo de bitacora con marca de tiempo, contexto y traza opcional.
+# 3) Que hace: permite ver etapa exacta y error real cuando el respaldo falla silenciosamente.
+# 4) Como editarla: usa otro formato de salida si necesitas integracion con SIEM.
+def _registrar_bitacora_respaldo_bd(ruta_log, nivel, evento, contexto=None, excepcion=None):
+    nivel_texto = str(nivel or 'INFO').strip().upper()
+    evento_texto = str(evento or 'EVENTO').strip()
+    marca_tiempo = timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M:%S')
+    texto_contexto = _serializar_contexto_bitacora(contexto)
+
+    try:
+        if ruta_log is None:
+            raise RuntimeError('Ruta de bitacora local no disponible.')
+
+        lineas = [f"{marca_tiempo} | {nivel_texto} | {evento_texto}"]
+        if texto_contexto:
+            lineas.append(f"Contexto: {texto_contexto}")
+
+        if excepcion is not None:
+            lineas.append(f"Excepcion: {type(excepcion).__name__}: {excepcion}")
+            traza = ''.join(traceback.format_exception(type(excepcion), excepcion, excepcion.__traceback__))
+            if traza:
+                lineas.append('Traza:')
+                lineas.append(traza.rstrip())
+
+        lineas.append('-' * 120)
+        contenido = '\n'.join(lineas) + '\n'
+
+        ruta_destino = Path(ruta_log)
+        ruta_destino.parent.mkdir(parents=True, exist_ok=True)
+        with ruta_destino.open('a', encoding='utf-8') as archivo_log:
+            archivo_log.write(contenido)
+
+    except Exception as exc_escritura:
+        logger.error(f"[BACKUP BD] Error al escribir bitacora local ({evento_texto}): {exc_escritura}")
+
+    texto_logger = f"[BACKUP BD][{str(evento or '').strip()}] {_serializar_contexto_bitacora(contexto) or 'sin_contexto'}"
+    if nivel_texto == 'ERROR':
+        logger.error(texto_logger)
+    elif nivel_texto == 'WARNING':
+        logger.warning(texto_logger)
+    else:
+        logger.info(texto_logger)
+
+
 # 1) Para que sirve: localizar ejecutable mysqldump disponible en servidor Windows.
 # 2) Como funciona: prioriza variable MYSQLDUMP_PATH y despues rutas conocidas.
 # 3) Que hace: evita fallos por diferencia de instalacion entre entornos.
@@ -421,6 +538,7 @@ def _resolver_ruta_mysqldump():
 # 3) Que hace: permite notificar respaldo a correo personal sin romper configuracion existente.
 # 4) Como editarla: cambia claves en configuracion_correos_ejecutivos.py.
 def _resolver_destinatarios_respaldo_bd():
+    from django.conf import settings
     from reportes_diarios.configuracion_correos_ejecutivos import (
         CLAVE_CONFIG_DESTINATARIOS_CORREOS,
         CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD,
@@ -430,9 +548,32 @@ def _resolver_destinatarios_respaldo_bd():
         obtener_destinatarios_globales_configurados,
     )
 
-    destinatarios = obtener_destinatarios_globales_configurados(CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD)
+    claves_respaldo = [
+        str(CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD or '').strip(),
+        'DESTINATARIOS_RESPALDO_BD',
+        'DESTINATARIO_BACKUP',
+    ]
+
+    destinatarios = []
+    for clave_respaldo in claves_respaldo:
+        if not clave_respaldo:
+            continue
+        destinatarios = obtener_destinatarios_globales_configurados(clave_respaldo)
+        if destinatarios:
+            break
+
     if not destinatarios:
         destinatarios = obtener_destinatarios_globales_configurados(CLAVE_CONFIG_DESTINATARIOS_CORREOS)
+
+    if not destinatarios:
+        correo_fallback = str(
+            getattr(settings, 'EMAIL_HOST_USER', '')
+            or getattr(settings, 'DEFAULT_FROM_EMAIL', '')
+            or ''
+        ).strip()
+        if correo_fallback and '@' in correo_fallback:
+            destinatarios = [correo_fallback]
+
     return normalizar_destinatarios(destinatarios)
 
 
@@ -522,24 +663,48 @@ def ejecutar_backup_bd(self):
         FORMATO_COMPRESION_RESPALDO_BD,
         LIMITE_ADJUNTO_CORREO_RESPALDO_BD_BYTES,
         RETENCION_DIAS_RESPALDO_BD,
+        RUTA_LOGS_RESPALDO_BD_FALLBACK_RELATIVA,
+        RUTA_LOGS_RESPALDO_BD_RELATIVA,
         RUTA_RESPALDOS_BD_RELATIVA,
     )
 
     fecha_ejecucion = timezone.localtime(timezone.now())
+    ruta_log_backup = None
+    id_tarea = str(getattr(getattr(self, 'request', None), 'id', '') or '')
     destinatarios = _resolver_destinatarios_respaldo_bd()
+    enviados_correo = 0
+    etapa_actual = 'inicio'
 
     try:
-        if not destinatarios:
-            raise RuntimeError(
-                'No hay destinatarios de respaldo configurados. '
-                'Define DESTINATARIOS_RESPALDO_BD o DESTINATARIOS_CORREOS en ConfiguracionGlobal.'
+        etapa_actual = 'resolver_bitacora_local'
+        ruta_log_backup = _resolver_ruta_log_respaldo_bd_segura(fecha_ejecucion)
+        if not ruta_log_backup:
+            logger.warning(
+                '[BACKUP BD] Sin ruta de bitacora local disponible. '
+                'Se mantiene trazabilidad en logger del worker.'
             )
 
+        _registrar_bitacora_respaldo_bd(
+            ruta_log=ruta_log_backup,
+            nivel='INFO',
+            evento='INICIO_RESPALDO_BD',
+            contexto={
+                'task_id': id_tarea,
+                'fecha_ejecucion': fecha_ejecucion.isoformat(),
+                'destinatarios': destinatarios,
+                'ruta_bitacora_principal': str(RUTA_LOGS_RESPALDO_BD_RELATIVA),
+                'ruta_bitacora_fallback': str(RUTA_LOGS_RESPALDO_BD_FALLBACK_RELATIVA),
+                'ruta_bitacora_resuelta': str(ruta_log_backup or ''),
+            },
+        )
+
+        etapa_actual = 'leer_configuracion_bd'
         configuracion_db = settings.DATABASES.get('default', {})
         engine = str(configuracion_db.get('ENGINE') or '')
         if 'mysql' not in engine:
             raise RuntimeError(f'Engine no soportado para respaldo automatico ({engine}).')
 
+        etapa_actual = 'resolver_mysqldump'
         ruta_mysqldump = _resolver_ruta_mysqldump()
         if not ruta_mysqldump:
             raise RuntimeError('No se encontro mysqldump. Define MYSQLDUMP_PATH en entorno del servidor.')
@@ -556,6 +721,22 @@ def ejecutar_backup_bd(self):
         puerto = str(configuracion_db.get('PORT') or '3306')
         usuario = str(configuracion_db.get('USER') or '')
         password = str(configuracion_db.get('PASSWORD') or '')
+
+        _registrar_bitacora_respaldo_bd(
+            ruta_log=ruta_log_backup,
+            nivel='INFO',
+            evento='CONFIGURACION_RESPALDO_VALIDADA',
+            contexto={
+                'task_id': id_tarea,
+                'engine': engine,
+                'host': host,
+                'puerto': puerto,
+                'usuario': usuario,
+                'base_datos': nombre_bd,
+                'ruta_mysqldump': ruta_mysqldump,
+                'archivo_sql_temporal': str(ruta_archivo_sql),
+            },
+        )
 
         comando = [
             ruta_mysqldump,
@@ -574,6 +755,17 @@ def ejecutar_backup_bd(self):
             entorno['MYSQL_PWD'] = password
 
         try:
+            etapa_actual = 'ejecutar_mysqldump'
+            _registrar_bitacora_respaldo_bd(
+                ruta_log=ruta_log_backup,
+                nivel='INFO',
+                evento='EJECUTANDO_MYSQLDUMP',
+                contexto={
+                    'task_id': id_tarea,
+                    'comando': comando,
+                },
+            )
+
             with ruta_archivo_sql.open('wb') as flujo_salida:
                 subprocess.run(
                     comando,
@@ -586,13 +778,51 @@ def ejecutar_backup_bd(self):
             stderr = (exc.stderr or b'').decode('utf-8', errors='ignore')
             raise RuntimeError(f'Error en mysqldump: {stderr}') from exc
 
+        _registrar_bitacora_respaldo_bd(
+            ruta_log=ruta_log_backup,
+            nivel='INFO',
+            evento='MYSQLDUMP_FINALIZADO',
+            contexto={
+                'task_id': id_tarea,
+                'archivo_sql_temporal': str(ruta_archivo_sql),
+                'bytes_sql': int(ruta_archivo_sql.stat().st_size if ruta_archivo_sql.exists() else 0),
+            },
+        )
+
+        etapa_actual = 'comprimir_respaldo'
         ruta_archivo_comprimido = _comprimir_respaldo_sql(ruta_archivo_sql, FORMATO_COMPRESION_RESPALDO_BD)
         ruta_archivo_sql.unlink(missing_ok=True)
 
+        _registrar_bitacora_respaldo_bd(
+            ruta_log=ruta_log_backup,
+            nivel='INFO',
+            evento='RESPALDO_COMPRIMIDO',
+            contexto={
+                'task_id': id_tarea,
+                'archivo_comprimido': str(ruta_archivo_comprimido),
+                'bytes_comprimido': int(ruta_archivo_comprimido.stat().st_size if ruta_archivo_comprimido.exists() else 0),
+                'formato_compresion': str(FORMATO_COMPRESION_RESPALDO_BD),
+            },
+        )
+
+        etapa_actual = 'limpieza_retencion'
         eliminados = _limpiar_respaldos_antiguos(carpeta_respaldos, RETENCION_DIAS_RESPALDO_BD)
         tamanio_bytes = ruta_archivo_comprimido.stat().st_size if ruta_archivo_comprimido.exists() else 0
         adjuntar_respaldo = int(tamanio_bytes) <= int(LIMITE_ADJUNTO_CORREO_RESPALDO_BD_BYTES)
         tamano_mb = float(tamanio_bytes) / (1024 * 1024) if tamanio_bytes else 0
+
+        _registrar_bitacora_respaldo_bd(
+            ruta_log=ruta_log_backup,
+            nivel='INFO',
+            evento='RESPALDO_LISTO_PARA_NOTIFICAR',
+            contexto={
+                'task_id': id_tarea,
+                'archivo_comprimido': str(ruta_archivo_comprimido),
+                'tamano_mb': f'{tamano_mb:.2f}',
+                'adjuntar_respaldo': bool(adjuntar_respaldo),
+                'respaldos_eliminados': int(eliminados),
+            },
+        )
 
         cuerpo_exito = (
             'Respaldo automatico de base de datos ejecutado correctamente.\n\n'
@@ -604,34 +834,79 @@ def ejecutar_backup_bd(self):
             f'Respaldos antiguos eliminados: {int(eliminados)}\n'
         )
 
-        _enviar_correo_respaldo_bd(
-            destinatarios=destinatarios,
-            asunto=ASUNTO_CORREO_RESPALDO_BD_EXITO,
-            cuerpo=cuerpo_exito,
-            ruta_adjunto=ruta_archivo_comprimido if adjuntar_respaldo else None,
-        )
+        if destinatarios:
+            etapa_actual = 'enviar_correo_exito'
+            enviados_correo = _enviar_correo_respaldo_bd(
+                destinatarios=destinatarios,
+                asunto=ASUNTO_CORREO_RESPALDO_BD_EXITO,
+                cuerpo=cuerpo_exito,
+                ruta_adjunto=ruta_archivo_comprimido if adjuntar_respaldo else None,
+            )
+            _registrar_bitacora_respaldo_bd(
+                ruta_log=ruta_log_backup,
+                nivel='INFO',
+                evento='CORREO_RESPALDO_ENVIADO',
+                contexto={
+                    'task_id': id_tarea,
+                    'destinatarios': destinatarios,
+                    'mensajes_enviados': int(enviados_correo),
+                },
+            )
+        else:
+            _registrar_bitacora_respaldo_bd(
+                ruta_log=ruta_log_backup,
+                nivel='WARNING',
+                evento='RESPALDO_SIN_DESTINATARIOS',
+                contexto={
+                    'task_id': id_tarea,
+                    'archivo_comprimido': str(ruta_archivo_comprimido),
+                    'motivo': 'No hay destinatarios configurados ni fallback SMTP disponible.',
+                },
+            )
 
         resumen = {
             'status': 'ok',
             'archivo_respaldo': str(ruta_archivo_comprimido),
+            'archivo_log': str(ruta_log_backup or ''),
+            'bitacora_local_activa': bool(ruta_log_backup),
             'bytes': int(tamanio_bytes),
             'adjunto_enviado': bool(adjuntar_respaldo),
+            'correo_enviado': bool(enviados_correo),
             'destinatarios': destinatarios,
             'respaldos_eliminados': int(eliminados),
         }
-        logger.info(f"[BACKUP BD] Respaldo generado y notificado: {resumen}")
+        _registrar_bitacora_respaldo_bd(
+            ruta_log=ruta_log_backup,
+            nivel='INFO',
+            evento='RESPALDO_FINALIZADO_OK',
+            contexto=resumen,
+        )
         return resumen
 
     except Exception as exc:
         texto_error = str(exc)
-        logger.error(f"[BACKUP BD] Fallo en respaldo: {texto_error}")
+
+        _registrar_bitacora_respaldo_bd(
+            ruta_log=ruta_log_backup,
+            nivel='ERROR',
+            evento='RESPALDO_FINALIZADO_CON_ERROR',
+            contexto={
+                'task_id': id_tarea,
+                'etapa_actual': etapa_actual,
+                'destinatarios': destinatarios,
+            },
+            excepcion=exc,
+        )
 
         if destinatarios:
             try:
+                etapa_actual = 'enviar_correo_fallo'
+                referencia_bitacora = str(ruta_log_backup or 'SIN_BITACORA_LOCAL')
                 cuerpo_fallo = (
                     'ALERTA: el respaldo automatico de base de datos fallo.\n\n'
                     f'Fecha: {fecha_ejecucion.strftime("%Y-%m-%d %H:%M:%S")}\n'
                     f'Error: {texto_error}\n'
+                    f'Bitacora tecnica: {referencia_bitacora}\n'
                     'Accion requerida: revisar logs de Celery Worker y conectividad de BD/SMTP.\n'
                 )
                 _enviar_correo_respaldo_bd(
@@ -640,7 +915,29 @@ def ejecutar_backup_bd(self):
                     cuerpo=cuerpo_fallo,
                     ruta_adjunto=None,
                 )
+                _registrar_bitacora_respaldo_bd(
+                    ruta_log=ruta_log_backup,
+                    nivel='INFO',
+                    evento='CORREO_ALERTA_FALLO_ENVIADO',
+                    contexto={
+                        'task_id': id_tarea,
+                        'destinatarios': destinatarios,
+                    },
+                )
             except Exception as exc_correo:
-                logger.error(f"[BACKUP BD] Fallo enviando correo de alerta: {exc_correo}")
+                _registrar_bitacora_respaldo_bd(
+                    ruta_log=ruta_log_backup,
+                    nivel='ERROR',
+                    evento='FALLO_CORREO_ALERTA_RESPALDO',
+                    contexto={
+                        'task_id': id_tarea,
+                        'etapa_actual': etapa_actual,
+                        'destinatarios': destinatarios,
+                    },
+                    excepcion=exc_correo,
+                )
 
-        raise RuntimeError(f'Fallo en respaldo automatico de BD: {texto_error}') from exc
+        raise RuntimeError(
+            f'Fallo en respaldo automatico de BD: {texto_error}. '
+            f'Revisa bitacora: {str(ruta_log_backup or "SIN_BITACORA_LOCAL")}'
+        ) from exc

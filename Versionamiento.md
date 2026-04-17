@@ -229,6 +229,30 @@ Version del sistema: 2.32.0
 
 ## Cambios Menores
 
+- Fecha: 2026-04-17
+- Autor: Cy tamayo
+- Descripcion: Se reforzo `scripts/iniciar_servicios_binsurmq.ps1` para detener correctamente servicios en segundo plano sin requerir Administrador de tareas: ahora mata arbol de procesos (padre e hijos) y limpia procesos huerfanos de waitress, celery worker y celery beat mediante patrones de linea de comando.
+
+- Fecha: 2026-04-17
+- Autor: Cy tamayo
+- Descripcion: Se corrigio el registro de tareas Celery en servidor para evitar `Received unregistered task` en `reportes_diarios.ejecutar_backup_bd`: se reforzo autodiscovery en `backend/celery.py` para `tasks.py` y `tareas.py`, se agrego `reportes_diarios/tasks.py` como puente de compatibilidad y se actualizo `scripts/iniciar_servicios_binsurmq.ps1` para iniciar worker con `--include=reportes_diarios.tareas,reportes_diarios.tasks`.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se endurecio la tarea de respaldo BD para servidores con restricciones de permisos en media: la ruta de bitacora ahora se resuelve con fallback automatico (media/logs -> runtime/logs -> carpeta temporal), se evita fallo previo al try principal y se devuelve indicador de bitacora_local_activa para diagnostico operativo.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se reforzo Centro de Control en cabina_arquitectura para ejecucion manual de tareas Celery con diagnostico de broker/workers al momento del despacho, bitacora persistente en media/logs/centro_control y nuevo endpoint de consulta por task_id para distinguir estados PENDING/STARTED/SUCCESS/FAILURE y confirmar si una tarea fue tomada por worker.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se reforzo la tarea `reportes_diarios.ejecutar_backup_bd` con manejo de excepciones por etapa y bitacora tecnica persistente en `media/logs/backups_bd` (inicio, configuracion, mysqldump, compresion, notificacion, error con traza completa), ademas de incluir `archivo_log` en el resumen para diagnostico rapido desde operacion.
+
+- Fecha: 2026-04-16
+- Autor: Cy tamayo
+- Descripcion: Se reforzo la tarea manual y automatica de respaldo BD para resolver destinatarios con claves legacy (DESTINATARIOS_RESPALDO_BD/DESTINATARIO_BACKUP), fallback a SMTP configurado y continuidad de generacion del archivo de respaldo aun cuando no existan destinatarios de correo; se agregaron pruebas para esta resolucion de destinatarios.
+
 - Fecha: 2026-04-16
 - Autor: Cy tamayo
 - Descripcion: Se reforzo la apertura publica del login en usuarios (acciones csrf e iniciar-sesion sin clases de autenticacion), se agregaron pruebas API para evitar regresiones de 403 en inicio de sesion y se ajusto el vhost SSL de Apache con ServerAlias localhost/127.0.0.1, Location explicito para /apex/api y X-Forwarded-Proto para despliegue HTTPS local.

@@ -1,10 +1,12 @@
 import platform
+import json
 import shutil
 import socket
 import time
 from pathlib import Path
 from urllib.parse import urlparse
 
+from celery.result import AsyncResult
 from django.conf import settings
 from django.db import connections
 from django.db.models import Q
@@ -367,6 +369,130 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
     def _bytes_a_gb(valor_bytes):
         return round(float(valor_bytes) / (1024 * 1024 * 1024), 2)
 
+    @staticmethod
+    def _normalizar_valor_json(valor):
+        if valor is None or isinstance(valor, (str, int, float, bool)):
+            return valor
+
+        if isinstance(valor, dict):
+            return {str(clave): CentroControlAdminViewSet._normalizar_valor_json(item) for clave, item in valor.items()}
+
+        if isinstance(valor, (list, tuple, set)):
+            return [CentroControlAdminViewSet._normalizar_valor_json(item) for item in valor]
+
+        return str(valor)
+
+    @staticmethod
+    def _enmascarar_broker_url(broker_url):
+        valor = str(broker_url or '').strip()
+        if not valor:
+            return ''
+
+        parseado = urlparse(valor)
+        if not parseado.scheme:
+            return valor
+
+        usuario = parseado.username or ''
+        contrasena_enmascarada = '***' if parseado.password else ''
+        host = parseado.hostname or ''
+        puerto = f":{parseado.port}" if parseado.port else ''
+
+        if usuario and contrasena_enmascarada:
+            credenciales = f"{usuario}:{contrasena_enmascarada}@"
+        elif usuario:
+            credenciales = f"{usuario}@"
+        else:
+            credenciales = ''
+
+        ruta = parseado.path or ''
+        return f"{parseado.scheme}://{credenciales}{host}{puerto}{ruta}"
+
+    @staticmethod
+    def _obtener_ruta_log_centro_control_celery(fecha_referencia=None):
+        fecha_log = fecha_referencia or timezone.localtime(timezone.now())
+        carpeta_logs = Path(settings.BASE_DIR) / 'media/logs/centro_control'
+        carpeta_logs.mkdir(parents=True, exist_ok=True)
+        return carpeta_logs / f"centro_control_celery_{fecha_log.strftime('%Y%m%d')}.log"
+
+    @classmethod
+    def _registrar_evento_centro_control_celery(cls, evento, contexto=None, nivel='INFO'):
+        try:
+            nivel_texto = str(nivel or 'INFO').strip().upper()
+            evento_texto = str(evento or 'EVENTO').strip() or 'EVENTO'
+            marca_tiempo = timezone.localtime(timezone.now()).strftime('%Y-%m-%d %H:%M:%S')
+            ruta_log = cls._obtener_ruta_log_centro_control_celery()
+
+            contexto_normalizado = cls._normalizar_valor_json(contexto)
+            contexto_texto = ''
+            if contexto_normalizado is not None:
+                try:
+                    contexto_texto = json.dumps(contexto_normalizado, ensure_ascii=False, sort_keys=True, default=str)
+                except Exception:
+                    contexto_texto = str(contexto_normalizado)
+
+            lineas = [f"{marca_tiempo} | {nivel_texto} | {evento_texto}"]
+            if contexto_texto:
+                lineas.append(f"Contexto: {contexto_texto}")
+            lineas.append('-' * 120)
+
+            with Path(ruta_log).open('a', encoding='utf-8') as archivo_log:
+                archivo_log.write('\n'.join(lineas) + '\n')
+        except Exception:
+            return
+
+    @classmethod
+    def _obtener_diagnostico_celery_basico(cls):
+        estado_celery = {
+            'ok': False,
+            'workers': [],
+            'workers_detectados': 0,
+            'broker_url': cls._enmascarar_broker_url(getattr(settings, 'CELERY_BROKER_URL', '')),
+            'broker_host': None,
+            'broker_puerto': None,
+            'broker_alcanzable': False,
+            'mensaje': 'Sin verificar',
+        }
+
+        try:
+            from backend.celery import app as celery_app
+
+            broker_url = str(getattr(settings, 'CELERY_BROKER_URL', '') or '')
+            broker_parseado = urlparse(broker_url)
+            broker_host = broker_parseado.hostname or '127.0.0.1'
+            broker_puerto = int(broker_parseado.port or 5672)
+
+            estado_celery['broker_host'] = broker_host
+            estado_celery['broker_puerto'] = broker_puerto
+
+            try:
+                with socket.create_connection((broker_host, broker_puerto), timeout=1.0):
+                    estado_celery['broker_alcanzable'] = True
+            except OSError as exc_broker:
+                estado_celery['mensaje'] = (
+                    f'Broker Celery no disponible en {broker_host}:{broker_puerto}. '
+                    f'Detalle: {exc_broker}'
+                )
+
+            if estado_celery['broker_alcanzable']:
+                respuesta_ping = celery_app.control.ping(timeout=1.0)
+                workers = []
+                for item in (respuesta_ping or []):
+                    if isinstance(item, dict):
+                        workers.extend([str(clave) for clave in item.keys()])
+
+                estado_celery['ok'] = bool(workers)
+                estado_celery['workers'] = workers
+                estado_celery['workers_detectados'] = len(workers)
+                estado_celery['mensaje'] = (
+                    'Workers Celery en linea.'
+                    if workers
+                    else 'Broker disponible, pero no se detectaron workers Celery activos.'
+                )
+        except Exception as exc:
+            estado_celery['mensaje'] = f'No fue posible consultar estado de Celery: {exc}'
+
+        return estado_celery
+
     def _obtener_mapa_configuraciones(self):
         mapa = {}
         for configuracion in ConfiguracionGlobal.objects.all():
@@ -544,6 +670,7 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
                 'GET/PUT cabina-arquitectura/centro-control/estado-aplicacion/',
                 'GET cabina-arquitectura/centro-control/tareas-disponibles/',
                 'POST cabina-arquitectura/centro-control/ejecutar-tarea/',
+                'GET cabina-arquitectura/centro-control/estado-tarea/?task_id=...',
                 'GET cabina-arquitectura/centro-control/salud-servidor/',
             ],
         }
@@ -611,10 +738,32 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
 
         datos = serializer.validated_data
         clave_tarea = datos['tarea']
+        diagnostico_celery = self._obtener_diagnostico_celery_basico()
+
+        self._registrar_evento_centro_control_celery(
+            evento='SOLICITUD_EJECUCION_TAREA',
+            contexto={
+                'tarea': clave_tarea,
+                'parametros': self._normalizar_valor_json(datos),
+                'usuario': str(request.user.username),
+                'celery': diagnostico_celery,
+            },
+            nivel='INFO',
+        )
 
         try:
             resultado_tarea, parametros = self._encolar_tarea(clave_tarea, datos)
         except Exception as exc:
+            self._registrar_evento_centro_control_celery(
+                evento='ERROR_ENCOLAR_TAREA',
+                contexto={
+                    'tarea': clave_tarea,
+                    'usuario': str(request.user.username),
+                    'error': str(exc),
+                    'celery': diagnostico_celery,
+                },
+                nivel='ERROR',
+            )
             return respuesta_estandar(
                 data={'tarea': clave_tarea, 'error': str(exc)},
                 mensaje='No fue posible encolar la tarea en Celery.',
@@ -622,18 +771,109 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
                 codigo=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
+        estado_inicial_tarea = str(getattr(resultado_tarea, 'state', 'PENDING') or 'PENDING')
+        referencia_log_respaldo = ''
+        if clave_tarea == 'ejecutar_backup_bd':
+            try:
+                from reportes_diarios.tareas import _obtener_ruta_log_respaldo_bd
+                referencia_log_respaldo = str(_obtener_ruta_log_respaldo_bd())
+            except Exception:
+                referencia_log_respaldo = ''
+
         data = {
             'tarea': clave_tarea,
             'task_id': str(getattr(resultado_tarea, 'id', '')),
             'parametros': parametros,
             'solicitado_por': request.user.username,
             'solicitado_en': timezone.localtime(timezone.now()).isoformat(),
+            'modo_despacho': 'cola_celery_inmediata',
+            'estado_inicial_tarea': estado_inicial_tarea,
+            'celery': diagnostico_celery,
+            'referencia_log_respaldo': referencia_log_respaldo,
+            'nota_ejecucion': 'Las tareas manuales se encolan para ejecucion inmediata por worker; no dependen del horario programado de Celery Beat.',
         }
+
+        workers_detectados = int((diagnostico_celery or {}).get('workers_detectados') or 0)
+        if workers_detectados <= 0:
+            data['advertencia'] = (
+                'No se detectaron workers Celery activos en este momento. '
+                'La tarea quedara en PENDING hasta que se inicie al menos un worker.'
+            )
+
+        self._registrar_evento_centro_control_celery(
+            evento='TAREA_ENCOLADA',
+            contexto=data,
+            nivel='INFO',
+        )
+
+        mensaje_respuesta = 'Tarea enviada a cola Celery correctamente.'
+        if workers_detectados <= 0:
+            mensaje_respuesta = (
+                'Tarea enviada a cola Celery, pero no se detectaron workers activos. '
+                'Inicia Celery Worker para ejecutar esta tarea inmediatamente.'
+            )
+
         return respuesta_estandar(
             data=data,
-            mensaje='Tarea enviada a cola Celery correctamente.',
+            mensaje=mensaje_respuesta,
             codigo=status.HTTP_202_ACCEPTED,
         )
+
+    @action(detail=False, methods=['get'], url_path='estado-tarea')
+    def estado_tarea(self, request):
+        task_id = str(request.query_params.get('task_id') or '').strip()
+        if not task_id:
+            return respuesta_estandar(
+                data={'task_id': ['Debes enviar task_id como parametro de consulta.']},
+                mensaje='No se recibio task_id para consultar estado de tarea.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            from backend.celery import app as celery_app
+
+            resultado = AsyncResult(task_id, app=celery_app)
+            estado = str(resultado.state or 'PENDING')
+            data = {
+                'task_id': task_id,
+                'estado': estado,
+                'lista_estados': ['PENDING', 'RECEIVED', 'STARTED', 'RETRY', 'SUCCESS', 'FAILURE', 'REVOKED'],
+                'listo': bool(resultado.ready()),
+                'exito': bool(resultado.successful()) if resultado.ready() else False,
+                'fallo': bool(resultado.failed()) if resultado.ready() else False,
+                'interpretacion': (
+                    'PENDING: la tarea sigue en cola o no ha sido tomada por un worker.'
+                    if estado == 'PENDING'
+                    else 'Tarea con estado actualizado por Celery.'
+                ),
+            }
+
+            if resultado.ready():
+                if estado == 'FAILURE':
+                    data['error'] = str(resultado.result)
+                    data['traza'] = str(getattr(resultado, 'traceback', '') or '')
+                else:
+                    data['resultado'] = self._normalizar_valor_json(resultado.result)
+
+            self._registrar_evento_centro_control_celery(
+                evento='CONSULTA_ESTADO_TAREA',
+                contexto=data,
+                nivel='INFO',
+            )
+            return respuesta_estandar(data=data, mensaje='Estado de tarea consultado correctamente.')
+        except Exception as exc:
+            self._registrar_evento_centro_control_celery(
+                evento='ERROR_CONSULTA_ESTADO_TAREA',
+                contexto={'task_id': task_id, 'error': str(exc)},
+                nivel='ERROR',
+            )
+            return respuesta_estandar(
+                data={'task_id': task_id, 'error': str(exc)},
+                mensaje='No fue posible consultar estado de tarea en Celery.',
+                estado='error',
+                codigo=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
     @action(detail=False, methods=['get'], url_path='salud-servidor')
     def salud_servidor(self, request):

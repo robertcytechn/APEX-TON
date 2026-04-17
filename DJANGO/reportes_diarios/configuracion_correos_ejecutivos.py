@@ -96,6 +96,19 @@ NOMBRE_PERIODIC_TASK_RESPALDO_BD = 'backup_bd_completo_diario'
 # 3) Que hace: centraliza configuracion para no tocar la tarea ni el script.
 # 4) Como editarla: cambia carpeta/retencion segun capacidad de disco del servidor.
 RUTA_RESPALDOS_BD_RELATIVA = 'media/backups_bd'
+
+# 1) Para que sirve: ruta de bitacora tecnica del respaldo de BD.
+# 2) Como funciona: cada ejecucion agrega eventos y errores por etapa en un log diario.
+# 3) Que hace: evita fallos silenciosos y facilita diagnostico operativo.
+# 4) Como editarla: apunta a otra carpeta dentro de media si cambias politica de monitoreo.
+RUTA_LOGS_RESPALDO_BD_RELATIVA = 'media/logs/backups_bd'
+
+# 1) Para que sirve: ruta secundaria para bitacora de respaldo cuando media no tiene permisos de escritura.
+# 2) Como funciona: la tarea intenta esta carpeta si falla la ruta principal.
+# 3) Que hace: evita que la tarea falle antes de iniciar por errores de permisos de carpeta.
+# 4) Como editarla: usa una ruta local del servidor donde Celery Worker tenga permiso garantizado.
+RUTA_LOGS_RESPALDO_BD_FALLBACK_RELATIVA = 'runtime/logs/backups_bd'
+
 RETENCION_DIAS_RESPALDO_BD = 30
 
 # 1) Para que sirve: definir destinatarios exclusivos del correo de backup.

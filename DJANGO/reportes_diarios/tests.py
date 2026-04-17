@@ -1,7 +1,10 @@
 from datetime import timedelta
 from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from django.conf import settings
+from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -10,6 +13,12 @@ from rest_framework.test import APITestCase
 from categoria_operativa.models import CategoriaOperativa, Concepto, DetalleParametrizado
 from configuraciones_globales.models import ConfiguracionGlobal
 from reportes_diarios.models import ReporteDiario, MovimientoDiario
+from reportes_diarios.tareas import (
+	_obtener_ruta_log_respaldo_bd,
+	_registrar_bitacora_respaldo_bd,
+	_resolver_ruta_log_respaldo_bd_segura,
+	_resolver_destinatarios_respaldo_bd,
+)
 from sucursales.models import Sucursal
 from usuarios.models import Usuario, Rol, UsuarioRol
 
@@ -47,6 +56,83 @@ def _configurar_horario_bloqueado_para_pruebas():
 def _asignar_rol_usuario(usuario, nombre_rol):
 	rol, _ = Rol.objects.get_or_create(nombre=nombre_rol)
 	UsuarioRol.objects.get_or_create(usuario=usuario, rol=rol)
+
+
+# 1) Para que sirve: validar que respaldo BD resuelva destinatarios sin bloquear ejecucion por configuracion incompleta.
+# 2) Como funciona: prueba clave legacy de destinatarios y fallback a SMTP configurado.
+# 3) Que hace: previene fallos silenciosos cuando no existe DESTINATARIO_BACKUP.
+# 4) Como editarla: amplia escenarios al agregar nuevas claves globales de notificacion.
+class RespaldoDestinatariosTests(APITestCase):
+	def test_resuelve_destinatarios_desde_clave_legacy_plural(self):
+		ConfiguracionGlobal.objects.create(
+			clave='DESTINATARIOS_RESPALDO_BD',
+			valor='respaldo1@binsur.mx, respaldo2@binsur.mx',
+			tipo_valor='STRING',
+		)
+
+		destinatarios = _resolver_destinatarios_respaldo_bd()
+		self.assertEqual(destinatarios, ['respaldo1@binsur.mx', 'respaldo2@binsur.mx'])
+
+	@override_settings(EMAIL_HOST_USER='respaldos_fallback@binsur.mx', DEFAULT_FROM_EMAIL='')
+	def test_resuelve_destinatarios_desde_fallback_smtp(self):
+		destinatarios = _resolver_destinatarios_respaldo_bd()
+		self.assertEqual(destinatarios, ['respaldos_fallback@binsur.mx'])
+
+
+# 1) Para que sirve: validar la bitacora tecnica local del respaldo en carpeta media.
+# 2) Como funciona: fuerza BASE_DIR temporal y registra eventos con y sin excepcion.
+# 3) Que hace: asegura evidencia persistente para diagnosticar fallos silenciosos.
+# 4) Como editarla: amplia aserciones si cambias formato de bitacora.
+class RespaldoBitacoraTests(SimpleTestCase):
+	def test_resuelve_ruta_segura_en_fallback_runtime(self):
+		with TemporaryDirectory() as carpeta_temporal:
+			with self.settings(BASE_DIR=carpeta_temporal):
+				ruta_bitacora = _resolver_ruta_log_respaldo_bd_segura(timezone.localtime(timezone.now()))
+				self.assertTrue(Path(ruta_bitacora).exists())
+
+	def test_bitacora_respaldo_crea_archivo_en_media_logs(self):
+		with TemporaryDirectory() as carpeta_temporal:
+			with self.settings(BASE_DIR=carpeta_temporal):
+				ruta_bitacora = _obtener_ruta_log_respaldo_bd(timezone.localtime(timezone.now()))
+				_registrar_bitacora_respaldo_bd(
+					ruta_log=ruta_bitacora,
+					nivel='INFO',
+					evento='PRUEBA_BITACORA_RESPALDO',
+					contexto={'paso': 'inicio'},
+				)
+
+				self.assertTrue(Path(ruta_bitacora).exists())
+				self.assertIn('media/logs/backups_bd', str(ruta_bitacora).replace('\\', '/').lower())
+				contenido = Path(ruta_bitacora).read_text(encoding='utf-8')
+				self.assertIn('PRUEBA_BITACORA_RESPALDO', contenido)
+				self.assertIn('Contexto:', contenido)
+
+	def test_bitacora_respaldo_guarda_traza_de_excepcion(self):
+		with TemporaryDirectory() as carpeta_temporal:
+			with self.settings(BASE_DIR=carpeta_temporal):
+				ruta_bitacora = _obtener_ruta_log_respaldo_bd(timezone.localtime(timezone.now()))
+				try:
+					raise ValueError('fallo_controlado_bitacora')
+				except Exception as exc:
+					_registrar_bitacora_respaldo_bd(
+						ruta_log=ruta_bitacora,
+						nivel='ERROR',
+						evento='PRUEBA_EXCEPCION_BITACORA',
+						contexto={'paso': 'error'},
+						excepcion=exc,
+					)
+
+				contenido = Path(ruta_bitacora).read_text(encoding='utf-8')
+				self.assertIn('ValueError: fallo_controlado_bitacora', contenido)
+				self.assertIn('Traceback', contenido)
+
+	def test_bitacora_respaldo_sin_ruta_local_no_falla(self):
+		_registrar_bitacora_respaldo_bd(
+			ruta_log=None,
+			nivel='INFO',
+			evento='PRUEBA_BITACORA_SIN_RUTA',
+			contexto={'paso': 'sin_ruta_local'},
+		)
 
 
 # 1) Para qué sirve: validar flujo de cierre manual de día contable en API.

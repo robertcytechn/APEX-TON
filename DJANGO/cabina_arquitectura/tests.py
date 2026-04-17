@@ -135,9 +135,20 @@ class CabinaArquitecturaTests(APITestCase):
         self.assertEqual(cfg_decoradores.valor, 'Parches, Monitoreo')
         self.assertFalse(cfg_estado.visible_para_director)
 
+    @patch('cabina_arquitectura.views.CentroControlAdminViewSet._obtener_diagnostico_celery_basico')
     @patch('cabina_arquitectura.views.CentroControlAdminViewSet._encolar_tarea')
-    def test_admin_ejecuta_tarea_manual_centro_control(self, mock_encolar_tarea):
+    def test_admin_ejecuta_tarea_manual_centro_control(self, mock_encolar_tarea, mock_diagnostico_celery):
         mock_encolar_tarea.return_value = (SimpleNamespace(id='task-123'), {'anio': 2026, 'mes': 4})
+        mock_diagnostico_celery.return_value = {
+            'ok': True,
+            'workers': ['worker@binsur'],
+            'workers_detectados': 1,
+            'broker_url': 'amqp://usuario:***@127.0.0.1:5672//',
+            'broker_host': '127.0.0.1',
+            'broker_puerto': 5672,
+            'broker_alcanzable': True,
+            'mensaje': 'Workers Celery en linea.',
+        }
 
         self.client.force_authenticate(user=self.usuario_admin)
         url = '/api/cabina-arquitectura/centro-control/ejecutar-tarea/'
@@ -154,9 +165,20 @@ class CabinaArquitecturaTests(APITestCase):
         self.assertEqual((respuesta.data.get('data') or {}).get('task_id'), 'task-123')
         mock_encolar_tarea.assert_called_once()
 
+    @patch('cabina_arquitectura.views.CentroControlAdminViewSet._obtener_diagnostico_celery_basico')
     @patch('cabina_arquitectura.views.CentroControlAdminViewSet._encolar_tarea')
-    def test_rol_admin_compatible_puede_ejecutar_tarea_manual(self, mock_encolar_tarea):
+    def test_rol_admin_compatible_puede_ejecutar_tarea_manual(self, mock_encolar_tarea, mock_diagnostico_celery):
         mock_encolar_tarea.return_value = (SimpleNamespace(id='task-456'), {})
+        mock_diagnostico_celery.return_value = {
+            'ok': True,
+            'workers': ['worker@binsur'],
+            'workers_detectados': 1,
+            'broker_url': 'amqp://usuario:***@127.0.0.1:5672//',
+            'broker_host': '127.0.0.1',
+            'broker_puerto': 5672,
+            'broker_alcanzable': True,
+            'mensaje': 'Workers Celery en linea.',
+        }
 
         rol_admin_compatible = Rol.objects.create(nombre='ADMIN')
         usuario_admin_compatible = Usuario.objects.create_user(
@@ -177,9 +199,20 @@ class CabinaArquitecturaTests(APITestCase):
         self.assertEqual(respuesta.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual((respuesta.data.get('data') or {}).get('task_id'), 'task-456')
 
+    @patch('cabina_arquitectura.views.CentroControlAdminViewSet._obtener_diagnostico_celery_basico')
     @patch('cabina_arquitectura.views.CentroControlAdminViewSet._encolar_tarea')
-    def test_staff_puede_ejecutar_tarea_manual_centro_control(self, mock_encolar_tarea):
+    def test_staff_puede_ejecutar_tarea_manual_centro_control(self, mock_encolar_tarea, mock_diagnostico_celery):
         mock_encolar_tarea.return_value = (SimpleNamespace(id='task-789'), {})
+        mock_diagnostico_celery.return_value = {
+            'ok': True,
+            'workers': ['worker@binsur'],
+            'workers_detectados': 1,
+            'broker_url': 'amqp://usuario:***@127.0.0.1:5672//',
+            'broker_host': '127.0.0.1',
+            'broker_puerto': 5672,
+            'broker_alcanzable': True,
+            'mensaje': 'Workers Celery en linea.',
+        }
 
         usuario_staff = Usuario.objects.create_user(
             username='staff_cfg',
@@ -198,3 +231,35 @@ class CabinaArquitecturaTests(APITestCase):
 
         self.assertEqual(respuesta.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual((respuesta.data.get('data') or {}).get('task_id'), 'task-789')
+
+    def test_admin_consulta_estado_tarea_sin_task_id(self):
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/centro-control/estado-tarea/'
+
+        respuesta = self.client.get(url)
+
+        self.assertEqual(respuesta.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(respuesta.data.get('status'), 'error')
+
+    @patch('cabina_arquitectura.views.AsyncResult')
+    def test_admin_consulta_estado_tarea_pendiente(self, mock_async_result):
+        resultado_mock = SimpleNamespace(
+            state='PENDING',
+            ready=lambda: False,
+            successful=lambda: False,
+            failed=lambda: False,
+            result=None,
+            traceback='',
+        )
+        mock_async_result.return_value = resultado_mock
+
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/centro-control/estado-tarea/?task_id=task-pendiente-001'
+
+        respuesta = self.client.get(url)
+
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+        self.assertEqual(respuesta.data.get('status'), 'success')
+        data = respuesta.data.get('data') or {}
+        self.assertEqual(data.get('estado'), 'PENDING')
+        self.assertFalse(data.get('listo'))
