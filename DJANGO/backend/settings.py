@@ -153,7 +153,7 @@ DATABASES = {
         'NAME': 'apex_ton',
         'USER': 'robert',
         'PASSWORD': 'Chido1993$',
-        'HOST': '192.168.1.69', #ip servidor en red local 192.168.1.69 o para internet cytechn.ddns.net
+        'HOST': 'cytechn.ddns.net', #ip servidor en red local 192.168.1.69 o para internet cytechn.ddns.net
         'PORT': '3306',
     }
 }
@@ -274,6 +274,6 @@ SERVER_EMAIL = os.getenv('DJANGO_SERVER_EMAIL', EMAIL_HOST_USER)
 
 # ── Enlaces públicos para notificaciones de credenciales ───────────────────
 # Dashboard principal del sistema para usuarios finales.
-URL_PUBLICA_DASHBOARD_BINSUR = os.getenv('URL_PUBLICA_DASHBOARD_BINSUR', 'https://cytechn.ddns.net/apex/')
+URL_PUBLICA_DASHBOARD_BINSUR = os.getenv('URL_PUBLICA_DASHBOARD_BINSUR', 'https://cytechn.ddns.net/apex')
 # Ruta de login usada en correos de bienvenida y reinicio de contraseña.
-URL_PUBLICA_LOGIN_BINSUR = os.getenv('URL_PUBLICA_LOGIN_BINSUR', 'https://cytechn.ddns.net/apex/auth/login')
+URL_PUBLICA_LOGIN_BINSUR = os.getenv('URL_PUBLICA_LOGIN_BINSUR', 'https://cytechn.ddns.net/apex')

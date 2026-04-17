@@ -26,6 +26,11 @@ const columnasDisponibles = [
 ];
 const columnasVisibles = ref([...columnasDisponibles]);
 const filasPorPagina = ref(10);
+const contrasenaCreada = ref('');
+const correoEnviado = ref(null);
+const detalleCorreo = ref('');
+const mensaje = ref('');
+const severidadMensaje = ref('info');
 
 const opcionesFilasMostrar = computed(() => {
     const total = registros.value.length;
@@ -45,6 +50,23 @@ const opcionesFilasMostrar = computed(() => {
 // 3) Qué hace: permite personalizar visibilidad de columnas desde UI.
 // 4) Cómo editarla: cambia el criterio de visibilidad si agregas perfiles por usuario.
 const esColumnaVisible = (columna) => columnasVisibles.value.some((item) => item.value === columna);
+
+const limpiarResultadoCredenciales = () => {
+    contrasenaCreada.value = '';
+    correoEnviado.value = null;
+    detalleCorreo.value = '';
+};
+
+const construirMensajeError = (error, fallback = 'No se pudo completar la operación.') => {
+    const erroresCampo = error?.response?.data?.data;
+    if (erroresCampo && typeof erroresCampo === 'object') {
+        const primerError = Object.values(erroresCampo).flat().find(Boolean);
+        if (primerError) {
+            return primerError;
+        }
+    }
+    return error?.response?.data?.message || fallback;
+};
 
 const formulario = reactive({
     username: '',
@@ -95,6 +117,7 @@ const cargar = async () => {
 // 4) Cómo editarla: agrega valores por defecto específicos antes de abrir diálogo.
 const nuevo = () => {
     limpiarFormulario();
+    limpiarResultadoCredenciales();
     mostrarDialogo.value = true;
 };
 
@@ -112,6 +135,7 @@ const editar = (registro) => {
     formulario.is_staff = !!registro.is_staff;
     formulario.password = '';
     editandoId.value = registro.id;
+    limpiarResultadoCredenciales();
     mostrarDialogo.value = true;
 };
 
@@ -146,13 +170,24 @@ const guardar = async () => {
     try {
         const payload = construirPayload();
         if (editandoId.value) {
-            await actualizarUsuarioAdmin(editandoId.value, payload);
+            const { data } = await actualizarUsuarioAdmin(editandoId.value, payload);
+            limpiarResultadoCredenciales();
+            severidadMensaje.value = 'success';
+            mensaje.value = data?.message || 'Usuario actualizado correctamente.';
         } else {
-            await crearUsuarioAdmin(payload);
+            const { data } = await crearUsuarioAdmin(payload);
+            contrasenaCreada.value = data?.data?.contrasena_generada || '';
+            correoEnviado.value = typeof data?.data?.correo_enviado === 'boolean' ? data.data.correo_enviado : null;
+            detalleCorreo.value = data?.data?.detalle_correo || '';
+            severidadMensaje.value = correoEnviado.value === false ? 'warn' : 'success';
+            mensaje.value = data?.message || 'Usuario creado correctamente.';
         }
         mostrarDialogo.value = false;
         limpiarFormulario();
         await cargar();
+    } catch (error) {
+        severidadMensaje.value = 'error';
+        mensaje.value = construirMensajeError(error, 'No se pudo guardar el usuario.');
     } finally {
         guardando.value = false;
     }
@@ -164,7 +199,24 @@ const guardar = async () => {
 // 4) Cómo editarla: agrega confirmación modal si deseas prevenir borrados accidentales.
 const eliminar = async (registro) => {
     await eliminarUsuarioAdmin(registro.id);
+    severidadMensaje.value = 'success';
+    mensaje.value = 'Usuario desactivado correctamente.';
     await cargar();
+};
+
+const copiarContrasena = async () => {
+    if (!contrasenaCreada.value) {
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(contrasenaCreada.value);
+        severidadMensaje.value = 'info';
+        mensaje.value = 'Contrasena copiada al portapapeles.';
+    } catch {
+        severidadMensaje.value = 'warn';
+        mensaje.value = 'No fue posible copiar la contrasena automaticamente.';
+    }
 };
 
 // 1) Para qué sirve: inicializar la pantalla al montar el componente.
@@ -180,6 +232,29 @@ onMounted(cargar);
             <h1 class="text-2xl font-semibold">Usuarios</h1>
             <Button label="Nuevo usuario" icon="pi pi-plus" @click="nuevo" />
         </div>
+
+        <Message v-if="mensaje" :severity="severidadMensaje" :closable="false">
+            <div class="w-full flex flex-col gap-2">
+                <span>{{ mensaje }}</span>
+                <div class="flex flex-wrap items-center gap-2">
+                    <Tag
+                        v-if="correoEnviado !== null"
+                        :value="correoEnviado ? 'Correo enviado' : 'Correo no enviado'"
+                        :severity="correoEnviado ? 'success' : 'danger'"
+                    />
+                    <Tag v-if="contrasenaCreada" :value="`Contrasena generada: ${contrasenaCreada}`" severity="warn" />
+                    <Button
+                        v-if="contrasenaCreada"
+                        label="Copiar"
+                        icon="pi pi-copy"
+                        size="small"
+                        severity="secondary"
+                        @click="copiarContrasena"
+                    />
+                </div>
+                <small v-if="detalleCorreo" class="text-surface-700 dark:text-surface-200">{{ detalleCorreo }}</small>
+            </div>
+        </Message>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -269,7 +344,7 @@ onMounted(cargar);
                 <div>
                     <label class="block text-sm mb-2">
                         <i class="pi pi-lock mr-1 text-primary"></i>
-                        Contrasena <small class="text-surface-500">(obligatoria en alta, opcional en edicion)</small>
+                        Contrasena <small class="text-surface-500">(opcional: si la dejas vacia se genera automaticamente)</small>
                     </label>
                     <Password v-model="formulario.password" :feedback="false" fluid placeholder="Minimo 8 caracteres" />
                 </div>

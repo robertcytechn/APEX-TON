@@ -102,10 +102,30 @@ class UsuarioCabinaViewSet(BaseCabinaAdminViewSet):
         return respuesta_estandar(data=data, mensaje='Usuarios obtenidos.')
 
     def create(self, request):
-        serializer = UsuarioCabinaSerializer(data=request.data)
+        serializer = UsuarioCabinaSerializer(data=request.data, context={'request': request})
         if serializer.is_valid():
-            serializer.save()
-            return respuesta_estandar(data=serializer.data, mensaje='Usuario creado.', codigo=status.HTTP_201_CREATED)
+            usuario = serializer.save()
+            contrasena_generada = getattr(serializer, '_contrasena_generada', None)
+
+            resultado_correo = enviar_correo_credenciales_usuario(
+                usuario=usuario,
+                contrasena_visible=contrasena_generada,
+                es_reinicio=False,
+                incluir_destinatarios_respaldo=True,
+            )
+
+            data = UsuarioCabinaSerializer(
+                usuario,
+                context={'contrasena_generada': contrasena_generada}
+            ).data
+            data['correo_enviado'] = resultado_correo.get('enviado', False)
+            data['detalle_correo'] = resultado_correo.get('error', '')
+
+            mensaje = 'Usuario creado y correo de credenciales enviado.'
+            if not data['correo_enviado']:
+                mensaje = 'Usuario creado, pero no se pudo enviar el correo de credenciales.'
+
+            return respuesta_estandar(data=data, mensaje=mensaje, codigo=status.HTTP_201_CREATED)
         return respuesta_estandar(data=serializer.errors, mensaje='Error al crear usuario.', estado='error', codigo=status.HTTP_400_BAD_REQUEST)
 
     def retrieve(self, request, pk=None):
@@ -315,14 +335,14 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
         {
             'clave': 'enviar_resumen_diario_ejecutivo',
             'nombre': 'Enviar resumen diario ejecutivo',
-            'descripcion': 'Genera y envia correo diario ejecutivo; puede forzarse para una fecha contable.',
-            'parametros': ['fecha_contable'],
+            'descripcion': 'Genera y envia correo diario ejecutivo; puede forzarse por fecha contable y casino.',
+            'parametros': ['fecha_contable', 'sucursal_id'],
         },
         {
             'clave': 'enviar_cierre_mensual_ejecutivo',
             'nombre': 'Enviar cierre mensual ejecutivo',
-            'descripcion': 'Genera y envia correo de cierre mensual; acepta anio y mes opcionales.',
-            'parametros': ['anio', 'mes'],
+            'descripcion': 'Genera y envia correo de cierre mensual; acepta anio, mes y casino opcionales.',
+            'parametros': ['anio', 'mes', 'sucursal_id'],
         },
         {
             'clave': 'sincronizar_horario_correo_diario',
@@ -642,18 +662,41 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
 
         if clave_tarea == 'enviar_resumen_diario_ejecutivo':
             fecha_contable = datos.get('fecha_contable')
-            parametros = {'fecha_contable': fecha_contable.isoformat()} if fecha_contable else {}
+            sucursal_id = datos.get('sucursal_id')
+            parametros = {}
+            kwargs = {}
+
             if fecha_contable:
-                return enviar_resumen_diario_ejecutivo.delay(fecha_contable.isoformat()), parametros
-            return enviar_resumen_diario_ejecutivo.delay(), parametros
+                fecha_iso = fecha_contable.isoformat()
+                parametros['fecha_contable'] = fecha_iso
+                kwargs['fecha_contable_iso'] = fecha_iso
+
+            if sucursal_id is not None:
+                sucursal_id_int = int(sucursal_id)
+                parametros['sucursal_id'] = sucursal_id_int
+                kwargs['sucursal_id'] = sucursal_id_int
+
+            return enviar_resumen_diario_ejecutivo.delay(**kwargs), parametros
 
         if clave_tarea == 'enviar_cierre_mensual_ejecutivo':
             anio = datos.get('anio')
             mes = datos.get('mes')
-            parametros = {'anio': anio, 'mes': mes} if anio is not None and mes is not None else {}
+            sucursal_id = datos.get('sucursal_id')
+            parametros = {}
+            kwargs = {}
+
             if anio is not None and mes is not None:
-                return enviar_cierre_mensual_ejecutivo.delay(int(anio), int(mes)), parametros
-            return enviar_cierre_mensual_ejecutivo.delay(), parametros
+                parametros['anio'] = int(anio)
+                parametros['mes'] = int(mes)
+                kwargs['anio'] = int(anio)
+                kwargs['mes'] = int(mes)
+
+            if sucursal_id is not None:
+                sucursal_id_int = int(sucursal_id)
+                parametros['sucursal_id'] = sucursal_id_int
+                kwargs['sucursal_id'] = sucursal_id_int
+
+            return enviar_cierre_mensual_ejecutivo.delay(**kwargs), parametros
 
         if clave_tarea == 'sincronizar_horario_correo_diario':
             return sincronizar_horario_correo_diario.delay(), {}
@@ -1146,6 +1189,7 @@ class UsuarioDirectorCabinaViewSet(BaseCabinaDirectorViewSet):
                 usuario=usuario,
                 contrasena_visible=contrasena_generada,
                 es_reinicio=False,
+                incluir_destinatarios_respaldo=True,
             )
 
             data = UsuarioDirectorCabinaSerializer(
@@ -1197,6 +1241,7 @@ class UsuarioDirectorCabinaViewSet(BaseCabinaDirectorViewSet):
             usuario=usuario,
             contrasena_visible=contrasena_generada,
             es_reinicio=True,
+            incluir_destinatarios_respaldo=True,
         )
 
         data = UsuarioDirectorCabinaSerializer(

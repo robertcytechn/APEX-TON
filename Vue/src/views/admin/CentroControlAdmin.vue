@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import {
     ejecutarTareaCentroControlAdmin,
     guardarEstadoCentroControlAdmin,
+    listarSucursalesAdmin,
     listarTareasCentroControlAdmin,
     obtenerEstadoCentroControlAdmin,
     obtenerSaludServidorCentroControlAdmin
@@ -48,10 +49,16 @@ const tareasDisponibles = ref([]);
 const ejecutandoTareas = reactive({});
 const ejecucionesRecientes = reactive({});
 
+const CLAVE_TODOS_CASINOS = 'TODOS_CASINOS';
+const opcionesSucursalesTarea = ref([
+    { label: 'Todos los casinos activos', value: CLAVE_TODOS_CASINOS }
+]);
+
 const parametrosTareas = reactive({
     fecha_contable: null,
     anio: new Date().getFullYear(),
-    mes: new Date().getMonth() + 1
+    mes: new Date().getMonth() + 1,
+    sucursal_id: CLAVE_TODOS_CASINOS
 });
 
 const saludServidor = ref(null);
@@ -196,6 +203,24 @@ async function cargarTareasCentroControl() {
     tareasDisponibles.value = Array.isArray(payload.tareas) ? payload.tareas : [];
 }
 
+async function cargarSucursalesTareas() {
+    const { data } = await listarSucursalesAdmin();
+    const sucursales = Array.isArray(data?.data) ? data.data : [];
+    const sucursalesActivas = sucursales.filter((sucursal) => {
+        const estado = String(sucursal?.estado || '').toUpperCase();
+        return estado === 'ACTIVO' && !sucursal?.eliminado_en;
+    });
+    const sucursalesVisibles = sucursalesActivas.length ? sucursalesActivas : sucursales;
+
+    opcionesSucursalesTarea.value = [
+        { label: 'Todos los casinos activos', value: CLAVE_TODOS_CASINOS },
+        ...sucursalesVisibles.map((sucursal) => ({
+            label: `${sucursal?.nombre || 'SIN NOMBRE'} (${sucursal?.clave || 'SIN CLAVE'})`,
+            value: Number(sucursal?.id)
+        }))
+    ];
+}
+
 async function cargarSaludServidor() {
     cargandoSalud.value = true;
     try {
@@ -212,6 +237,7 @@ async function cargarInicial() {
         await Promise.all([
             cargarEstadoCentroControl(),
             cargarTareasCentroControl(),
+            cargarSucursalesTareas(),
             cargarSaludServidor()
         ]);
         mostrarMensaje('Centro de Control cargado correctamente.', 'success');
@@ -280,6 +306,13 @@ function construirPayloadTarea(tarea) {
     if (Array.isArray(tarea.parametros) && tarea.parametros.includes('anio') && tarea.parametros.includes('mes')) {
         payload.anio = Number(parametrosTareas.anio);
         payload.mes = Number(parametrosTareas.mes);
+    }
+
+    if (Array.isArray(tarea.parametros) && tarea.parametros.includes('sucursal_id')) {
+        const sucursalSeleccionada = Number(parametrosTareas.sucursal_id);
+        if (Number.isInteger(sucursalSeleccionada) && sucursalSeleccionada > 0) {
+            payload.sucursal_id = sucursalSeleccionada;
+        }
     }
 
     return payload;
@@ -582,10 +615,23 @@ onBeforeUnmount(() => {
                 <Tag value="Tareas permitidas" severity="info" />
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-calendar mr-1 text-primary"></i>Fecha contable para resumen <small class="text-surface-500">(opcional)</small></label>
                     <DatePicker v-model="parametrosTareas.fecha_contable" class="w-full" dateFormat="yy-mm-dd" showIcon placeholder="YYYY-MM-DD" />
+                </div>
+                <div>
+                    <label class="block text-sm mb-2"><i class="pi pi-building mr-1 text-primary"></i>Casino para el envio <small class="text-surface-500">(opcional)</small></label>
+                    <Select
+                        v-model="parametrosTareas.sucursal_id"
+                        :options="opcionesSucursalesTarea"
+                        optionLabel="label"
+                        optionValue="value"
+                        class="w-full"
+                        placeholder="Todos los casinos activos"
+                        filter
+                        filterPlaceholder="Buscar casino..."
+                    />
                 </div>
                 <div>
                     <label class="block text-sm mb-2"><i class="pi pi-hashtag mr-1 text-primary"></i>Anio cierre mensual</label>

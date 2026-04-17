@@ -30,14 +30,15 @@ class UsuarioCabinaSerializer(serializers.ModelSerializer):
         help_text='IDs de roles a asignar al usuario.'
     )
     roles = serializers.SerializerMethodField(read_only=True)
+    contrasena_generada = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Usuario
         fields = (
             'id', 'username', 'nombre', 'correo', 'sucursal',
-            'is_active', 'is_staff', 'password', 'roles_ids', 'roles', 'creado_en', 'actualizado_en'
+            'is_active', 'is_staff', 'password', 'roles_ids', 'roles', 'contrasena_generada', 'creado_en', 'actualizado_en'
         )
-        read_only_fields = ('creado_en', 'actualizado_en')
+        read_only_fields = ('creado_en', 'actualizado_en', 'contrasena_generada')
 
     def get_roles(self, obj):
         return [
@@ -47,6 +48,9 @@ class UsuarioCabinaSerializer(serializers.ModelSerializer):
             }
             for usuario_rol in obj.usuario_roles.select_related('rol').all()
         ]
+
+    def get_contrasena_generada(self, obj):
+        return self.context.get('contrasena_generada')
 
     def validate_roles_ids(self, value):
         roles_unicos = list(dict.fromkeys(value or []))
@@ -59,7 +63,13 @@ class UsuarioCabinaSerializer(serializers.ModelSerializer):
         attrs = super().validate(attrs)
         if self.instance is None and not attrs.get('roles_ids'):
             raise serializers.ValidationError({'roles_ids': ['Debes asignar al menos un rol.']})
+        if self.instance is None and not str(attrs.get('correo') or '').strip():
+            raise serializers.ValidationError({'correo': ['El correo electronico es obligatorio para enviar credenciales.']})
         return attrs
+
+    @staticmethod
+    def generar_contrasena_numerica():
+        return ''.join(secrets.choice('0123456789') for _ in range(8))
 
     def _sincronizar_roles(self, usuario, roles_ids):
         if roles_ids is None:
@@ -76,13 +86,15 @@ class UsuarioCabinaSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop('password', None)
         roles_ids = validated_data.pop('roles_ids', None)
+
+        contrasena_generada = str(password or '').strip() or self.generar_contrasena_numerica()
         usuario = Usuario(**validated_data)
-        if password:
-            usuario.set_password(password)
-        else:
-            usuario.set_unusable_password()
+        usuario.requiere_cambio_password = True
+        usuario.set_password(contrasena_generada)
         usuario.save()
         self._sincronizar_roles(usuario, roles_ids)
+
+        self._contrasena_generada = contrasena_generada
         return usuario
 
     def update(self, instance, validated_data):
@@ -340,6 +352,12 @@ class CentroControlEjecucionTareaSerializer(serializers.Serializer):
         max_value=12,
         help_text='Mes opcional para el cierre mensual manual (debe enviarse junto con anio).'
     )
+    sucursal_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        min_value=1,
+        help_text='Casino opcional para limitar el envio a una sola sucursal activa.'
+    )
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
@@ -347,6 +365,7 @@ class CentroControlEjecucionTareaSerializer(serializers.Serializer):
         fecha_contable = attrs.get('fecha_contable')
         anio = attrs.get('anio')
         mes = attrs.get('mes')
+        sucursal_id = attrs.get('sucursal_id')
 
         if tarea != 'enviar_resumen_diario_ejecutivo' and fecha_contable is not None:
             raise serializers.ValidationError({'fecha_contable': 'Solo aplica para la tarea de resumen diario.'})
@@ -356,6 +375,22 @@ class CentroControlEjecucionTareaSerializer(serializers.Serializer):
                 raise serializers.ValidationError({'anio': 'Debes enviar anio y mes juntos para cierre mensual manual.'})
         elif anio is not None or mes is not None:
             raise serializers.ValidationError({'anio': 'Los campos anio y mes solo aplican para cierre mensual manual.'})
+
+        tareas_con_filtro_sucursal = {
+            'enviar_resumen_diario_ejecutivo',
+            'enviar_cierre_mensual_ejecutivo',
+        }
+        if tarea not in tareas_con_filtro_sucursal and sucursal_id is not None:
+            raise serializers.ValidationError({'sucursal_id': 'El filtro de casino solo aplica para resumen diario y cierre mensual.'})
+
+        if sucursal_id is not None:
+            sucursal_valida = Sucursal.objects.filter(
+                id=sucursal_id,
+                eliminado_en__isnull=True,
+                estado=Sucursal.Estado.ACTIVO,
+            ).exists()
+            if not sucursal_valida:
+                raise serializers.ValidationError({'sucursal_id': 'La sucursal seleccionada no existe o no esta activa.'})
 
         return attrs
 

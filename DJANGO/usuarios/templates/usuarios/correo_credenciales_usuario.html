@@ -5,48 +5,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Credenciales de acceso BinsurMX</title>
 </head>
-<body style="margin:0;padding:0;background:#f8fafc;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;background:#f8fafc;">
+<body style="margin:0;padding:0;background:#eef4ff;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:28px 0;background:#eef4ff;">
         <tr>
             <td align="center">
-                <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="max-width:96%;background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;overflow:hidden;">
+                <table role="presentation" width="660" cellspacing="0" cellpadding="0" style="max-width:96%;background:#ffffff;border:1px solid #dbe7ff;border-radius:16px;overflow:hidden;box-shadow:0 18px 45px rgba(15,23,42,.10);">
                     <tr>
-                        <td style="padding:22px 24px;background:linear-gradient(120deg,#0f172a,#0ea5e9);color:#ffffff;font-family:Segoe UI,Tahoma,sans-serif;">
-                            <div style="font-size:12px;letter-spacing:.12em;text-transform:uppercase;opacity:.9;">BinsurMX</div>
-                            <h1 style="margin:8px 0 0 0;font-size:26px;line-height:1.2;">Credenciales de acceso</h1>
+                        <td style="padding:24px 26px;background:linear-gradient(132deg,#0f172a 0%,#1e3a8a 55%,#0ea5e9 100%);color:#ffffff;font-family:Segoe UI,Tahoma,sans-serif;">
+                            <div style="font-size:12px;letter-spacing:.16em;text-transform:uppercase;opacity:.88;">BinsurMX</div>
+                            <h1 style="margin:9px 0 2px 0;font-size:28px;line-height:1.2;">{% if es_reinicio %}Reinicio de acceso{% else %}Bienvenido a BinsurMX{% endif %}</h1>
+                            <p style="margin:0;font-size:14px;line-height:1.45;color:#dbeafe;">
+                                {% if es_reinicio %}
+                                Tu contraseña fue restablecida. Usa las nuevas credenciales para entrar.
+                                {% else %}
+                                Tu cuenta fue creada correctamente. Este correo contiene tus datos de acceso inicial.
+                                {% endif %}
+                            </p>
                         </td>
                     </tr>
                     <tr>
-                        <td style="padding:22px 24px;font-family:Segoe UI,Tahoma,sans-serif;color:#0f172a;">
-                            <p style="margin:0 0 12px 0;">Hola <strong>{{ nombre_usuario }}</strong>,</p>
+                        <td style="padding:24px 26px;font-family:Segoe UI,Tahoma,sans-serif;color:#0f172a;">
+                            <p style="margin:0 0 14px 0;font-size:15px;line-height:1.5;">Hola <strong>{{ nombre_usuario }}</strong>,</p>
 
-                            {% if es_reinicio %}
-                            <p style="margin:0 0 12px 0;">Tu acceso a BinsurMX fue reiniciado por un director. Usa las siguientes credenciales para entrar.</p>
-                            {% else %}
-                            <p style="margin:0 0 12px 0;">Bienvenido a BinsurMX. Tu usuario fue creado correctamente.</p>
-                            {% endif %}
-
-                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e2e8f0;border-radius:10px;margin:14px 0;">
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #dbe7ff;border-radius:12px;margin:16px 0 18px 0;overflow:hidden;">
                                 <tr>
-                                    <td style="padding:12px 14px;font-size:14px;border-bottom:1px solid #e2e8f0;">
-                                        <strong>Usuario:</strong> {{ username }}
+                                    <td colspan="2" style="padding:11px 14px;background:#eff6ff;color:#1e3a8a;font-size:13px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;">
+                                        Metricas de Acceso
                                     </td>
                                 </tr>
                                 <tr>
-                                    <td style="padding:12px 14px;font-size:14px;">
-                                        <strong>Contrasena:</strong> {{ contrasena_visible }}
+                                    <td style="width:38%;padding:11px 14px;border-top:1px solid #e5edff;font-size:13px;color:#475569;">Nombre completo</td>
+                                    <td style="padding:11px 14px;border-top:1px solid #e5edff;font-size:14px;font-weight:600;color:#0f172a;">{{ nombre_completo }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:11px 14px;border-top:1px solid #e5edff;font-size:13px;color:#475569;">Usuario de acceso</td>
+                                    <td style="padding:11px 14px;border-top:1px solid #e5edff;font-size:14px;font-weight:600;color:#0f172a;">{{ username }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:11px 14px;border-top:1px solid #e5edff;font-size:13px;color:#475569;">{% if es_reinicio %}Nueva contrasena{% else %}Contrasena inicial{% endif %}</td>
+                                    <td style="padding:11px 14px;border-top:1px solid #e5edff;font-size:15px;font-weight:700;color:#be123c;letter-spacing:.04em;">{{ contrasena_visible }}</td>
+                                </tr>
+                                <tr>
+                                    <td style="padding:11px 14px;border-top:1px solid #e5edff;font-size:13px;color:#475569;">Casino asignado</td>
+                                    <td style="padding:11px 14px;border-top:1px solid #e5edff;font-size:14px;font-weight:600;color:#0f172a;">{{ casino_asignado }}</td>
+                                </tr>
+                            </table>
+
+                            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 16px 0;">
+                                <tr>
+                                    <td style="padding:0 0 8px 0;font-size:13px;color:#475569;">Enlaces de acceso</td>
+                                </tr>
+                                <tr>
+                                    <td>
+                                        <a href="{{ enlace_dashboard }}" style="display:inline-block;margin:0 10px 8px 0;padding:10px 14px;background:#0ea5e9;color:#ffffff;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">Abrir BinsurMX</a>
+                                        <a href="{{ enlace_login }}" style="display:inline-block;margin:0 0 8px 0;padding:10px 14px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:13px;font-weight:700;">Ir a Login</a>
                                     </td>
                                 </tr>
                             </table>
 
-                            <p style="margin:0 0 8px 0;font-size:14px;">Enlaces de acceso:</p>
-                            <ul style="margin:0 0 14px 18px;padding:0;">
-                                <li style="margin:0 0 6px 0;"><a href="{{ enlace_dashboard }}" style="color:#0284c7;">Dashboard</a></li>
-                                <li style="margin:0;"><a href="{{ enlace_login }}" style="color:#0284c7;">Login</a></li>
-                            </ul>
-
-                            <div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:10px;padding:12px 14px;font-size:13px;">
-                                Debes iniciar sesion y cambiar tu contrasena de inmediato desde tu perfil.
+                            <div style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:10px;padding:12px 14px;font-size:13px;line-height:1.45;">
+                                Por seguridad, cambia tu contraseña inmediatamente después de iniciar sesión por primera vez.
                             </div>
 
                             <p style="margin:16px 0 0 0;font-size:13px;color:#475569;">Equipo BinsurMX</p>

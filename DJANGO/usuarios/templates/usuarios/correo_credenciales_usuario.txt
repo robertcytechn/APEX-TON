@@ -1,17 +1,19 @@
 Hola {{ nombre_usuario }},
 
 {% if es_reinicio %}
-Tu acceso a BinsurMX fue reiniciado por un director.
+Tu acceso a BinsurMX fue reiniciado.
 {% else %}
 Bienvenido a BinsurMX. Tu usuario fue creado correctamente.
 {% endif %}
 
-Credenciales de acceso:
+Metricas de acceso:
+- Nombre completo: {{ nombre_completo }}
 - Usuario: {{ username }}
-- Contrasena: {{ contrasena_visible }}
+- {% if es_reinicio %}Nueva contrasena{% else %}Contrasena inicial{% endif %}: {{ contrasena_visible }}
+- Casino asignado: {{ casino_asignado }}
 
 Enlaces:
-- Dashboard: {{ enlace_dashboard }}
+- BinsurMX: {{ enlace_dashboard }}
 - Login: {{ enlace_login }}
 
 Importante:

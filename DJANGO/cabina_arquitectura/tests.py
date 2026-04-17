@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from configuraciones_globales.models import ConfiguracionGlobal
+from sucursales.models import Sucursal
 from usuarios.models import Rol, Usuario, UsuarioRol
 
 
@@ -30,6 +31,11 @@ class CabinaArquitecturaTests(APITestCase):
             is_active=True,
         )
         UsuarioRol.objects.create(usuario=self.usuario_director, rol=self.rol_director)
+
+        self.sucursal_centro_control = Sucursal.objects.create(
+            nombre='Casino Centro Control',
+            clave='CCC-001',
+        )
 
     def test_director_solo_lista_variables_visibles(self):
         ConfiguracionGlobal.objects.create(
@@ -231,6 +237,167 @@ class CabinaArquitecturaTests(APITestCase):
 
         self.assertEqual(respuesta.status_code, status.HTTP_202_ACCEPTED)
         self.assertEqual((respuesta.data.get('data') or {}).get('task_id'), 'task-789')
+
+    @patch('cabina_arquitectura.views.CentroControlAdminViewSet._obtener_diagnostico_celery_basico')
+    @patch('cabina_arquitectura.views.CentroControlAdminViewSet._encolar_tarea')
+    def test_admin_ejecuta_tarea_manual_con_filtro_casino(self, mock_encolar_tarea, mock_diagnostico_celery):
+        mock_encolar_tarea.return_value = (
+            SimpleNamespace(id='task-casino-001'),
+            {
+                'fecha_contable': '2026-04-16',
+                'sucursal_id': self.sucursal_centro_control.id,
+            }
+        )
+        mock_diagnostico_celery.return_value = {
+            'ok': True,
+            'workers': ['worker@binsur'],
+            'workers_detectados': 1,
+            'broker_url': 'amqp://usuario:***@127.0.0.1:5672//',
+            'broker_host': '127.0.0.1',
+            'broker_puerto': 5672,
+            'broker_alcanzable': True,
+            'mensaje': 'Workers Celery en linea.',
+        }
+
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/centro-control/ejecutar-tarea/'
+        payload = {
+            'tarea': 'enviar_resumen_diario_ejecutivo',
+            'fecha_contable': '2026-04-16',
+            'sucursal_id': self.sucursal_centro_control.id,
+        }
+
+        respuesta = self.client.post(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_202_ACCEPTED)
+        self.assertEqual(respuesta.data.get('status'), 'success')
+        parametros = (respuesta.data.get('data') or {}).get('parametros') or {}
+        self.assertEqual(parametros.get('sucursal_id'), self.sucursal_centro_control.id)
+
+        mock_encolar_tarea.assert_called_once()
+        llamada_args = mock_encolar_tarea.call_args[0]
+        self.assertEqual(llamada_args[0], 'enviar_resumen_diario_ejecutivo')
+        self.assertEqual(llamada_args[1].get('sucursal_id'), self.sucursal_centro_control.id)
+
+    def test_admin_rechaza_filtro_casino_en_tarea_no_compatible(self):
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/centro-control/ejecutar-tarea/'
+        payload = {
+            'tarea': 'ejecutar_backup_bd',
+            'sucursal_id': self.sucursal_centro_control.id,
+        }
+
+        respuesta = self.client.post(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(respuesta.data.get('status'), 'error')
+        self.assertIn('sucursal_id', (respuesta.data.get('data') or {}))
+
+    @patch('cabina_arquitectura.views.enviar_correo_credenciales_usuario')
+    def test_director_crea_usuario_y_envia_correo_con_respaldo(self, mock_enviar_correo):
+        mock_enviar_correo.return_value = {'enviado': True, 'error': ''}
+
+        rol_contador = Rol.objects.create(nombre='CONTADOR')
+        self.client.force_authenticate(user=self.usuario_director)
+
+        url = '/api/cabina-arquitectura/director/usuarios/'
+        payload = {
+            'username': 'conta_prueba_mail',
+            'nombre': 'Contador Prueba Mail',
+            'correo': 'conta_prueba_mail@binsur.mx',
+            'sucursal': self.sucursal_centro_control.id,
+            'rol': rol_contador.id,
+            'is_active': True,
+        }
+
+        respuesta = self.client.post(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(respuesta.data.get('status'), 'success')
+        self.assertTrue((respuesta.data.get('data') or {}).get('correo_enviado'))
+
+        mock_enviar_correo.assert_called_once()
+        kwargs = mock_enviar_correo.call_args.kwargs
+        self.assertTrue(kwargs.get('incluir_destinatarios_respaldo'))
+        self.assertFalse(kwargs.get('es_reinicio'))
+
+    @patch('cabina_arquitectura.views.enviar_correo_credenciales_usuario')
+    def test_admin_crea_usuario_y_envia_correo_con_respaldo(self, mock_enviar_correo):
+        mock_enviar_correo.return_value = {'enviado': True, 'error': ''}
+
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/usuarios/'
+        payload = {
+            'username': 'admin_alta_mail',
+            'nombre': 'Administrador Alta Mail',
+            'correo': 'admin_alta_mail@binsur.mx',
+            'roles_ids': [self.rol_director.id],
+            'is_active': True,
+            'is_staff': True,
+        }
+
+        respuesta = self.client.post(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(respuesta.data.get('status'), 'success')
+
+        data = respuesta.data.get('data') or {}
+        self.assertTrue(data.get('correo_enviado'))
+        self.assertTrue(str(data.get('contrasena_generada') or '').strip())
+
+        mock_enviar_correo.assert_called_once()
+        kwargs = mock_enviar_correo.call_args.kwargs
+        self.assertTrue(kwargs.get('incluir_destinatarios_respaldo'))
+        self.assertFalse(kwargs.get('es_reinicio'))
+
+    def test_admin_no_puede_crear_usuario_sin_correo(self):
+        self.client.force_authenticate(user=self.usuario_admin)
+        url = '/api/cabina-arquitectura/usuarios/'
+        payload = {
+            'username': 'admin_sin_correo',
+            'nombre': 'Administrador Sin Correo',
+            'roles_ids': [self.rol_director.id],
+            'is_active': True,
+            'is_staff': False,
+        }
+
+        respuesta = self.client.post(url, payload, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(respuesta.data.get('status'), 'error')
+        self.assertIn('correo', (respuesta.data.get('data') or {}))
+
+    @patch('cabina_arquitectura.views.enviar_correo_credenciales_usuario')
+    def test_director_reinicia_password_y_envia_correo_con_respaldo(self, mock_enviar_correo):
+        mock_enviar_correo.return_value = {'enviado': True, 'error': ''}
+
+        rol_contador = Rol.objects.create(nombre='CONTADOR')
+        usuario_operativo = Usuario.objects.create_user(
+            username='operativo_reinicio_mail',
+            password='temporal1234',
+            nombre='Operativo Reinicio Mail',
+            correo='operativo_reinicio_mail@binsur.mx',
+            is_active=True,
+            sucursal=self.sucursal_centro_control,
+        )
+        UsuarioRol.objects.create(usuario=usuario_operativo, rol=rol_contador)
+
+        self.client.force_authenticate(user=self.usuario_director)
+        url = f'/api/cabina-arquitectura/director/usuarios/{usuario_operativo.id}/reiniciar-password/'
+
+        respuesta = self.client.post(url, {}, format='json')
+
+        self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+        self.assertEqual(respuesta.data.get('status'), 'success')
+
+        data = respuesta.data.get('data') or {}
+        self.assertTrue(data.get('correo_enviado'))
+        self.assertTrue(str(data.get('contrasena_generada') or '').strip())
+
+        mock_enviar_correo.assert_called_once()
+        kwargs = mock_enviar_correo.call_args.kwargs
+        self.assertTrue(kwargs.get('incluir_destinatarios_respaldo'))
+        self.assertTrue(kwargs.get('es_reinicio'))
 
     def test_admin_consulta_estado_tarea_sin_task_id(self):
         self.client.force_authenticate(user=self.usuario_admin)

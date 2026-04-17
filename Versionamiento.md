@@ -1,6 +1,26 @@
-Version del sistema: 2.32.0
+Version del sistema: 2.36.0
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-17
+- Version: 2.36.0
+- Autor: Cy tamayo
+- Descripcion: Se implemento un sistema global de retroalimentacion visual con Toasts en frontend (PrimeVue) para todas las operaciones mutables consumidas por Axios (POST/PUT/PATCH/DELETE), incluyendo extraccion robusta del mensaje real del backend para exito y error con soporte para estructura estandar `status/message/data`, errores DRF por campo, `non_field_errors` y respuestas con `detail`; ademas se globalizo el contenedor de notificaciones en la raiz de la aplicacion para cubrir rutas de cabina, reportes y autenticacion.
+
+- Fecha: 2026-04-17
+- Version: 2.35.0
+- Autor: Cy tamayo
+- Descripcion: Se extendio el envio de credenciales para que el reinicio de contrasena en cabina Director tambien incluya copia a destinatarios de respaldo configurados en `ConfiguracionGlobal` (`DESTINATARIO_BACKUP`); ademas se redisenaron las plantillas de correo (HTML y texto) para mostrar una bienvenida ejecutiva con metricas de acceso (nombre completo, usuario, contrasena y casino asignado) y enlaces de acceso publicos de BinsurMX.
+
+- Fecha: 2026-04-17
+- Version: 2.34.0
+- Autor: Cy tamayo
+- Descripcion: Se homologo el alta de usuarios entre cabina Director y cabina Arquitectura para envio de credenciales por correo al usuario nuevo con copia adicional a destinatarios de respaldo configurados en `ConfiguracionGlobal` (`DESTINATARIO_BACKUP`); en Arquitectura se agrego generacion automatica de contrasena cuando no se captura, respuesta API con estado de envio y ajuste visual en frontend para mostrar contrasena generada y resultado del correo.
+
+- Fecha: 2026-04-17
+- Version: 2.33.0
+- Autor: Cy tamayo
+- Descripcion: Se agrego filtro opcional por casino (`sucursal_id`) en los gatillos manuales de Celery del Centro de Control para resumen diario ejecutivo y cierre mensual, incluyendo validacion backend de sucursal activa y selector en frontend; adicionalmente se estandarizo el nombre de adjuntos PDF/Excel para envios diarios y mensuales incorporando casino + fecha + hora de generacion para trazabilidad por archivo.
 
 - Fecha: 2026-04-17
 - Version: 2.32.0
@@ -228,6 +248,14 @@ Version del sistema: 2.32.0
 - Descripcion: Se normalizo el campo padre de rubros contables a un catalogo dinamico con tabla propia, migracion de datos conservando relaciones existentes, nuevos endpoints CRUD de padres y ajuste de serializers/views para operar padres por id o clave sin perder compatibilidad de consumo.
 
 ## Cambios Menores
+
+- Fecha: 2026-04-17
+- Autor: Cy tamayo
+- Descripcion: Se actualizo la deteccion de `mysqldump` para respaldo BD en `reportes_diarios/tareas.py` incluyendo rutas de MySQL 8.1/8.4 y busqueda dinamica en `Program Files`/`Program Files (x86)`; ademas se agrego `MYSQLDUMP_PATH` en `.env.example` para fijar ruta explicita en servidor Windows.
+
+- Fecha: 2026-04-17
+- Autor: Cy tamayo
+- Descripcion: Se desacoplo la resolucion de destinatarios en `reportes_diarios/tareas.py` para que `ejecutar_backup_bd` no importe `servicios_resumenes_correo` (y por ende no dependa de `openpyxl`) durante su arranque; ahora usa utilidades locales de lectura y normalizacion de correos desde `ConfiguracionGlobal`.
 
 - Fecha: 2026-04-17
 - Autor: Cy tamayo

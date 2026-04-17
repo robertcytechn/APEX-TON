@@ -221,29 +221,72 @@ def _cerrar_mes_automatico(sucursal, anio, mes, tc_usd, tc_eur):
 # 2) Cómo funciona: toma destinatarios globales desde ConfiguracionGlobal y opcionalmente agrega correo de sucursal.
 # 3) Qué hace: unifica la fuente de destinatarios para tareas diarias y mensuales.
 # 4) Cómo editarla: cambia la clave/flag en configuracion_correos_ejecutivos.py sin tocar lógica de tareas.
+def _normalizar_destinatarios_local(destinatarios):
+    if not destinatarios:
+        return []
+
+    vistos = set()
+    resultado = []
+
+    for destinatario in destinatarios:
+        correo = str(destinatario or '').strip()
+        if not correo or '@' not in correo:
+            continue
+
+        llave = correo.lower()
+        if llave in vistos:
+            continue
+
+        vistos.add(llave)
+        resultado.append(correo)
+
+    return resultado
+
+
+# 1) Para qué sirve: leer destinatarios desde ConfiguracionGlobal sin dependencias pesadas.
+# 2) Cómo funciona: parsea listas o texto separado por coma/punto y coma/salto de línea.
+# 3) Qué hace: permite resolver correos para tareas operativas aunque falten librerías de reportes.
+# 4) Cómo editarla: cambia clave por defecto si negocio redefine la configuración de correos.
+def _obtener_destinatarios_globales_configurados_local(clave_configuracion='DESTINATARIOS_CORREOS'):
+    from configuraciones_globales.models import ConfiguracionGlobal
+
+    configuracion = ConfiguracionGlobal.objects.filter(clave=clave_configuracion).first()
+    if not configuracion:
+        return []
+
+    valor_configurado = configuracion.valor_tipado
+    if valor_configurado in (None, ''):
+        return []
+
+    if isinstance(valor_configurado, (list, tuple, set)):
+        candidatos = [str(item or '').strip() for item in valor_configurado]
+        return _normalizar_destinatarios_local(candidatos)
+
+    texto = str(valor_configurado)
+    separador_unificado = texto.replace('\n', ',').replace(';', ',')
+    candidatos = [segmento.strip() for segmento in separador_unificado.split(',')]
+    return _normalizar_destinatarios_local(candidatos)
+
+
 def _resolver_destinatarios_correos_ejecutivos(sucursal):
     from reportes_diarios.configuracion_correos_ejecutivos import (
         CLAVE_CONFIG_DESTINATARIOS_CORREOS,
         INCLUIR_CORREO_SUCURSAL_EN_ENVIO,
     )
-    from reportes_diarios.servicios_resumenes_correo import (
-        normalizar_destinatarios,
-        obtener_destinatarios_globales_configurados,
-    )
 
-    destinatarios = obtener_destinatarios_globales_configurados(CLAVE_CONFIG_DESTINATARIOS_CORREOS)
+    destinatarios = _obtener_destinatarios_globales_configurados_local(CLAVE_CONFIG_DESTINATARIOS_CORREOS)
     if INCLUIR_CORREO_SUCURSAL_EN_ENVIO and getattr(sucursal, 'correo', None):
         destinatarios.append(sucursal.correo)
 
-    return normalizar_destinatarios(destinatarios)
+    return _normalizar_destinatarios_local(destinatarios)
 
 
 # 1) Para qué sirve: enviar automáticamente el resumen diario ejecutivo por cada sucursal activa.
 # 2) Cómo funciona: construye paquete por sucursal, toma destinatarios globales y envía con una conexión SMTP compartida.
 # 3) Qué hace: materializa el envío diario sin requerir ejecución manual del comando.
-# 4) Cómo editarla: ajusta filtros de sucursal o payload de tarea manteniendo esta rutina idempotente.
+# 4) Cómo editarla: permite filtro por casino con sucursal_id sin romper el envío masivo.
 @shared_task(bind=True, name='reportes_diarios.enviar_resumen_diario_ejecutivo', max_retries=2)
-def enviar_resumen_diario_ejecutivo(self, fecha_contable_iso=None):
+def enviar_resumen_diario_ejecutivo(self, fecha_contable_iso=None, sucursal_id=None):
     from datetime import date
 
     from reportes_diarios.servicios_resumenes_correo import (
@@ -257,20 +300,28 @@ def enviar_resumen_diario_ejecutivo(self, fecha_contable_iso=None):
     else:
         fecha_contable = timezone.localdate() - timezone.timedelta(days=1)
 
-    sucursales = obtener_sucursales_objetivo()
+    filtro_sucursal_id = None
+    if sucursal_id is not None and str(sucursal_id).strip() != '':
+        filtro_sucursal_id = int(sucursal_id)
+
+    sucursales_ids = [filtro_sucursal_id] if filtro_sucursal_id else None
+    sucursales = obtener_sucursales_objetivo(sucursal_ids=sucursales_ids)
     if not sucursales:
         logger.info('[CORREO DIARIO] No hay sucursales activas para procesar.')
         return {
             'fecha_contable': str(fecha_contable),
+            'sucursal_id_filtro': filtro_sucursal_id,
             'sucursales_procesadas': 0,
             'mensajes_enviados': 0,
             'sucursales_omitidas': 0,
+            'adjuntos_generados_total': 0,
             'errores': [],
         }
 
     conexion = get_connection(fail_silently=False)
     mensajes_enviados = 0
     sucursales_omitidas = 0
+    adjuntos_generados_total = 0
     errores = []
 
     for sucursal in sucursales:
@@ -285,6 +336,7 @@ def enviar_resumen_diario_ejecutivo(self, fecha_contable_iso=None):
                 sucursal=sucursal,
                 fecha_contable=fecha_contable,
             )
+            adjuntos_generados_total += len(paquete.get('adjuntos') or [])
             resultado = enviar_paquete_correo(
                 paquete_correo=paquete,
                 destinatarios=destinatarios,
@@ -299,9 +351,11 @@ def enviar_resumen_diario_ejecutivo(self, fecha_contable_iso=None):
 
     resumen = {
         'fecha_contable': str(fecha_contable),
+        'sucursal_id_filtro': filtro_sucursal_id,
         'sucursales_procesadas': len(sucursales),
         'mensajes_enviados': mensajes_enviados,
         'sucursales_omitidas': sucursales_omitidas,
+        'adjuntos_generados_total': int(adjuntos_generados_total),
         'errores': errores,
     }
     logger.info(f"[CORREO DIARIO] Finalizado: {resumen}")
@@ -311,9 +365,9 @@ def enviar_resumen_diario_ejecutivo(self, fecha_contable_iso=None):
 # 1) Para qué sirve: enviar automáticamente el cierre mensual ejecutivo por sucursal.
 # 2) Cómo funciona: determina periodo objetivo (mes anterior por defecto), construye paquetes y envía por SMTP.
 # 3) Qué hace: automatiza el correo de cierre del 1er día de cada mes.
-# 4) Cómo editarla: permite forzar periodo con anio/mes al ejecutar la tarea manualmente.
+# 4) Cómo editarla: permite forzar periodo y filtrar un casino específico desde Centro de Control.
 @shared_task(bind=True, name='reportes_diarios.enviar_cierre_mensual_ejecutivo', max_retries=2)
-def enviar_cierre_mensual_ejecutivo(self, anio=None, mes=None):
+def enviar_cierre_mensual_ejecutivo(self, anio=None, mes=None, sucursal_id=None):
     from reportes_diarios.servicios_resumenes_correo import (
         construir_paquete_correo_cierre_mensual_ejecutivo,
         enviar_paquete_correo,
@@ -324,20 +378,28 @@ def enviar_cierre_mensual_ejecutivo(self, anio=None, mes=None):
     if anio is None or mes is None:
         anio, mes = obtener_periodo_mes_anterior()
 
-    sucursales = obtener_sucursales_objetivo()
+    filtro_sucursal_id = None
+    if sucursal_id is not None and str(sucursal_id).strip() != '':
+        filtro_sucursal_id = int(sucursal_id)
+
+    sucursales_ids = [filtro_sucursal_id] if filtro_sucursal_id else None
+    sucursales = obtener_sucursales_objetivo(sucursal_ids=sucursales_ids)
     if not sucursales:
         logger.info('[CORREO MENSUAL] No hay sucursales activas para procesar.')
         return {
             'periodo': f"{int(anio)}-{int(mes):02d}",
+            'sucursal_id_filtro': filtro_sucursal_id,
             'sucursales_procesadas': 0,
             'mensajes_enviados': 0,
             'sucursales_omitidas': 0,
+            'adjuntos_generados_total': 0,
             'errores': [],
         }
 
     conexion = get_connection(fail_silently=False)
     mensajes_enviados = 0
     sucursales_omitidas = 0
+    adjuntos_generados_total = 0
     errores = []
 
     for sucursal in sucursales:
@@ -353,6 +415,7 @@ def enviar_cierre_mensual_ejecutivo(self, anio=None, mes=None):
                 anio=int(anio),
                 mes=int(mes),
             )
+            adjuntos_generados_total += len(paquete.get('adjuntos') or [])
             resultado = enviar_paquete_correo(
                 paquete_correo=paquete,
                 destinatarios=destinatarios,
@@ -367,9 +430,11 @@ def enviar_cierre_mensual_ejecutivo(self, anio=None, mes=None):
 
     resumen = {
         'periodo': f"{int(anio)}-{int(mes):02d}",
+        'sucursal_id_filtro': filtro_sucursal_id,
         'sucursales_procesadas': len(sucursales),
         'mensajes_enviados': mensajes_enviados,
         'sucursales_omitidas': sucursales_omitidas,
+        'adjuntos_generados_total': int(adjuntos_generados_total),
         'errores': errores,
     }
     logger.info(f"[CORREO MENSUAL] Finalizado: {resumen}")
@@ -524,9 +589,28 @@ def _resolver_ruta_mysqldump():
 
     rutas_candidatas = [
         Path('C:/xampp/mysql/bin/mysqldump.exe'),
+        Path('C:/Program Files/MySQL/MySQL Server 8.1/bin/mysqldump.exe'),
         Path('C:/Program Files/MySQL/MySQL Server 8.0/bin/mysqldump.exe'),
+        Path('C:/Program Files/MySQL/MySQL Server 8.4/bin/mysqldump.exe'),
+        Path('C:/Program Files (x86)/MySQL/MySQL Server 8.1/bin/mysqldump.exe'),
+        Path('C:/Program Files (x86)/MySQL/MySQL Server 8.0/bin/mysqldump.exe'),
     ]
+
+    bases_mysql = [
+        Path('C:/Program Files/MySQL'),
+        Path('C:/Program Files (x86)/MySQL'),
+    ]
+    for base_mysql in bases_mysql:
+        if base_mysql.exists():
+            rutas_candidatas.extend(base_mysql.glob('MySQL Server */bin/mysqldump.exe'))
+
+    rutas_vistas = set()
     for ruta_candidata in rutas_candidatas:
+        clave_ruta = str(ruta_candidata).lower().strip()
+        if not clave_ruta or clave_ruta in rutas_vistas:
+            continue
+
+        rutas_vistas.add(clave_ruta)
         if ruta_candidata.exists():
             return str(ruta_candidata)
 
@@ -543,10 +627,6 @@ def _resolver_destinatarios_respaldo_bd():
         CLAVE_CONFIG_DESTINATARIOS_CORREOS,
         CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD,
     )
-    from reportes_diarios.servicios_resumenes_correo import (
-        normalizar_destinatarios,
-        obtener_destinatarios_globales_configurados,
-    )
 
     claves_respaldo = [
         str(CLAVE_CONFIG_DESTINATARIOS_RESPALDO_BD or '').strip(),
@@ -558,12 +638,12 @@ def _resolver_destinatarios_respaldo_bd():
     for clave_respaldo in claves_respaldo:
         if not clave_respaldo:
             continue
-        destinatarios = obtener_destinatarios_globales_configurados(clave_respaldo)
+        destinatarios = _obtener_destinatarios_globales_configurados_local(clave_respaldo)
         if destinatarios:
             break
 
     if not destinatarios:
-        destinatarios = obtener_destinatarios_globales_configurados(CLAVE_CONFIG_DESTINATARIOS_CORREOS)
+        destinatarios = _obtener_destinatarios_globales_configurados_local(CLAVE_CONFIG_DESTINATARIOS_CORREOS)
 
     if not destinatarios:
         correo_fallback = str(
@@ -574,7 +654,7 @@ def _resolver_destinatarios_respaldo_bd():
         if correo_fallback and '@' in correo_fallback:
             destinatarios = [correo_fallback]
 
-    return normalizar_destinatarios(destinatarios)
+    return _normalizar_destinatarios_local(destinatarios)
 
 
 # 1) Para que sirve: comprimir el .sql de respaldo para reducir peso de adjunto.

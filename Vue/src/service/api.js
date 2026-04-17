@@ -1,5 +1,6 @@
 import axios from 'axios';
 import router from '@/router';
+import { procesarErrorConToast, procesarRespuestaExitosaConToast } from '@/service/notificacionesApi';
 
 // Configuracion de URL base para la API.
 // Si no se define VITE_API_BASE_URL:
@@ -76,7 +77,10 @@ api.interceptors.request.use(async (config) => {
 });
 
 api.interceptors.response.use(
-    (response) => response,
+    (response) => {
+        procesarRespuestaExitosaConToast(response);
+        return response;
+    },
     async (error) => {
         const estatus = error?.response?.status;
         const rutaActual = router.currentRoute.value.path;
@@ -94,6 +98,8 @@ api.interceptors.response.use(
             await router.replace('/auth/login');
             redireccionandoLogin = false;
         }
+
+        procesarErrorConToast(error);
 
         return Promise.reject(error);
     }

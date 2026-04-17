@@ -98,6 +98,14 @@ def _nombre_mes(numero_mes):
     return nombres.get(int(numero_mes or 0), 'mes_desconocido')
 
 
+# 1) Para que sirve: generar marca de tiempo estable para nombres de archivos adjuntos.
+# 2) Como funciona: toma hora local del servidor y devuelve formato YYYYMMDD_HHMMSS.
+# 3) Que hace: evita colisiones y mejora trazabilidad por casino en correos ejecutivos.
+# 4) Como editarla: ajusta el formato solo si negocio cambia estandar de nomenclatura.
+def _generar_marca_tiempo_archivo():
+    return timezone.localtime(timezone.now()).strftime('%Y%m%d_%H%M%S')
+
+
 # 1) Para que sirve: limpiar y deduplicar lista de destinatarios de correo.
 # 2) Como funciona: recorta espacios, valida minimo y elimina repetidos conservando orden.
 # 3) Que hace: evita envios duplicados o direcciones vacias.
@@ -1105,15 +1113,16 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
 
     sucursal_slug = slugify(sucursal.nombre or f'sucursal_{sucursal.id}') or f'sucursal_{sucursal.id}'
     fecha_slug = fecha_objetivo.strftime('%Y%m%d')
+    marca_tiempo_archivo = _generar_marca_tiempo_archivo()
 
     adjuntos = [
         {
-            'nombre': f"reporte_diario_{sucursal_slug}_{fecha_slug}.xlsx",
+            'nombre': f"reporte_diario_{sucursal_slug}_{fecha_slug}_{marca_tiempo_archivo}.xlsx",
             'contenido': generar_excel_libro_operativo(datos_libro),
             'mime': MIME_EXCEL,
         },
         {
-            'nombre': f"reporte_diario_{sucursal_slug}_{fecha_slug}.pdf",
+            'nombre': f"reporte_diario_{sucursal_slug}_{fecha_slug}_{marca_tiempo_archivo}.pdf",
             'contenido': generar_pdf_libro_operativo(datos_libro),
             'mime': MIME_PDF,
         },
@@ -1126,6 +1135,7 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
         'sucursal_id': sucursal.id,
         'sucursal_nombre': sucursal.nombre,
         'periodo': fecha_objetivo.isoformat(),
+        'marca_tiempo_archivo': marca_tiempo_archivo,
         'asunto': asunto,
         'texto': cuerpo_texto,
         'html': cuerpo_html,
@@ -1205,15 +1215,16 @@ def construir_paquete_correo_cierre_mensual_ejecutivo(sucursal, anio=None, mes=N
 
     sucursal_slug = slugify(sucursal.nombre or f'sucursal_{sucursal.id}') or f'sucursal_{sucursal.id}'
     periodo_slug = f"{int(anio)}{int(mes):02d}"
+    marca_tiempo_archivo = _generar_marca_tiempo_archivo()
 
     adjuntos = [
         {
-            'nombre': f"cierre_mensual_{sucursal_slug}_{periodo_slug}.xlsx",
+            'nombre': f"cierre_mensual_{sucursal_slug}_{periodo_slug}_{marca_tiempo_archivo}.xlsx",
             'contenido': generar_excel_cierre_mensual(datos_mensuales),
             'mime': MIME_EXCEL,
         },
         {
-            'nombre': f"cierre_mensual_{sucursal_slug}_{periodo_slug}.pdf",
+            'nombre': f"cierre_mensual_{sucursal_slug}_{periodo_slug}_{marca_tiempo_archivo}.pdf",
             'contenido': generar_pdf_cierre_mensual(datos_mensuales),
             'mime': MIME_PDF,
         },
@@ -1226,6 +1237,7 @@ def construir_paquete_correo_cierre_mensual_ejecutivo(sucursal, anio=None, mes=N
         'sucursal_id': sucursal.id,
         'sucursal_nombre': sucursal.nombre,
         'periodo': f"{int(anio)}-{int(mes):02d}",
+        'marca_tiempo_archivo': marca_tiempo_archivo,
         'asunto': asunto,
         'texto': cuerpo_texto,
         'html': cuerpo_html,
