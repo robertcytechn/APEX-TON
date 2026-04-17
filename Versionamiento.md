@@ -231,6 +231,10 @@ Version del sistema: 2.32.0
 
 - Fecha: 2026-04-17
 - Autor: Cy tamayo
+- Descripcion: Se corrigio bootstrap de Celery en servidor para evitar `AppRegistryNotReady` y fallas al resolver `-A backend`: en `backend/celery.py` se elimino autodiscovery forzado, se agrego import explicito de tareas (`reportes_diarios.tasks` y `reportes_diarios.tareas`), en `backend/__init__.py` se expuso `app/celery` y en `scripts/iniciar_servicios_binsurmq.ps1` se actualizo worker/beat para ejecutar `python -m celery -A backend.celery:app`.
+
+- Fecha: 2026-04-17
+- Autor: Cy tamayo
 - Descripcion: Se reforzo `scripts/iniciar_servicios_binsurmq.ps1` para detener correctamente servicios en segundo plano sin requerir Administrador de tareas: ahora mata arbol de procesos (padre e hijos) y limpia procesos huerfanos de waitress, celery worker y celery beat mediante patrones de linea de comando.
 
 - Fecha: 2026-04-17

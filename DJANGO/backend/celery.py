@@ -14,11 +14,20 @@ app = Celery('backend')
 # Leer la configuración desde settings.py usando el namespace CELERY
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
+# Carga explícita de módulos críticos para evitar tareas no registradas en servidor.
+app.conf.update(
+    imports=(
+        'reportes_diarios.tasks',
+        'reportes_diarios.tareas',
+    )
+)
+
 # Descubrir tareas con convención estándar (tasks.py).
-app.autodiscover_tasks(force=True)
+# Importante: no usar force=True para evitar AppRegistryNotReady durante bootstrap.
+app.autodiscover_tasks()
 
 # Compatibilidad con este proyecto: algunos módulos usan `tareas.py`.
-app.autodiscover_tasks(related_name='tareas', force=True)
+app.autodiscover_tasks(related_name='tareas')
 
 
 @app.task(bind=True, ignore_result=True)

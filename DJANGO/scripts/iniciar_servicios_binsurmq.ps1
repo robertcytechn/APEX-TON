@@ -726,13 +726,15 @@ try {
         $ResultBackendEscapado = $ResultBackend.Replace("'", "''")
         $PathEscapado = $env:Path.Replace("'", "''")
         $RutaDjangoEscapada = $RutaDjango.Replace("'", "''")
+        $RutaPythonEscapada = $RutaPython.Replace("'", "''")
 
         $ComandoBaseEntorno = "`$env:CELERY_BROKER_URL='$BrokerUrlEscapado'; `$env:CELERY_RESULT_BACKEND='$ResultBackendEscapado'; `$env:Path='$PathEscapado'; Set-Location '$RutaDjangoEscapada';"
+        $ComandoCeleryBase = "& '$RutaPythonEscapada' -m celery -A backend.celery:app"
 
         # Regla solicitada: iniciar exactamente este comando para servidor.
         $ComandoWaitress = "$ComandoBaseEntorno waitress-serve --port=8000 backend.wsgi:application"
-        $ComandoWorker = "$ComandoBaseEntorno celery -A backend worker -l info --pool=solo --include=reportes_diarios.tareas,reportes_diarios.tasks"
-        $ComandoBeat = "$ComandoBaseEntorno celery -A backend beat -l info"
+        $ComandoWorker = "$ComandoBaseEntorno $ComandoCeleryBase worker -l info --pool=solo --include=reportes_diarios.tareas,reportes_diarios.tasks"
+        $ComandoBeat = "$ComandoBaseEntorno $ComandoCeleryBase beat -l info"
 
         $EstadoWaitress = Iniciar-ProcesoServicio -Nombre 'waitress' -Comando $ComandoWaitress
         $EstadoWorker = Iniciar-ProcesoServicio -Nombre 'celery_worker' -Comando $ComandoWorker
