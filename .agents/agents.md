@@ -59,3 +59,7 @@ Una tarea se considera terminada cuando:
 2. El skill correcto fue usado segun alcance.
 3. Backend y frontend quedan coherentes entre si (si aplica).
 4. La documentacion en `docs\backend\` o `docs\frontend\` y/o reglas en `.agents\` se actualiza si el comportamiento cambia.
+
+## 7) Reducir costo de agentes
+- usamos un numero limitado de peticiones api de gemini y otros llm de githubcopilot, por lo que es crucial que cada peticion tenga un proposito claro y se evite el uso excesivo o innecesario.
+- Antes de hacer una peticion, el agente debe asegurarse de que tiene toda la informacion.
