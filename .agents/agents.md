@@ -1,6 +1,7 @@
 # Agent Configuration - BinsurMX
 
-Este proyecto utiliza el directorio `.agents` para centralizar las directivas, reglas y contexto necesarios para que los agentes de IA (Copilot, Gemini, etc.) operen de manera consistente y alineada con los estándares del negocio.
+Este archivo describe la configuración y estructura del directorio `.agents` para el proyecto BinsurMX, que contiene las habilidades, reglas y flujos de trabajo necesarios para que los agentes puedan operar de manera efectiva dentro del marco de desarrollo establecido.
+    > Proyecto y nombre de aplicaicon BinsurMX - Sistema de Gestión de Tesorería
 
 ## 📂 Estructura del Directorio `.agents`
 
@@ -9,6 +10,7 @@ Contiene plantillas de habilidades especializadas.
 - `ui-ux-pro-max/`: Directivas avanzadas para diseño de interfaces y experiencia de usuario.
 - `django-pro/`: Directivas avanzadas para el desarrollo profesional con Django.
 - `planning/`: Habilidades de planificación estratégica y estructuración de tareas.
+- `agent-memory-systems/`: Sistemas avanzados de memoria y gestión de contexto para agentes.
 
 ### 📜 `rules/`
 Contiene las normativas técnicas y de negocio del proyecto. Los agentes DEBEN consultar estos archivos antes de proponer cambios:
