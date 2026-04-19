@@ -25,6 +25,8 @@ def construir_contenido_texto(fecha_envio_local):
         '- Barras de progreso simuladas\n'
         '- Segmentos tipográficos con estilos distintos\n\n'
         'Si recibiste este mensaje, la integración SMTP está funcionando correctamente.\n'
+        'Aviso automatico profesional: este correo fue generado automaticamente por el sistema BinsurMX.\n'
+        'Por favor no respondas a este mensaje, ya que este buzon solo procesa envios automatizados.\n'
         'Equipo BinsurMX.'
     )
 
@@ -164,6 +166,14 @@ def construir_contenido_html(fecha_envio_local):
                 <tr>
                   <td style="font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#475569;line-height:1.6;">
                     Si recibiste este correo, la configuración SMTP de BinsurMX está activa y lista para notificaciones automáticas.
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-top:10px;">
+                    <div style="background:#f8fafc;border:1px solid #cbd5e1;border-radius:10px;padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;line-height:1.45;color:#334155;">
+                      Aviso automatico profesional: este correo fue generado automaticamente por el sistema BinsurMX.
+                      Por favor no respondas a este mensaje, ya que este buzon solo procesa envios automatizados.
+                    </div>
                   </td>
                 </tr>
                 <tr>

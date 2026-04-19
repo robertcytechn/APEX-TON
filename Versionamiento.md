@@ -1,6 +1,11 @@
-Version del sistema: 2.37.1
+Version del sistema: 2.37.2
 
 ## Historial de Versiones
+
+- Fecha: 2026-04-17
+- Version: 2.37.2
+- Autor: Cy tamayo
+- Descripcion: Se agrego en las plantillas de correo de credenciales, resumen diario y cierre mensual una nota profesional informando que los mensajes son generados automaticamente por el sistema y que no deben responderse; adicionalmente se alineo el mismo aviso en el correo de prueba SMTP de BinsurMX.
 
 - Fecha: 2026-04-17
 - Version: 2.37.1

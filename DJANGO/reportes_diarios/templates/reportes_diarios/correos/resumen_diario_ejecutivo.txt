@@ -22,5 +22,8 @@ Adjuntos:
 - Reporte diario completo en PDF
 - Reporte diario completo en Excel
 
+Este correo fue generado automaticamente por el sistema BinsurMX.
+Por favor no respondas a este mensaje, ya que este buzon solo procesa envios automatizados.
+
 Enviado el {{ fecha_envio_texto }} por {{ marca_nombre }}.
 Sistema: {{ url_sistema }}
