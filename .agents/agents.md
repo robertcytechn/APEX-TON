@@ -1,36 +1,61 @@
-# Agent Configuration - BinsurMX
+# AGENTS - Estandar operativo de IA (APEX-TON)
 
-Este archivo describe la configuración y estructura del directorio `.agents` para el proyecto BinsurMX, que contiene las habilidades, reglas y flujos de trabajo necesarios para que los agentes puedan operar de manera efectiva dentro del marco de desarrollo establecido.
-    > Proyecto y nombre de aplicaicon BinsurMX - Sistema de Gestión de Tesorería
+Este archivo define como deben operar los agentes dentro del proyecto APEX-TON.
+Objetivo: eliminar ambiguedad, reducir retrabajo y asegurar entregas consistentes.
 
-## 📂 Estructura del Directorio `.agents`
+## 1) Alcance real del proyecto
 
-### 🛠️ `skills/`
-Contiene plantillas de habilidades especializadas.
-- `ui-ux-pro-max/`: Directivas avanzadas para diseño de interfaces y experiencia de usuario.
-- `django-pro/`: Directivas avanzadas para el desarrollo profesional con Django.
-- `planning/`: Habilidades de planificación estratégica y estructuración de tareas.
-- `agent-memory-systems/`: Sistemas avanzados de memoria y gestión de contexto para agentes.
+- Backend: `DJANGO\` (Django + DRF + MySQL + Celery)
+- Frontend: `Vue\` (Vue 3 + PrimeVue + Tailwind + Vite)
+- Documentacion funcional y tecnica: `docs\backend\` y `docs\frontend\`
+- Reglas de agentes: `.agents\rules\`
+- Workflows de agentes: `.agents\workFlows\`
 
-### 📜 `rules/`
-Contiene las normativas técnicas y de negocio del proyecto. Los agentes DEBEN consultar estos archivos antes de proponer cambios:
-- `stack_tecnologico.md`: Definición de lenguajes, frameworks y versiones.
-- `normativas_generales.md`: Reglas de idioma (Español MX), versionamiento y flujo de trabajo.
-- `api_backend.md`: Estándares de Django, DRF, respuestas JSON y auditoría.
-- `base_de_datos.md`: Arquitectura de tablas y relaciones fundamentales.
-- `tesoreria_negocio.md`: Lógica de negocio sobre el control de tesorería y flujo de caja.
-- `comportamiento_roles.md`: Definición de roles, permisos y reglas de horarios/cierres.
-- `estilos_frontend.md`: Estándares de UI/UX, manejo de montos coloreados y organización de vistas.
+## 2) Carga minima obligatoria por tarea
 
-### 🔄 `workFlows/`
-Define la metodología y los flujos de trabajo específicos para la ejecución de tareas en este proyecto.
+Antes de proponer o editar codigo, el agente debe:
 
-### 🧠 `memory/`
-Espacio destinado a la persistencia de contexto y memoria a largo plazo del proyecto.
+1. Leer `rules\normativas_generales.md`
+2. Leer `rules\stack_tecnologico.md`
+3. Leer archivos relacionados al cambio o nueva como son los .vue, .py, .js afectados para entender contexto y stack real.
+4. Detectar alcance de la tarea (backend, frontend, fullstack, negocio)
+5. Activar skill segun matriz de uso
+6. Seguir workflow correspondiente en `workFlows\`
 
-## 🚀 Guía para el Agente
-Para asegurar la calidad del código en BinsurMX:
-1. **Lee `rules/normativas_generales.md`** para entender el idioma y el flujo de versionamiento.
-2. **Consulta `rules/stack_tecnologico.md`** para validar las versiones de las librerías.
-3. **Aplica `rules/api_backend.md` y `rules/estilos_frontend.md`** estrictamente en cada implementación.
-4. **Verifica la lógica de negocio** en `rules/tesoreria_negocio.md` y `rules/comportamiento_roles.md` antes de alterar flujos transaccionales.
+## 3) Matriz obligatoria de skills
+
+| Si la tarea es... | Skill obligatorio | Resultado esperado |
+|---|---|---|
+| Modelos Django, DRF, serializers, viewsets, permisos, Celery, migraciones, auth por sesion | `django-pro` | Cambios backend consistentes con arquitectura Django del proyecto |
+| UI, UX, layout, componentes Vue/PrimeVue, accesibilidad, responsive, formularios/tablas | `ui-ux-pro-max` | Interfaz consistente, usable y alineada al estandar visual |
+| Planificacion por fases, ejecucion multietapa, tareas largas con seguimiento | `planning` | Plan claro, hitos y ejecucion controlada |
+| Diseno de memoria contextual, recuperacion de conocimiento, reglas de contexto de agente | `agent-memory-systems` | Estructura de memoria clara y util para continuidad |
+
+Regla: si una tarea toca backend y frontend, usar ambos skills (`django-pro` + `ui-ux-pro-max`) y workflow fullstack.
+
+## 4) Reglas por dominio (que archivo aplicar)
+
+- Reglas transversales: `rules\normativas_generales.md`
+- Stack y versiones: `rules\stack_tecnologico.md`
+- Backend/API: `rules\api_backend.md`
+- Base de datos: `rules\base_de_datos.md`
+- Negocio tesoreria: `rules\tesoreria_negocio.md`
+- Roles/permisos/horarios: `rules\comportamiento_roles.md`
+- Frontend/UI-UX: `rules\estilos_frontend.md`
+
+## 5) Workflows obligatorios
+
+- `workFlows\01_workflow_backend_django.md`
+- `workFlows\02_workflow_frontend_uiux.md`
+- `workFlows\03_workflow_fullstack_integracion.md`
+- `workFlows\04_workflow_documentacion_reglas.md`
+- `workFlows\05_workflow_memory_problemas.md`
+
+## 6) Criterio de salida (Definition of Done del agente)
+
+Una tarea se considera terminada cuando:
+
+1. El cambio cumple reglas del dominio afectado.
+2. El skill correcto fue usado segun alcance.
+3. Backend y frontend quedan coherentes entre si (si aplica).
+4. La documentacion en `docs\backend\` o `docs\frontend\` y/o reglas en `.agents\` se actualiza si el comportamiento cambia.

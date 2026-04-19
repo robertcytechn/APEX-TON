@@ -1,16 +1,29 @@
-# Control Histórico y Comportamiento
+# Reglas de roles, permisos y cierres
 
-## Control Histórico
-- **Libro de Estado de Resultados:** Registro histórico mensual de movimientos en la sala de juegos.
-- **Integridad de Datos:** Si se modifica el tipo de cambio en `configuraciones_globales`, **no se deben modificar los registros históricos**, ya que deben conservar el valor vigente al momento de la transacción.
+## 1) Matriz de roles
 
-## Roles y Permisos
-- **CONTADOR:** Encargado de llenar campos en pestañas históricas (`POR COMPROBAR`, `MAQUINAS`, `CAJA CHICA MORELIA`, `PRESUPUESTO`, `MAQUINEROS`, `JUEGO VIVO`).
-- **GERENTE:** Permisos equivalentes al Contador (actualmente).
-- **DIRECTOR:** Solo lectura de reportes (Estado de Resultados, comparativos por periodo, filtros personalizados). No puede editar pestañas históricas. Puede ajustar `configuraciones_globales` y `fondos_fijos` por casino.
-- **ADMINISTRADOR:** Control total del sistema.
+- **ADMINISTRADOR**: control total; puede reabrir dias cerrados.
+- **GERENTE**: permisos operativos equivalentes a CONTADOR (estado actual).
+- **CONTADOR**: captura operativa diaria en pestañas habilitadas.
+- **DIRECTOR**: enfoque de lectura/reporteria; sin captura operativa diaria.
 
-## Reglas Operativas
-- **Horarios:** En `configuraciones_globales` existen los campos `HORARIO_APERTURA` y `HORARIO_CIERRE`. Fuera de este rango, las pestañas no pueden modificarse.
-- **Cierre de Día:** El sistema debe cerrar el día creando/cerrando el histórico diario. Al finalizar el mes, cierra el histórico de estado de resultados.
-- **Día Contable:** Se define como el día anterior (ej. si hoy es 20 de marzo, el día contable es 19 de marzo).
+## 2) Permisos
+
+- La asignacion de permisos es por rol.
+- Evitar permisos directos por usuario fuera del modelo definido.
+
+## 3) Horario operativo
+
+- La ventana de escritura depende de `HORARIO_APERTURA` y `HORARIO_CIERRE` en configuraciones globales.
+- Fuera de ventana: lectura permitida, escrituras bloqueadas.
+
+## 4) Cierre diario y mensual
+
+- Cierre diario bloquea edicion de movimientos del dia.
+- Solo ADMINISTRADOR puede reabrir un dia cerrado.
+- Cierre mensual genera snapshot historico inmutable en libro de resultados.
+
+## 5) Regla de dia contable
+
+- El sistema opera con dia contable T-1.
+- No permitir logicas frontend que contradigan esa regla.

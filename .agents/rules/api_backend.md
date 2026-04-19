@@ -1,32 +1,51 @@
-# Estándares y Arquitectura de la API (Backend)
+# Estandares backend API (Django/DRF)
 
-## Modularidad
-- Cada módulo lógico debe separarse en su propia aplicación de Django (ej. módulo de inventario $\rightarrow$ app `inventario`).
+## 1) Activacion obligatoria de skill
 
-## Estandarización de Respuestas JSON
-- **Regla Estricta:** Todas las respuestas de la API deben seguir una estructura JSON estandarizada.
-- **Estructura Obligatoria:**
-  ```json
-  {
-    "status": "success",
-    "message": "Operación exitosa",
-    "data": {} 
-  }
-  ```
+Si la tarea modifica backend (`DJANGO\`), usar skill: `django-pro`.
 
-## Autenticación y Permisos
-- **Autenticación:** Utilizar **sesiones nativas de Django** (`session auth`). **PROHIBIDO usar JWT.**
-- **Módulo de Usuarios:** App dedicada llamada `usuarios` con los modelos: `Usuario`, `Rol`, `Permiso`, `Usuario_Rol`, `Rol_Permiso`.
-- **Gestión de Permisos:** Los permisos se asignan estrictamente **por Rol**, nunca por usuario individual.
-- **Integración Frontend:** Usar `Axios Interceptors` en Vue para gestionar errores de sesión y almacenar permisos del rol en el cliente para control de renderizado.
+## 2) Alcance de esta regla
 
-## Trazabilidad y Auditoría
-- **Modelo Base:** Todos los modelos dependientes (transaccionales) DEBEN heredar de un `ModeloBase` abstracto.
-- **Campos Obligatorios:**
-  - `creado_en`, `actualizado_en`, `eliminado_en`
-  - `creado_por`, `actualizado_por`, `eliminado_por`
-  - `valor_anterior`, `valor_actual`
+Aplica a modelos, serializers, viewsets, permisos, rutas, tareas Celery y contratos de API.
 
-## Desarrollo de Módulos DRF
-- **Implementación Concurrente:** Al crear una app o modelo, se deben programar simultáneamente sus Serializadores, Vistas (preferentemente ViewSets) y enrutadores (URLs).
-- **Auto-documentación:** Es obligatorio agregar el atributo `help_text` a todos los campos de los modelos para soporte óptimo en DRF.
+## 3) Contrato de respuesta API
+
+Toda respuesta JSON debe mantener el envelope estandar:
+
+```json
+{
+  "status": "success",
+  "message": "Operacion exitosa",
+  "data": {}
+}
+```
+
+## 4) Autenticacion y permisos
+
+- Autenticacion oficial: `SessionAuthentication`.
+- No introducir JWT salvo requerimiento explicito de arquitectura.
+- Permisos por rol (`Rol`, `Permiso`, `RolPermiso`, `UsuarioRol`), no por usuario directo.
+
+## 5) Trazabilidad y modelo base
+
+- Los modelos transaccionales deben seguir el patron de auditoria de `ModeloBase`.
+- Conservar consistencia de campos de auditoria y snapshots de cambios (`valor_anterior`, `valor_actual`).
+- Mantener compatibilidad con `django-simple-history`.
+
+## 6) Regla de implementacion DRF
+
+Cuando cambia una entidad de dominio, revisar en conjunto:
+
+1. Modelo
+2. Serializer
+3. ViewSet / vista
+4. URL router
+5. Permisos
+6. Consumo frontend (si aplica)
+
+## 7) Regla de documentacion backend
+
+Si cambia contrato de endpoint o comportamiento funcional:
+
+- Actualizar `docs\backend\api_reference.md`
+- Actualizar `docs\backend\flujo_de_informacion.md` cuando cambie el flujo operativo

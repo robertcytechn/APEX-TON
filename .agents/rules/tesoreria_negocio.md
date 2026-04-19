@@ -1,22 +1,29 @@
-# Control Operacional de Tesorería (Reglas de Negocio)
+# Reglas de negocio de tesoreria (APEX-TON)
 
-El objetivo es estandarizar la lógica del archivo matriz `CAJA MUESTRA.xlsx`. El sistema es un registro de transacciones diarias para auditar dinero físico en sala, no un software contable estricto.
+## 1) Objetivo funcional
 
-**Contexto de Flujo:**
-- Dinero a bancos $\rightarrow$ **Egreso** (sale de caja de sala).
-- Sala surtida desde bancos $\rightarrow$ **Ingreso**.
+El sistema controla flujo diario de caja por sucursal y consolida resultados en tiempo real e historico mensual.
+No es un ERP contable general; es control operativo de tesoreria.
 
-## Organización por Pestañas
-El flujo se categoriza en "Pestañas":
-`ADMINISTRACION`, `BOOK`, `BILLPOCKET`, `BAHIA BANORTE`, `BANORTE AHIS`, `BBVB BANCOMER`, `DOLARES`, `PERDIDAS`, `PERMISO`, `SOBRANTES`, `POR COMPROBAR`, `MAQUINAS`, `CAJA CHICA MORELIA`, `COMPARATIVO`, `PRESUPUESTO`, `MAQUINEROS`, `JUEGO VIVO`, `F. fijos`.
+## 2) Regla de signo operativo
 
-## Conceptos y Rubros
-- **Concepto:** Nomenclatura de movimientos específicos (ej. "VENTA DE CAFE").
-- **Relación:** Cada concepto pertenece a una **única pestaña** y está conectado al `rubro_contable` global (ej. "VENTAS_BEBIDAS").
+- Dinero que sale de caja hacia banco: **EGRESO**
+- Dinero que ingresa de banco/surtido a sala: **INGRESO**
 
-## Parametrización y Datos
-- **Contexto:** Las pestañas documentan responsable, origen y monto (ej. Pestaña `Sobrantes`).
-- **Tipos de Datos:** Usar siempre **decimales** para representar valores monetarios.
+## 3) Estructura de captura
 
-## Estado de Resultados
-El objetivo final es consolidar ingresos y egresos en el **Estado de Resultados** de forma autónoma y en tiempo real.
+- Categoria operativa (pestana) define el bloque funcional.
+- Concepto define el movimiento especifico.
+- Cada concepto debe mapearse a un `rubro_contable`.
+- Campos extra de captura se guardan como detalle parametrizado/snapshot cuando aplique.
+
+## 4) Reglas criticas de tiempo
+
+- El dia contable opera con logica T-1.
+- El backend controla fecha contable y cierre; frontend no debe imponer fecha manual para romper la regla.
+
+## 5) Reglas de consolidacion
+
+- Estado de resultados del mes en curso: agregado en tiempo real desde movimientos diarios.
+- Mes cerrado: lectura desde snapshot historico (sin recalculo retroactivo).
+- Cambios de tipo de cambio/configuracion futura no alteran cierres historicos.
