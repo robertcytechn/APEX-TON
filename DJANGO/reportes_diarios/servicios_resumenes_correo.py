@@ -1128,7 +1128,7 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
         },
     ]
 
-    asunto = f"[{NOMBRE_MARCA}] Resumen diario ejecutivo - {sucursal.nombre} - {_formatear_fecha(fecha_objetivo)}"
+    asunto = f"[{NOMBRE_MARCA}] Reporte de cierre día contable {_formatear_fecha(fecha_objetivo)}"
 
     return {
         'tipo': 'diario',
@@ -1230,7 +1230,7 @@ def construir_paquete_correo_cierre_mensual_ejecutivo(sucursal, anio=None, mes=N
         },
     ]
 
-    asunto = f"[{NOMBRE_MARCA}] Cierre mensual ejecutivo - {sucursal.nombre} - {periodo_texto}"
+    asunto = f"[{NOMBRE_MARCA}] Reporte de cierre mes {periodo_texto}"
 
     return {
         'tipo': 'mensual',

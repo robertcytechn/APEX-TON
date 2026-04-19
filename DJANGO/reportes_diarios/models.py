@@ -160,6 +160,11 @@ class ReporteDiario(ModeloBase):
         verbose_name="Cerrado por",
         help_text="Usuario que ejecutó el cierre del día."
     )
+    correo_enviado = models.BooleanField(
+        default=False,
+        verbose_name="Correo de Cierre Enviado",
+        help_text="Indica si el correo de notificación de cierre ha sido enviado. Previene envíos duplicados."
+    )
     observaciones = models.TextField(
         null=True, blank=True,
         verbose_name="Observaciones",

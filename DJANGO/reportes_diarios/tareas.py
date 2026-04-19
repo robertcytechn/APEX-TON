@@ -281,6 +281,222 @@ def _resolver_destinatarios_correos_ejecutivos(sucursal):
     return _normalizar_destinatarios_local(destinatarios)
 
 
+# 1) Para qué sirve: enviar correo de notificación cuando se cierra un reporte diario.
+# 2) Cómo funciona: obtiene el reporte, verifica bandera correo_enviado, construye paquete y envía.
+# 3) Qué hace: implementa anti-spam para evitar envíos duplicados del mismo cierre.
+# 4) Cómo editarla: personaliza asunto/cuerpo desde servicios_resumenes_correo si cambia formato.
+@shared_task(bind=True, name='reportes_diarios.enviar_correo_cierre_reporte', max_retries=2)
+def enviar_correo_cierre_reporte(self, reporte_id):
+    """
+    Envía correo de cierre cuando se termina el día contable.
+    
+    Previene duplicados verificando la bandera correo_enviado.
+    Solo se dispara después de que _cerrar_reporte_diario() haya completado.
+    """
+    from reportes_diarios.models import ReporteDiario
+    from reportes_diarios.servicios_resumenes_correo import (
+        construir_paquete_correo_resumen_diario_ejecutivo,
+        enviar_paquete_correo,
+    )
+
+    try:
+        reporte = ReporteDiario.objects.select_for_update().get(pk=reporte_id)
+        
+        if reporte.correo_enviado:
+            logger.info(f"[CIERRE EMAIL] Reporte {reporte.id} ({reporte.fecha_contable}): correo ya fue enviado. Se omite.")
+            return {'status': 'omitido', 'razon': 'correo_ya_enviado'}
+        
+        if reporte.estado_reporte != ReporteDiario.EstadoReporte.CERRADO:
+            logger.warning(f"[CIERRE EMAIL] Reporte {reporte.id}: no está CERRADO aún. Se omite.")
+            return {'status': 'omitido', 'razon': 'reporte_no_cerrado'}
+        
+        sucursal = reporte.sucursal
+        destinatarios = _resolver_destinatarios_correos_ejecutivos(sucursal)
+        
+        if not destinatarios:
+            logger.warning(f"[CIERRE EMAIL] {sucursal.nombre}: omitido por falta de destinatarios.")
+            reporte.correo_enviado = True
+            reporte.save(update_fields=['correo_enviado'])
+            return {'status': 'omitido', 'razon': 'sin_destinatarios'}
+        
+        paquete = construir_paquete_correo_resumen_diario_ejecutivo(
+            sucursal=sucursal,
+            fecha_contable=reporte.fecha_contable,
+        )
+        
+        resultado = enviar_paquete_correo(
+            paquete_correo=paquete,
+            destinatarios=destinatarios,
+        )
+        
+        reporte.correo_enviado = True
+        reporte.save(update_fields=['correo_enviado'])
+        
+        logger.info(
+            f"[CIERRE EMAIL] {sucursal.nombre} ({reporte.fecha_contable}): "
+            f"enviado a {', '.join(destinatarios)}"
+        )
+        
+        return {
+            'status': 'enviado',
+            'reporte_id': reporte.id,
+            'sucursal': sucursal.nombre,
+            'destinatarios': destinatarios,
+            'resultado': resultado,
+        }
+        
+    except ReporteDiario.DoesNotExist:
+        logger.error(f"[CIERRE EMAIL] Reporte con ID {reporte_id} no encontrado.")
+        return {'status': 'error', 'razon': 'reporte_no_encontrado'}
+    except Exception as exc:
+        logger.error(f"[CIERRE EMAIL] Error enviando correo para reporte {reporte_id}: {exc}")
+        raise self.retry(exc=exc, countdown=60)
+
+
+# 1) Para qué sirve: cerrar automáticamente reportes que han cumplido su período de gracia (5 días).
+# 2) Cómo funciona: se ejecuta periódicamente, lee HORARIO_CIERRE, y cierra reportes de días abiertos.
+# 3) Qué hace: implementa regla de negocio de cierre con gracia sin requerir cron puntual.
+# 4) Cómo editarla: cambia ventana de gracia o lógica de horario si cambian reglas contables.
+@shared_task(bind=True, name='reportes_diarios.auto_cerrar_dias_con_gracia', max_retries=2)
+def auto_cerrar_dias_con_gracia(self):
+    """
+    Tarea periódica que cierra automáticamente reportes de días anteriores que
+    han cumplido su período de gracia (máximo 5 días de captura).
+    
+    Regla: Si hoy es lunes, este proceso:
+    - Cierra reportes del viernes, sábado, domingo si aún están ABIERTOS y han pasado HORARIO_CIERRE.
+    - No toca reportes del lunes.
+    
+    La ventana de gracia se define como: fecha_actual - 5 días como máximo.
+    """
+    from reportes_diarios.models import ReporteDiario
+    from sucursales.models import Sucursal
+    from configuraciones_globales.models import ConfiguracionGlobal
+    from datetime import time
+
+    try:
+        # 1. Leer HORARIO_CIERRE desde configuración
+        config_horario = ConfiguracionGlobal.objects.filter(clave='HORARIO_CIERRE').first()
+        if not config_horario:
+            logger.warning("[CIERRE AUTOMÁTICO CON GRACIA] No se configuró HORARIO_CIERRE. Se omite ejecución.")
+            return {'status': 'omitido', 'razon': 'sin_horario_cierre'}
+        
+        try:
+            hora_cierre = config_horario.valor_tipado
+            if isinstance(hora_cierre, str):
+                partes = str(hora_cierre).split(':')
+                hora = int(partes[0])
+                minuto = int(partes[1]) if len(partes) > 1 else 0
+                hora_cierre = time(hour=hora, minute=minuto)
+            elif not isinstance(hora_cierre, time):
+                hora_cierre = time(hour=23, minute=59)  # fallback
+        except (ValueError, AttributeError, IndexError):
+            logger.warning("[CIERRE AUTOMÁTICO CON GRACIA] HORARIO_CIERRE mal formateado. Fallback a 23:59")
+            hora_cierre = time(hour=23, minute=59)
+        
+        # 2. Verificar si ya pasó la hora de cierre hoy
+        ahora = timezone.localtime(timezone.now())
+        hora_actual = ahora.time()
+        
+        if hora_actual < hora_cierre:
+            logger.debug(f"[CIERRE AUTOMÁTICO CON GRACIA] Aún no es hora de cerrar ({hora_actual} < {hora_cierre}). Se omite.")
+            return {'status': 'omitido', 'razon': 'no_es_hora_cierre'}
+        
+        # 3. Buscar reportes que deben cerrarse (últimos 5 días, estado ABIERTO)
+        desde_hace_5_dias = timezone.localdate() - timezone.timedelta(days=5)
+        hoy = timezone.localdate()
+        
+        reportes_para_cerrar = ReporteDiario.todos.filter(
+            fecha_contable__gte=desde_hace_5_dias,
+            fecha_contable__lt=hoy,  # Excluye reportes de hoy (solo cierra días pasados)
+            estado_reporte=ReporteDiario.EstadoReporte.ABIERTO,
+            eliminado_en__isnull=True,
+        ).select_related('sucursal')
+        
+        reportes_cerrados = 0
+        errores = []
+        
+        for reporte in reportes_para_cerrar:
+            try:
+                with transaction.atomic():
+                    # Re-obtener con select_for_update para evitar race conditions
+                    reporte_lock = ReporteDiario.todos.select_for_update().get(pk=reporte.pk)
+                    
+                    if reporte_lock.estado_reporte != ReporteDiario.EstadoReporte.ABIERTO:
+                        continue  # Ya fue cerrado por otro proceso
+                    
+                    # Leer tipo de cambio
+                    tc_usd = 0
+                    tc_eur = 0
+                    try:
+                        cfg_usd = ConfiguracionGlobal.objects.filter(clave__in=['TASA_CAMBIO_DOLARES', 'TIPO_CAMBIO_USD']).first()
+                        cfg_eur = ConfiguracionGlobal.objects.filter(clave='TIPO_CAMBIO_EUR').first()
+                        if cfg_usd and cfg_usd.valor_tipado:
+                            tc_usd = cfg_usd.valor_tipado
+                        if cfg_eur and cfg_eur.valor_tipado:
+                            tc_eur = cfg_eur.valor_tipado
+                    except Exception as exc:
+                        logger.warning(f"[CIERRE AUTOMÁTICO CON GRACIA] No se pudo leer tipo de cambio: {exc}")
+                    
+                    # Calcular totales
+                    movimientos = reporte_lock.movimientos.filter(eliminado_en__isnull=True)
+                    ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
+                    egresos = movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'] or 0
+                    neto = ingresos - egresos
+                    
+                    # Actualizar reporte
+                    reporte_lock.total_ingresos = ingresos
+                    reporte_lock.total_egresos = egresos
+                    reporte_lock.resultado_neto = neto
+                    reporte_lock.saldo_arrastre_fin = reporte_lock.saldo_arrastre_inicio + neto
+                    reporte_lock.tipo_cambio_usd_snapshot = tc_usd
+                    reporte_lock.tipo_cambio_eur_snapshot = tc_eur
+                    reporte_lock.estado_reporte = ReporteDiario.EstadoReporte.CERRADO
+                    reporte_lock.cerrado_en = timezone.now()
+                    reporte_lock.correo_enviado = False  # Bandera para enviar email después
+                    reporte_lock.save()
+                    
+                    reportes_cerrados += 1
+                    logger.info(
+                        f"[CIERRE AUTOMÁTICO CON GRACIA] {reporte_lock.sucursal.nombre} "
+                        f"({reporte_lock.fecha_contable}): cerrado automáticamente. Neto: ${neto:,.2f}"
+                    )
+                    
+                    # Dispara tarea de envío de email
+                    enviar_correo_cierre_reporte.delay(reporte_lock.id)
+                    
+                    # Verificar si es fin de mes para cerrar LibroEstadoResultados
+                    ultimo_dia_del_mes = calendar.monthrange(reporte_lock.fecha_contable.year, reporte_lock.fecha_contable.month)[1]
+                    if reporte_lock.fecha_contable.day == ultimo_dia_del_mes:
+                        _cerrar_mes_automatico(
+                            reporte_lock.sucursal,
+                            reporte_lock.fecha_contable.year,
+                            reporte_lock.fecha_contable.month,
+                            tc_usd,
+                            tc_eur
+                        )
+                    
+            except Exception as exc:
+                error_msg = f"[CIERRE AUTOMÁTICO CON GRACIA] Error cerrando {reporte.sucursal.nombre} ({reporte.fecha_contable}): {exc}"
+                logger.error(error_msg)
+                errores.append(error_msg)
+        
+        resumen = {
+            "fecha_ejecucion": str(ahora),
+            "ventana_gracia": f"{desde_hace_5_dias} a {hoy}",
+            "horario_cierre": str(hora_cierre),
+            "reportes_cerrados": reportes_cerrados,
+            "errores": errores,
+        }
+        
+        logger.info(f"[CIERRE AUTOMÁTICO CON GRACIA] Finalizado: {resumen}")
+        return resumen
+        
+    except Exception as exc:
+        logger.error(f"[CIERRE AUTOMÁTICO CON GRACIA] Error general: {exc}")
+        raise self.retry(exc=exc, countdown=300)
+
+
 # 1) Para qué sirve: enviar automáticamente el resumen diario ejecutivo por cada sucursal activa.
 # 2) Cómo funciona: construye paquete por sucursal, toma destinatarios globales y envía con una conexión SMTP compartida.
 # 3) Qué hace: materializa el envío diario sin requerir ejecución manual del comando.
@@ -439,23 +655,6 @@ def enviar_cierre_mensual_ejecutivo(self, anio=None, mes=None, sucursal_id=None)
     }
     logger.info(f"[CORREO MENSUAL] Finalizado: {resumen}")
     return resumen
-
-
-# 1) Para que sirve: refrescar diariamente el horario de envio diario leyendo HORARIO_CIERRE en BD.
-# 2) Como funciona: reusa el comando de sincronizacion de disparadores con update idempotente.
-# 3) Que hace: evita que el envio diario quede con una hora vieja despues de cambiar configuracion global.
-# 4) Como editarla: agrega parametros al call_command si necesitas variantes por entorno.
-@shared_task(bind=True, name='reportes_diarios.sincronizar_horario_correo_diario', max_retries=1)
-def sincronizar_horario_correo_diario(self):
-    try:
-        call_command('sincronizar_disparadores_correos_ejecutivos')
-        mensaje = 'Sincronizacion de horario diario completada desde HORARIO_CIERRE.'
-        logger.info(f"[SYNC HORARIO CORREO] {mensaje}")
-        return {'status': 'ok', 'mensaje': mensaje}
-    except Exception as exc:
-        texto_error = f'Sincronizacion de horario diario fallida: {exc}'
-        logger.error(f"[SYNC HORARIO CORREO] {texto_error}")
-        raise
 
 
 # 1) Para que sirve: resolver ruta de bitacora diaria del respaldo BD dentro de una carpeta relativa.
@@ -916,9 +1115,11 @@ def ejecutar_backup_bd(self):
 
         if destinatarios:
             etapa_actual = 'enviar_correo_exito'
+            fecha_formato = fecha_ejecucion.strftime('%d/%m/%Y')
+            asunto_con_fecha = f"{ASUNTO_CORREO_RESPALDO_BD_EXITO} - {fecha_formato}"
             enviados_correo = _enviar_correo_respaldo_bd(
                 destinatarios=destinatarios,
-                asunto=ASUNTO_CORREO_RESPALDO_BD_EXITO,
+                asunto=asunto_con_fecha,
                 cuerpo=cuerpo_exito,
                 ruta_adjunto=ruta_archivo_comprimido if adjuntar_respaldo else None,
             )
@@ -989,9 +1190,11 @@ def ejecutar_backup_bd(self):
                     f'Bitacora tecnica: {referencia_bitacora}\n'
                     'Accion requerida: revisar logs de Celery Worker y conectividad de BD/SMTP.\n'
                 )
+                fecha_formato = fecha_ejecucion.strftime('%d/%m/%Y')
+                asunto_con_fecha = f"{ASUNTO_CORREO_RESPALDO_BD_FALLO} - {fecha_formato}"
                 _enviar_correo_respaldo_bd(
                     destinatarios=destinatarios,
-                    asunto=ASUNTO_CORREO_RESPALDO_BD_FALLO,
+                    asunto=asunto_con_fecha,
                     cuerpo=cuerpo_fallo,
                     ruta_adjunto=None,
                 )
