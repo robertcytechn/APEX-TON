@@ -78,6 +78,16 @@ const resumenGeneral = computed(() => datosEstadisticas.value?.resumen_general |
 const comparativoAnterior = computed(() => datosEstadisticas.value?.comparativo_periodo_anterior || {});
 const series = computed(() => datosEstadisticas.value?.series || {});
 const filtrosAplicados = computed(() => datosEstadisticas.value?.filtros_aplicados || {});
+const liquidez = computed(() => datosEstadisticas.value?.liquidez || null);
+
+// ── Helpers de liquidez ──────────────────────────────────────────────────────
+const liquidezEfectivo  = computed(() => liquidez.value?.efectivo_sala  || { ingresos: 0, egresos: 0, neto: 0 });
+const liquidezBancario  = computed(() => liquidez.value?.bancario        || { ingresos: 0, egresos: 0, neto: 0 });
+const liquidezVirtual   = computed(() => liquidez.value?.virtual         || { ingresos: 0, egresos: 0, neto: 0 });
+const liquidezNoAplica  = computed(() => liquidez.value?.no_aplica       || { ingresos: 0, egresos: 0, neto: 0 });
+const liquidezTotal     = computed(() => Number(liquidez.value?.total_neto || 0));
+const liquidezTotalIng  = computed(() => Number(liquidez.value?.total_ingresos || 0));
+const liquidezTotalEgr  = computed(() => Number(liquidez.value?.total_egresos  || 0));
 
 const opcionesSucursales = computed(() => {
     const sucursales = Array.isArray(catalogos.value?.sucursales) ? catalogos.value.sucursales : [];
@@ -2039,6 +2049,57 @@ onMounted(async () => {
                         <p class="text-xs text-slate-500 mt-1">Días con movimientos: {{ diasConMovimientos }} de {{ diasPeriodo }}</p>
                     </div>
                 </div>
+
+                <!-- ── PANEL DESGLOSE DE LIQUIDEZ ───────────────────────────────── -->
+                <div v-if="liquidez" class="card rounded-2xl border border-slate-200 space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white">
+                            <i class="pi pi-wallet text-lg"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-base font-bold text-slate-800">Desglose de Liquidez por Medio de Pago</h2>
+                            <p class="text-xs text-slate-500">Clasificación de flujos según el origen del dinero · período seleccionado</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                        <div class="rounded-xl border-2 border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 space-y-2">
+                            <div class="flex items-center gap-2 mb-1"><span class="text-lg">💵</span><span class="text-sm font-bold text-emerald-800">Efectivo en Sala</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-slate-500">Ingresos</span><MontoMonedaColoreado :monto="Number(liquidezEfectivo.ingresos||0)" /></div>
+                            <div class="flex justify-between text-xs"><span class="text-slate-500">Egresos</span><MontoMonedaColoreado :monto="Number(liquidezEfectivo.egresos||0)" /></div>
+                            <div class="h-px bg-emerald-100"></div>
+                            <div class="flex justify-between items-center"><span class="text-xs font-semibold text-emerald-700">Neto</span><MontoMonedaColoreado :monto="Number(liquidezEfectivo.neto||0)" /></div>
+                        </div>
+                        <div class="rounded-xl border-2 border-sky-200 bg-gradient-to-br from-sky-50 to-white p-4 space-y-2">
+                            <div class="flex items-center gap-2 mb-1"><span class="text-lg">🏦</span><span class="text-sm font-bold text-sky-800">Bancario / Transferencia</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-slate-500">Ingresos</span><MontoMonedaColoreado :monto="Number(liquidezBancario.ingresos||0)" /></div>
+                            <div class="flex justify-between text-xs"><span class="text-slate-500">Egresos</span><MontoMonedaColoreado :monto="Number(liquidezBancario.egresos||0)" /></div>
+                            <div class="h-px bg-sky-100"></div>
+                            <div class="flex justify-between items-center"><span class="text-xs font-semibold text-sky-700">Neto</span><MontoMonedaColoreado :monto="Number(liquidezBancario.neto||0)" /></div>
+                        </div>
+                        <div class="rounded-xl border-2 border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 space-y-2">
+                            <div class="flex items-center gap-2 mb-1"><span class="text-lg">📱</span><span class="text-sm font-bold text-amber-800">Pasarela Virtual</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-slate-500">Ingresos</span><MontoMonedaColoreado :monto="Number(liquidezVirtual.ingresos||0)" /></div>
+                            <div class="flex justify-between text-xs"><span class="text-slate-500">Egresos</span><MontoMonedaColoreado :monto="Number(liquidezVirtual.egresos||0)" /></div>
+                            <div class="h-px bg-amber-100"></div>
+                            <div class="flex justify-between items-center"><span class="text-xs font-semibold text-amber-700">Neto</span><MontoMonedaColoreado :monto="Number(liquidezVirtual.neto||0)" /></div>
+                        </div>
+                        <div class="rounded-xl border-2 border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4 space-y-2">
+                            <div class="flex items-center gap-2 mb-1"><span class="text-lg">⚪</span><span class="text-sm font-bold text-slate-700">No Aplica / Info</span></div>
+                            <div class="flex justify-between text-xs"><span class="text-slate-500">Ingresos</span><MontoMonedaColoreado :monto="Number(liquidezNoAplica.ingresos||0)" /></div>
+                            <div class="flex justify-between text-xs"><span class="text-slate-500">Egresos</span><MontoMonedaColoreado :monto="Number(liquidezNoAplica.egresos||0)" /></div>
+                            <div class="h-px bg-slate-200"></div>
+                            <div class="flex justify-between items-center"><span class="text-xs font-semibold text-slate-600">Neto</span><MontoMonedaColoreado :monto="Number(liquidezNoAplica.neto||0)" /></div>
+                        </div>
+                    </div>
+                    <div class="rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 text-white p-4">
+                        <div class="grid grid-cols-3 gap-4 text-center">
+                            <div><p class="text-xs text-slate-400 mb-1">Total ingresos</p><MontoMonedaColoreado :monto="liquidezTotalIng" /></div>
+                            <div><p class="text-xs text-slate-400 mb-1">Total egresos</p><MontoMonedaColoreado :monto="liquidezTotalEgr" /></div>
+                            <div><p class="text-xs text-slate-400 mb-1">Neto consolidado</p><MontoMonedaColoreado :monto="liquidezTotal" /></div>
+                        </div>
+                    </div>
+                </div>
+                <!-- ── FIN PANEL LIQUIDEZ ─────────────────────────────────────────── -->
 
                 <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
                     <div class="card rounded-2xl border border-surface-200 xl:col-span-2 space-y-3">

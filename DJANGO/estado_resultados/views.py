@@ -54,6 +54,53 @@ def _normalizar_texto_rubro(valor):
     return str(valor or '').strip().replace('-', '_').replace(' ', '_').upper()
 
 
+# 1) Para qué sirve: calcular desglose de liquidez físico vs. bancario/virtual para un queryset de movimientos.
+# 2) Cómo funciona: agrupa por medio_liquidez del concepto con un único hit a la BD.
+# 3) Qué hace: produce un dict con ingresos/egresos/neto por cada medio de liquidez.
+# 4) Cómo editarla: agrega nuevos choices de medio_liquidez sin romper el desglose anterior.
+def _calcular_liquidez_movimientos(movimientos_qs):
+    """
+    Devuelve desglose de liquidez a partir de un queryset de MovimientoDiario.
+    Retorna un dict con claves: efectivo_sala, bancario, virtual, no_aplica y totales.
+    """
+    from django.db.models import Sum, Q
+
+    agregado = movimientos_qs.values('concepto__medio_liquidez').annotate(
+        ingresos=Sum('monto', filter=Q(concepto__tipo='INGRESO')),
+        egresos=Sum('monto', filter=Q(concepto__tipo='EGRESO')),
+    )
+
+    medios = {
+        'EFECTIVO':  {'ingresos': 0.0, 'egresos': 0.0, 'neto': 0.0},
+        'BANCARIO':  {'ingresos': 0.0, 'egresos': 0.0, 'neto': 0.0},
+        'VIRTUAL':   {'ingresos': 0.0, 'egresos': 0.0, 'neto': 0.0},
+        'NO_APLICA': {'ingresos': 0.0, 'egresos': 0.0, 'neto': 0.0},
+    }
+
+    for fila in agregado:
+        clave = str(fila.get('concepto__medio_liquidez') or 'NO_APLICA').upper()
+        if clave not in medios:
+            clave = 'NO_APLICA'
+        ing = _a_flotante(fila.get('ingresos'))
+        egr = _a_flotante(fila.get('egresos'))
+        medios[clave]['ingresos'] += ing
+        medios[clave]['egresos']  += egr
+        medios[clave]['neto']     += ing - egr
+
+    total_ing = sum(v['ingresos'] for v in medios.values())
+    total_egr = sum(v['egresos']  for v in medios.values())
+
+    return {
+        'efectivo_sala': medios['EFECTIVO'],
+        'bancario':      medios['BANCARIO'],
+        'virtual':       medios['VIRTUAL'],
+        'no_aplica':     medios['NO_APLICA'],
+        'total_ingresos': total_ing,
+        'total_egresos':  total_egr,
+        'total_neto':     total_ing - total_egr,
+    }
+
+
 # 1) Para qué sirve: detectar rubros que no deben impactar estado de resultados.
 # 2) Cómo funciona: evalúa ausencia de rubro y marcadores semánticos de no contable.
 # 3) Qué hace: clasifica como no contable casos SIN_RUBRO, SIN_GRUPO o NO_CONTABLE.
@@ -432,6 +479,7 @@ class EstadoResultadosAPIView(APIView):
             "total_ingresos_no_considerados": float(total_ingresos_no_considerados),
             "total_egresos_no_considerados": float(total_egresos_no_considerados),
             "resultado_neto_no_considerado": float(resultado_neto_no_considerado),
+            "liquidez":             _calcular_liquidez_movimientos(movimientos),
             "por_categoria":        list(por_categoria.values()),
             "por_rubro":            rubros_lista,
         }
@@ -813,6 +861,7 @@ class EstadisticasOperativasAPIView(APIView):
                 'por_sucursal': por_sucursal,
                 'top_conceptos': top_conceptos,
             },
+            'liquidez': _calcular_liquidez_movimientos(movimientos_qs),
         }
 
         return respuesta_estandar(data=data, mensaje="Estadísticas operativas obtenidas correctamente.")

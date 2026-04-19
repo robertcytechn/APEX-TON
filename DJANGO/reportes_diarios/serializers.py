@@ -103,6 +103,7 @@ class MovimientoDiarioListSerializer(serializers.ModelSerializer):
     concepto_nombre  = serializers.CharField(source='concepto.nombre', read_only=True)
     categoria_nombre = serializers.CharField(source='concepto.categoria.nombre', read_only=True)
     tipo = serializers.CharField(source='concepto.tipo', read_only=True)
+    medio_liquidez = serializers.CharField(source='concepto.medio_liquidez', read_only=True)
     concepto_requiere_imagen = serializers.BooleanField(source='concepto.requiere_imagen', read_only=True)
     archivo_respaldo_url = serializers.SerializerMethodField(read_only=True)
 
@@ -114,6 +115,7 @@ class MovimientoDiarioListSerializer(serializers.ModelSerializer):
             'concepto_nombre',
             'categoria_nombre',
             'tipo',
+            'medio_liquidez',
             'monto',
             'monto_divisa',
             'tipo_divisa',

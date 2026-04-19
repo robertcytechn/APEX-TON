@@ -74,6 +74,7 @@ class ConceptoListSerializer(serializers.ModelSerializer):
             'clave',
             'nombre',
             'tipo',
+            'medio_liquidez',
             'descripcion',
             'es_recurrente',
             'requiere_imagen',

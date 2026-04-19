@@ -125,6 +125,29 @@ class Concepto(ModeloBase):
         help_text="Indica si este concepto solicita evidencia opcional en imagen o archivo (ej. recibo de pago o comprobante bancario)."
     )
 
+    class MedioLiquidez(models.TextChoices):
+        EFECTIVO  = 'EFECTIVO',  'Efectivo en Sala'
+        BANCARIO  = 'BANCARIO',  'Bancario / Transferencia'
+        VIRTUAL   = 'VIRTUAL',   'Pasarela Virtual (Billpocket, etc.)'
+        NO_APLICA = 'NO_APLICA', 'No Aplica / Informativo'
+
+    # 1) Para qué sirve: clasificar si el movimiento involucra efectivo físico, banco o pasarela.
+    # 2) Cómo funciona: campo de elección fija; por defecto VIRTUAL para todos los conceptos existentes.
+    # 3) Qué hace: permite calcular "Total Efectivo en Sala" separado del dinero bancario/virtual.
+    # 4) Cómo editarla: cambia el default o agrega choices nuevos sin migración destructiva.
+    medio_liquidez = models.CharField(
+        max_length=20,
+        choices=MedioLiquidez.choices,
+        default=MedioLiquidez.VIRTUAL,
+        verbose_name="Medio de Liquidez",
+        help_text=(
+            "Clasifica si el movimiento representa dinero físico en sala (EFECTIVO), "
+            "un depósito o transferencia bancaria (BANCARIO), "
+            "una pasarela de pago virtual como Billpocket (VIRTUAL), "
+            "o un concepto sin impacto en liquidez (NO_APLICA)."
+        )
+    )
+
     def __str__(self):
         return f"[{self.categoria.clave}] {self.nombre}"
 

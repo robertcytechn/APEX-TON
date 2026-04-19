@@ -55,6 +55,7 @@ const columnasDisponiblesConceptos = [
     { label: 'Rubro', value: 'rubro_nombre' },
     { label: 'Requiere imagen', value: 'requiere_imagen' },
     { label: 'Tipo', value: 'tipo' },
+    { label: 'Medio de liquidez', value: 'medio_liquidez' },
     { label: 'Estado', value: 'estado' }
 ];
 const columnasVisiblesConceptos = ref([...columnasDisponiblesConceptos]);
@@ -81,6 +82,13 @@ const opcionesTipoCategoria = [
 const opcionesTipoConcepto = [
     { label: 'Ingreso', value: 'INGRESO' },
     { label: 'Egreso', value: 'EGRESO' }
+];
+
+const opcionesMedioLiquidez = [
+    { label: '💵 Efectivo en Sala', value: 'EFECTIVO' },
+    { label: '🏦 Bancario / Transferencia', value: 'BANCARIO' },
+    { label: '📱 Pasarela Virtual (Billpocket, etc.)', value: 'VIRTUAL' },
+    { label: '⚪ No Aplica / Informativo', value: 'NO_APLICA' }
 ];
 
 const opcionesTipoValorDetalle = [
@@ -181,6 +189,7 @@ const formularioConcepto = reactive({
     nombre: '',
     clave: '',
     tipo: 'INGRESO',
+    medio_liquidez: 'VIRTUAL',
     es_recurrente: false,
     requiere_imagen: false,
     descripcion: ''
@@ -260,6 +269,7 @@ const limpiarFormularioConcepto = () => {
     formularioConcepto.nombre = '';
     formularioConcepto.clave = '';
     formularioConcepto.tipo = 'INGRESO';
+    formularioConcepto.medio_liquidez = 'VIRTUAL';
     formularioConcepto.es_recurrente = false;
     formularioConcepto.requiere_imagen = false;
     formularioConcepto.descripcion = '';
@@ -458,6 +468,7 @@ const editarConcepto = (registro) => {
     formularioConcepto.nombre = registro.nombre || '';
     formularioConcepto.clave = registro.clave || '';
     formularioConcepto.tipo = registro.tipo || 'INGRESO';
+    formularioConcepto.medio_liquidez = registro.medio_liquidez || 'VIRTUAL';
     formularioConcepto.es_recurrente = !!registro.es_recurrente;
     formularioConcepto.requiere_imagen = !!registro.requiere_imagen;
     formularioConcepto.descripcion = registro.descripcion || '';
@@ -711,6 +722,14 @@ onMounted(async () => {
                     </template>
                 </Column>
                 <Column v-if="esColumnaVisible(columnasVisiblesConceptos, 'tipo')" field="tipo" header="Tipo" sortable />
+                <Column v-if="esColumnaVisible(columnasVisiblesConceptos, 'medio_liquidez')" field="medio_liquidez" header="Medio de liquidez" sortable>
+                    <template #body="slotProps">
+                        <Tag
+                            :value="{ EFECTIVO: 'Efectivo', BANCARIO: 'Bancario', VIRTUAL: 'Virtual', NO_APLICA: 'N/A' }[slotProps.data.medio_liquidez] || slotProps.data.medio_liquidez"
+                            :severity="{ EFECTIVO: 'success', BANCARIO: 'info', VIRTUAL: 'warn', NO_APLICA: 'secondary' }[slotProps.data.medio_liquidez] || 'secondary'"
+                        />
+                    </template>
+                </Column>
                 <Column v-if="esColumnaVisible(columnasVisiblesConceptos, 'estado')" field="estado" header="Estado" sortable />
                 <Column header="Acciones">
                     <template #body="slotProps">
@@ -846,6 +865,18 @@ onMounted(async () => {
                         :disabled="tipoConceptoBloqueadoPorCategoria"
                     />
                     <small class="text-surface-500 block mt-2">{{ textoReglaTipoConcepto }}</small>
+                </div>
+                <div>
+                    <label class="block text-sm mb-2"><i class="pi pi-wallet mr-1 text-primary"></i>Medio de liquidez <span class="text-red-500">*</span> <small class="text-surface-500">(obligatorio)</small></label>
+                    <Select
+                        v-model="formularioConcepto.medio_liquidez"
+                        :options="opcionesMedioLiquidez"
+                        optionLabel="label"
+                        optionValue="value"
+                        class="w-full"
+                        placeholder="Selecciona medio de liquidez"
+                    />
+                    <small class="text-surface-500 block mt-2">Define si el dinero de este concepto es efectivo fisico, bancario o virtual.</small>
                 </div>
                 <div class="space-y-3">
                     <div class="w-full border border-surface-200 rounded-lg p-3">
