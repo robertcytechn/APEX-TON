@@ -1,0 +1,1 @@
+todas las reglas y indicaciones a seguir viven en ".agents/"
