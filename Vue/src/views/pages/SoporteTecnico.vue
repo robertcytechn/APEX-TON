@@ -14,12 +14,12 @@ const contactoPrincipal = {
 };
 
 const opcionesProblemaPrincipal = [
-    { label: 'No puedo iniciar sesión o perdí acceso', value: 'ACCESO' },
-    { label: 'Error en captura operativa', value: 'CAPTURA' },
+    { label: 'Imposibilidad de acceso o credenciales inválidas', value: 'ACCESO' },
+    { label: 'Error en el proceso de captura operativa', value: 'CAPTURA' },
     { label: 'Inconsistencia en reportes o estadísticas', value: 'REPORTES' },
-    { label: 'Pantalla lenta o bloqueada', value: 'RENDIMIENTO' },
-    { label: 'Problema con correo, exportación o integración', value: 'INTEGRACION' },
-    { label: 'Otro problema técnico', value: 'OTRO' }
+    { label: 'Lentitud o bloqueo en la plataforma', value: 'RENDIMIENTO' },
+    { label: 'Fallo en envío de correo, exportación o integración', value: 'INTEGRACION' },
+    { label: 'Otro problema técnico no clasificado', value: 'OTRO' }
 ];
 
 const opcionesAreasAfectadas = [
@@ -36,13 +36,13 @@ const opcionesAreasAfectadas = [
 ];
 
 const opcionesComportamiento = [
-    { label: 'No carga / se queda pensando', value: 'NO_CARGA' },
-    { label: 'Error visual o de maquetación', value: 'ERROR_VISUAL' },
+    { label: 'La página no carga o no responde', value: 'NO_CARGA' },
+    { label: 'Error visual o problema de maquetación', value: 'ERROR_VISUAL' },
     { label: 'Mensaje de validación inesperado', value: 'ERROR_VALIDACION' },
-    { label: 'No tengo permisos en una acción esperada', value: 'ERROR_PERMISOS' },
-    { label: 'Datos incorrectos o incompletos', value: 'DATOS_INCORRECTOS' },
-    { label: 'Se cierra sesión inesperadamente', value: 'CIERRE_SESION' },
-    { label: 'Otro comportamiento', value: 'OTRO' }
+    { label: 'Sin permisos para una acción habilitada según mi rol', value: 'ERROR_PERMISOS' },
+    { label: 'Datos incorrectos, incompletos o inconsistentes', value: 'DATOS_INCORRECTOS' },
+    { label: 'Cierre de sesión inesperado', value: 'CIERRE_SESION' },
+    { label: 'Otro comportamiento no esperado', value: 'OTRO' }
 ];
 
 const opcionesPrioridad = [
@@ -238,9 +238,9 @@ async function enviarFormularioSoporte() {
         <div class="card border border-surface-200/80 dark:border-surface-700/80 overflow-hidden">
             <div class="rounded-xl p-6 bg-[linear-gradient(120deg,#0f172a_0%,#1e293b_45%,#0f766e_100%)] text-white">
                 <small class="uppercase tracking-widest text-white/80">Soporte de aplicación</small>
-                <h1 class="text-2xl sm:text-3xl font-semibold mt-2">Mesa de ayuda técnica</h1>
+                <h1 class="text-2xl sm:text-3xl font-semibold mt-2">Mesa de soporte técnico</h1>
                 <p class="text-white/85 mt-2">
-                    Reporta incidencias operativas y técnicas desde este formulario. El ticket se envía por correo al equipo de soporte.
+                    Registre incidencias operativas o técnicas mediante este formulario. El reporte se envía automáticamente al equipo responsable.
                 </p>
             </div>
         </div>
@@ -249,8 +249,8 @@ async function enviarFormularioSoporte() {
             <div class="card space-y-4" :class="puedeVerTarjetaResponsable ? 'xl:col-span-8' : 'xl:col-span-12'">
                 <div class="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <h2 class="text-xl font-semibold">Formulario de solicitud</h2>
-                        <small class="text-surface-500">Campos marcados con * son obligatorios.</small>
+                        <h2 class="text-xl font-semibold">Formulario de incidencia</h2>
+                        <small class="text-surface-500">Los campos marcados con * son obligatorios.</small>
                     </div>
                     <Tag severity="info" value="Disponible para todo usuario con sesión activa" />
                 </div>
@@ -363,7 +363,7 @@ async function enviarFormularioSoporte() {
 
                 <div class="flex items-center gap-2">
                     <Checkbox v-model="formulario.bloqueo_operativo" binary inputId="bloqueo_operativo" />
-                    <label for="bloqueo_operativo" class="text-sm">Este problema bloquea mi operación diaria</label>
+                    <label for="bloqueo_operativo" class="text-sm">Esta incidencia impide el correcto desarrollo de mi operación diaria</label>
                 </div>
 
                 <div class="flex justify-end">
@@ -427,7 +427,7 @@ async function enviarFormularioSoporte() {
                 </a>
 
                 <Message severity="info" :closable="false">
-                    Este canal está disponible para cualquier usuario con sesión activa.
+                    Este canal de soporte está disponible para todos los usuarios con sesión activa en la plataforma.
                 </Message>
             </div>
         </div>

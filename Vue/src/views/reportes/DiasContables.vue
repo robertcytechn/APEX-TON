@@ -173,7 +173,7 @@ onMounted(async () => {
         <div class="card space-y-4">
             <div>
                 <h1 class="text-2xl font-semibold">Días contables</h1>
-                <p class="text-surface-500 mt-1">Calendario mensual del estatus operativo de captura por casino.</p>
+                <p class="text-surface-500 mt-1">Estado mensual de captura operativa por sucursal. Identifique días con registro pendiente, correcto o bloqueado.</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -234,19 +234,19 @@ onMounted(async () => {
 
             <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                    <small class="text-emerald-700">Verde</small>
+                    <small class="text-emerald-700">Captura correcta</small>
                     <p class="font-semibold">{{ resumenEstados.verde }} días</p>
                 </div>
                 <div class="rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-3">
-                    <small class="text-fuchsia-700">Morado</small>
+                    <small class="text-fuchsia-700">Captura tardía</small>
                     <p class="font-semibold">{{ resumenEstados.morado }} días</p>
                 </div>
                 <div class="rounded-xl border border-sky-200 bg-sky-50 p-3">
-                    <small class="text-sky-700">Azul</small>
+                    <small class="text-sky-700">Día futuro</small>
                     <p class="font-semibold">{{ resumenEstados.azul }} días</p>
                 </div>
                 <div class="rounded-xl border border-red-200 bg-red-50 p-3">
-                    <small class="text-red-700">Rojo</small>
+                    <small class="text-red-700">Sin captura / Vencido</small>
                     <p class="font-semibold">{{ resumenEstados.rojo }} días</p>
                 </div>
             </div>
@@ -291,10 +291,10 @@ onMounted(async () => {
         <div class="card">
             <h3 class="text-lg font-semibold mb-3">Leyenda operativa</h3>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">Verde: llenado en tiempo correcto o día actual disponible.</div>
-                <div class="rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-2">Morado: llenado tardío o día pasado que sigue abierto.</div>
-                <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">Azul: día futuro, no capturable.</div>
-                <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2">Rojo: día pasado sin captura o cerrado por antigüedad mayor a 5 días.</div>
+                <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2"><strong>Captura correcta:</strong> registro realizado dentro del plazo válido o día contable activo.</div>
+                <div class="rounded-lg border border-fuchsia-200 bg-fuchsia-50 px-3 py-2"><strong>Captura tardía:</strong> registro fuera del plazo óptimo; el día permanece abierto.</div>
+                <div class="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2"><strong>Día futuro:</strong> fecha no alcanzada; no disponible para captura.</div>
+                <div class="rounded-lg border border-red-200 bg-red-50 px-3 py-2"><strong>Sin captura / Vencido:</strong> día pasado sin registro o cerrado por superar el límite operativo de 5 días.</div>
             </div>
         </div>
     </section>

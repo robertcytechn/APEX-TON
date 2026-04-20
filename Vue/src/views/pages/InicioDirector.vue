@@ -279,8 +279,8 @@ onMounted(async () => {
                 <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
                     <div>
                         <small class="uppercase tracking-widest text-white/80">Dirección general</small>
-                        <h1 class="text-2xl sm:text-3xl font-semibold mt-2">Tablero ejecutivo por casino</h1>
-                        <p class="text-white/85 mt-2">Seguimiento de recaudación acumulada y comportamiento operativo de todas las salas.</p>
+                        <h1 class="text-2xl sm:text-3xl font-semibold mt-2">Tablero ejecutivo de sucursales</h1>
+                        <p class="text-white/85 mt-2">Seguimiento de recaudación acumulada y comportamiento operativo de todas las unidades de negocio.</p>
                     </div>
                     <div class="flex flex-col sm:flex-row sm:items-center gap-2">
                         <Select
@@ -302,7 +302,7 @@ onMounted(async () => {
 
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <div class="card">
-                <small class="text-surface-500">Casinos con operación</small>
+                <small class="text-surface-500">Unidades con operación registrada</small>
                 <p class="text-2xl font-semibold mt-1">{{ totalCasinos }}</p>
             </div>
             <div class="card">
@@ -322,7 +322,7 @@ onMounted(async () => {
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
             <div class="card xl:col-span-2">
                 <div class="flex items-center justify-between gap-2 mb-3">
-                    <h2 class="text-lg font-semibold">Recaudado por casino</h2>
+                    <h2 class="text-lg font-semibold">Ingresos acumulados por sucursal</h2>
                     <Tag value="Acumulado" severity="info" />
                 </div>
                 <ComponenteGraficas
@@ -333,13 +333,13 @@ onMounted(async () => {
                     :series="serieGraficaRecaudado"
                 />
                 <small v-if="recaudadoPorCasino.length > recaudadoPorCasinoGrafica.length" class="text-surface-500">
-                    Mostrando top {{ recaudadoPorCasinoGrafica.length }} casinos por recaudación para optimizar rendimiento visual.
+                    Se muestran las {{ recaudadoPorCasinoGrafica.length }} sucursales con mayor recaudación. La tabla lateral incluye el listado completo.
                 </small>
-                <Message v-else severity="warn" :closable="false">No hay movimientos para construir la gráfica de recaudación.</Message>
+                <Message v-else severity="warn" :closable="false">No hay movimientos registrados para construir la gráfica de ingresos.</Message>
             </div>
 
             <div class="card">
-                <h2 class="text-lg font-semibold mb-3">Ranking de recaudación</h2>
+                <h2 class="text-lg font-semibold mb-3">Ranking de ingresos por sucursal</h2>
                 <div class="space-y-2 max-h-[340px] overflow-auto pr-1">
                     <div
                         v-for="(casino, indice) in recaudadoPorCasino"
@@ -351,7 +351,7 @@ onMounted(async () => {
                             <Tag :value="`${casino.movimientos} mov.`" severity="contrast" />
                         </div>
                         <div class="mt-2">
-                            <small class="text-surface-500">Recaudado</small>
+                            <small class="text-surface-500">Ingresos registrados</small>
                             <MontoMonedaColoreado :monto="casino.ingresos" />
                         </div>
                         <small class="text-surface-500">Egresos: {{ formatearMoneda(casino.egresos) }} · Neto: {{ formatearMoneda(casino.neto) }}</small>
@@ -373,7 +373,7 @@ onMounted(async () => {
                 :series="serieGraficaFlujo"
             />
             <small v-if="avisoMuestreoFlujo" class="text-surface-500">
-                La gráfica usa muestreo para mantener fluidez; los totales del tablero consideran el período completo.
+                La gráfica aplica muestreo para garantizar fluidez visual; los totales del tablero reflejan el período completo sin interpolación.
             </small>
             <Message v-else severity="warn" :closable="false">No hay datos diarios disponibles para este período.</Message>
         </div>

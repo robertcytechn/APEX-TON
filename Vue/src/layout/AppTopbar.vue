@@ -121,7 +121,7 @@ const opcionesPerfil = ref([
 
                 <span class="hidden sm:flex flex-col leading-tight">
                     <span class="text-sm font-semibold">BinsurMX</span>
-                    <small class="text-xs text-surface-500">Control operativo</small>
+                    <small class="text-xs text-surface-500">Tesorería operativa</small>
                 </span>
             </router-link>
         </div>

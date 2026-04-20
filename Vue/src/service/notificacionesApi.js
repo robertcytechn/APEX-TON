@@ -122,7 +122,7 @@ function extraerMensajeError(error) {
     const mensajeMotor = String(error?.message || '').toLowerCase();
 
     if (codigoError === 'ECONNABORTED' || mensajeMotor.includes('timeout')) {
-        return 'La solicitud tardó demasiado en responder. Intenta nuevamente en unos segundos.';
+        return 'La solicitud superó el tiempo de espera. Verifique su conexión e inténtelo nuevamente.';
     }
 
     const mensajePrincipal = (
@@ -145,18 +145,18 @@ function extraerMensajeError(error) {
     }
 
     if (!error?.response) {
-        return 'No se recibio respuesta del servidor. Verifica tu conexion.';
+        return 'No se recibió respuesta del servidor. Verifique su conexión a la red.';
     }
 
     if (codigo >= 500) {
-        return 'Ocurrio un error interno en el servidor. Intenta nuevamente.';
+        return 'Ocurrió un error interno en el servidor. Inténtelo nuevamente o contacte soporte.';
     }
 
     if (codigo > 0) {
         return `La solicitud no pudo completarse (HTTP ${codigo}).`;
     }
 
-    return 'No fue posible completar la solicitud.';
+    return 'La solicitud no pudo completarse. Contacte al equipo de soporte si el problema persiste.';
 }
 
 function obtenerOpcionesToast(config) {
@@ -166,8 +166,8 @@ function obtenerOpcionesToast(config) {
         mostrarExito: opciones.exito !== false,
         mostrarError: opciones.error !== false,
         forzarMostrar: opciones.forzar === true,
-        resumenExito: textoLimpio(opciones.resumenExito) || 'Operacion exitosa',
-        resumenError: textoLimpio(opciones.resumenError) || 'Error en la operacion',
+        resumenExito: textoLimpio(opciones.resumenExito) || 'Operación completada',
+        resumenError: textoLimpio(opciones.resumenError) || 'Error en la operación',
         vidaExito: Number(opciones.vidaExito) > 0 ? Number(opciones.vidaExito) : 4500,
         vidaError: Number(opciones.vidaError) > 0 ? Number(opciones.vidaError) : 7000,
     };

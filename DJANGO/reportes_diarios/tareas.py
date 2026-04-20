@@ -387,12 +387,20 @@ def auto_cerrar_dias_con_gracia(self):
                 partes = str(hora_cierre).split(':')
                 hora = int(partes[0])
                 minuto = int(partes[1]) if len(partes) > 1 else 0
-                hora_cierre = time(hour=hora, minute=minuto)
+                segundo = int(partes[2]) if len(partes) > 2 else 0
+                hora_cierre = time(hour=hora, minute=minuto, second=segundo)
             elif not isinstance(hora_cierre, time):
-                hora_cierre = time(hour=23, minute=59)  # fallback
-        except (ValueError, AttributeError, IndexError):
-            logger.warning("[CIERRE AUTOMÁTICO CON GRACIA] HORARIO_CIERRE mal formateado. Fallback a 23:59")
-            hora_cierre = time(hour=23, minute=59)
+                logger.warning(
+                    "[CIERRE AUTOMÁTICO CON GRACIA] HORARIO_CIERRE mal formateado o sin tipo TIME válido. "
+                    "Se omite ejecución para evitar forzar una hora de cierre distinta en runtime."
+                )
+                return {'status': 'omitido', 'razon': 'horario_cierre_invalido'}
+        except (ValueError, AttributeError, IndexError, TypeError):
+            logger.warning(
+                "[CIERRE AUTOMÁTICO CON GRACIA] HORARIO_CIERRE mal formateado. "
+                "Se omite ejecución para evitar fallback silencioso."
+            )
+            return {'status': 'omitido', 'razon': 'horario_cierre_invalido'}
         
         # 2. Verificar si ya pasó la hora de cierre hoy
         ahora = timezone.localtime(timezone.now())

@@ -9,21 +9,21 @@ import FloatingConfigurator from '@/components/FloatingConfigurator.vue';
             <div class="mx-auto mb-5 h-16 w-16 rounded-full bg-red-100 dark:bg-red-950 flex items-center justify-center">
                 <i class="pi pi-exclamation-triangle text-3xl text-red-500"></i>
             </div>
-            <h1 class="text-3xl font-bold text-surface-900 dark:text-surface-0">Error del sistema</h1>
+            <h1 class="text-3xl font-bold text-surface-900 dark:text-surface-0">Error inesperado del sistema</h1>
             <p class="mt-3 text-surface-600 dark:text-surface-300">
-                Ocurrió un problema inesperado. Intenta nuevamente o reporta el incidente.
+                Se produjo un error técnico inesperado. Si el problema persiste, repórtelo al equipo de soporte.
             </p>
 
             <div class="mt-6 rounded-xl border border-surface-200 dark:border-surface-700 p-4 text-left text-sm">
-                <p class="font-medium mb-2">Sugerencias rápidas:</p>
+                <p class="font-medium mb-2">Pasos sugeridos:</p>
                 <ul class="space-y-2 text-surface-600 dark:text-surface-300">
-                    <li class="flex items-center gap-2"><i class="pi pi-refresh"></i> Recarga la página y vuelve a intentar.</li>
-                    <li class="flex items-center gap-2"><i class="pi pi-clock"></i> Verifica si fue fuera de horario operativo.</li>
-                    <li class="flex items-center gap-2"><i class="pi pi-send"></i> Contacta soporte si persiste.</li>
+                    <li class="flex items-center gap-2"><i class="pi pi-refresh"></i> Recargue la página e inténtelo nuevamente.</li>
+                    <li class="flex items-center gap-2"><i class="pi pi-clock"></i> Verifique si la acción se realizó fuera del horario operativo.</li>
+                    <li class="flex items-center gap-2"><i class="pi pi-send"></i> Contacte al equipo de soporte si el problema persiste.</li>
                 </ul>
             </div>
 
-            <Button class="mt-8" label="Ir al inicio" icon="pi pi-home" as="router-link" to="/" severity="danger" />
+            <Button class="mt-8" label="Regresar al inicio" icon="pi pi-home" as="router-link" to="/" severity="danger" />
         </section>
     </div>
 </template>

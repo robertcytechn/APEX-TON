@@ -98,7 +98,7 @@ onMounted(async () => {
                     <div>
                         <small class="uppercase tracking-widest text-white/80">Operación diaria</small>
                         <h1 class="text-2xl sm:text-3xl font-semibold mt-2">Resumen del día contable</h1>
-                        <p class="text-white/85 mt-2">Vista rápida para validar captura pendiente y ejecutar cierre diario cuando corresponda.</p>
+                        <p class="text-white/85 mt-2">Consulte el estado de captura y ejecute el cierre diario una vez completado el registro de movimientos.</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <Button icon="pi pi-refresh" label="Actualizar" severity="contrast" outlined :loading="cargandoResumen" @click="cargarResumenDiaContable" />
@@ -126,7 +126,7 @@ onMounted(async () => {
             <div class="card">
                 <small class="text-surface-500">Movimientos registrados</small>
                 <p class="font-semibold text-2xl mt-1">{{ resumenDia.movimientos_registrados || 0 }}</p>
-                <small class="text-surface-500">Faltantes recurrentes: {{ resumenDia.conceptos_recurrentes_faltantes || 0 }}</small>
+                <small class="text-surface-500">Conceptos recurrentes sin capturar: {{ resumenDia.conceptos_recurrentes_faltantes || 0 }}</small>
             </div>
             <div class="card space-y-1">
                 <small class="text-surface-500">Ingresos capturados</small>
@@ -159,7 +159,7 @@ onMounted(async () => {
                     <small class="text-surface-500">{{ faltante.categoria_nombre }} · {{ faltante.tipo }}</small>
                 </div>
             </div>
-            <small v-else class="text-emerald-700 font-semibold">No hay conceptos recurrentes pendientes en este día contable.</small>
+            <small v-else class="text-emerald-700 font-semibold">Todos los conceptos recurrentes han sido registrados correctamente para este día contable.</small>
         </div>
     </section>
 </template>

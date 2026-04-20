@@ -14,6 +14,7 @@ from categoria_operativa.models import CategoriaOperativa, Concepto, DetallePara
 from configuraciones_globales.models import ConfiguracionGlobal
 from reportes_diarios.models import ReporteDiario, MovimientoDiario
 from reportes_diarios.tareas import (
+	auto_cerrar_dias_con_gracia,
 	_obtener_ruta_log_respaldo_bd,
 	_registrar_bitacora_respaldo_bd,
 	_resolver_ruta_log_respaldo_bd_segura,
@@ -56,6 +57,27 @@ def _configurar_horario_bloqueado_para_pruebas():
 def _asignar_rol_usuario(usuario, nombre_rol):
 	rol, _ = Rol.objects.get_or_create(nombre=nombre_rol)
 	UsuarioRol.objects.get_or_create(usuario=usuario, rol=rol)
+
+
+# 1) Para qué sirve: evitar regresión donde un horario inválido se normaliza silenciosamente a 23:59.
+# 2) Cómo funciona: define HORARIO_CIERRE inválido y ejecuta la tarea auto_cerrar_dias_con_gracia.
+# 3) Qué hace: valida que la tarea se omita explícitamente sin forzar una hora distinta.
+# 4) Cómo editarla: agrega más casos de formato cuando se admitan nuevos tipos para HORARIO_CIERRE.
+class AutoCerrarDiasConGraciaHorarioTests(APITestCase):
+	def test_horario_cierre_invalido_no_aplica_fallback_2359(self):
+		ConfiguracionGlobal.objects.update_or_create(
+			clave='HORARIO_CIERRE',
+			defaults={
+				'valor': 'valor_invalido',
+				'tipo_valor': 'TIME',
+				'descripcion': 'Prueba de horario de cierre inválido.',
+			},
+		)
+
+		resultado = auto_cerrar_dias_con_gracia.run()
+
+		self.assertEqual(resultado.get('status'), 'omitido')
+		self.assertEqual(resultado.get('razon'), 'horario_cierre_invalido')
 
 
 # 1) Para que sirve: validar que respaldo BD resuelva destinatarios sin bloquear ejecucion por configuracion incompleta.

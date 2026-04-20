@@ -466,7 +466,7 @@ onBeforeUnmount(() => {
                     <div>
                         <h1 class="text-2xl font-semibold">Mi perfil</h1>
                         <p class="text-surface-600 dark:text-surface-300 mt-1">
-                            Administra tu correo, contraseña e imagen de perfil.
+                            Gestione su información de contacto, credenciales de acceso e imagen de perfil.
                         </p>
                         <div class="mt-2 flex flex-wrap gap-2">
                             <Tag v-for="rol in perfil.roles" :key="rol.id || rol.nombre" :value="rol.nombre" severity="contrast" />
@@ -490,7 +490,7 @@ onBeforeUnmount(() => {
             severity="error"
             :closable="false"
         >
-            Cambio obligatorio: debes actualizar tu contraseña de inmediato para poder continuar usando el sistema.
+            Acción requerida: debe actualizar su contraseña de acceso de forma inmediata para continuar operando en el sistema.
         </Message>
 
         <div v-if="cargandoPerfil" class="card">
@@ -505,7 +505,7 @@ onBeforeUnmount(() => {
                 <article class="card xl:col-span-2 space-y-4">
                     <header>
                         <h2 class="text-xl font-semibold">Datos personales</h2>
-                        <p class="text-surface-500 mt-1">Tu nombre completo es solo lectura para proteger trazabilidad administrativa.</p>
+                        <p class="text-surface-500 mt-1">El nombre completo es de solo lectura para garantizar la trazabilidad administrativa del sistema.</p>
                     </header>
 
                     <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -551,7 +551,7 @@ onBeforeUnmount(() => {
                 <aside class="card space-y-4">
                     <header>
                         <h2 class="text-xl font-semibold">Imagen de perfil</h2>
-                        <p class="text-surface-500 mt-1">Se almacena por casino y usuario para trazabilidad de archivos.</p>
+                        <p class="text-surface-500 mt-1">La imagen se vincula a su usuario y sucursal para fines de trazabilidad y auditoría.</p>
                     </header>
 
                     <div class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-surface-300 p-4 dark:border-surface-600">
@@ -588,7 +588,7 @@ onBeforeUnmount(() => {
                             />
                         </div>
 
-                        <small class="text-center text-surface-500">Formatos sugeridos: PNG, JPG o WEBP. Se recorta en formato cuadrado antes de guardar.</small>
+                        <small class="text-center text-surface-500">Formatos aceptados: PNG, JPG o WEBP. La imagen se recorta en formato cuadrado antes de guardar.</small>
                     </div>
                 </aside>
             </div>

@@ -1,4 +1,11 @@
-version_actual: v0.0.4
+version_actual: v0.0.5
+
+## v0.0.5 — 2026-04-20
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Refactor integral de textos visibles al usuario final en todo el frontend para elevar el tono a un registro profesional e institucional en español mexicano correcto.
+**Capa(s):** frontend
+**Detalle:** `.agents/memory/refactor_20260420_frontend_textos_profesionales.md`
+
 
 ## v0.0.1 — 2026-04-19
 **Autor:** Jose Roberto Tamayo Montejano

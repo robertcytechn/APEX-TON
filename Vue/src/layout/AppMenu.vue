@@ -67,7 +67,7 @@ const model = computed(() => {
 
     if (sesionStore.cumpleAlgunoRoles(['ADMINISTRADOR'])) {
         menuBase.splice(1, 0, {
-            label: 'Cabina de Arquitectura',
+            label: 'Administración del sistema',
             path: '/admin',
             visiblePara: ['ADMINISTRADOR'],
             items: [
@@ -112,7 +112,7 @@ const model = computed(() => {
                     to: '/admin/padres-rubros-contables'
                 },
                 {
-                    label: 'Catalogo operativo',
+                    label: 'Catálogo operativo',
                     icon: 'pi pi-fw pi-table',
                     to: '/admin/catalogo-operativo'
                 }
@@ -122,7 +122,7 @@ const model = computed(() => {
 
     if (sesionStore.cumpleAlgunoRoles(['DIRECTOR'])) {
         menuBase.splice(1, 0, {
-            label: 'Cabina Director',
+            label: 'Panel directivo',
             path: '/director',
             visiblePara: ['DIRECTOR'],
             items: [
@@ -147,7 +147,7 @@ const model = computed(() => {
                     to: '/director/rubros-contables'
                 },
                 {
-                    label: 'Catalogo operativo',
+                    label: 'Catálogo operativo',
                     icon: 'pi pi-fw pi-table',
                     to: '/director/catalogo-operativo'
                 }
@@ -168,7 +168,7 @@ const model = computed(() => {
             visiblePara: ['CONTADOR', 'GERENTE'],
             items: itemsCategorias.length
                 ? itemsCategorias
-                : [{ label: 'Sin categorias activas', icon: 'pi pi-info-circle', to: '/operativo' }]
+                : [{ label: 'Sin categorías activas', icon: 'pi pi-info-circle', to: '/operativo' }]
         });
     }
 

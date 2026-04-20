@@ -209,9 +209,9 @@ onMounted(async () => {
             <div class="rounded-xl p-5 sm:p-6 bg-[linear-gradient(120deg,#3f1d6b_0%,#0f172a_45%,#0f766e_100%)] text-white">
                 <div class="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-3">
                     <div>
-                        <small class="uppercase tracking-widest text-white/80">Administrador</small>
-                        <h1 class="text-2xl sm:text-3xl font-semibold mt-2">Modo Dios · Centro de mando</h1>
-                        <p class="text-white/85 mt-2">Control total de operación, seguridad, catálogos y salud general de la aplicación.</p>
+                        <small class="uppercase tracking-widest text-white/80">Panel de administración</small>
+                        <h1 class="text-2xl sm:text-3xl font-semibold mt-2">Centro de mando operativo</h1>
+                        <p class="text-white/85 mt-2">Supervisión integral de la operación, seguridad, catálogos y estado general de la plataforma.</p>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         <Tag :value="`Estado app: ${etiquetaEstadoApp.texto}`" :severity="etiquetaEstadoApp.severidad" />
@@ -229,7 +229,7 @@ onMounted(async () => {
                 <p class="text-2xl font-semibold mt-1">{{ usuariosActivos }} / {{ totalUsuarios }}</p>
             </div>
             <div class="card">
-                <small class="text-surface-500">Casinos activos</small>
+                <small class="text-surface-500">Sucursales activas</small>
                 <p class="text-2xl font-semibold mt-1">{{ sucursalesActivas }} / {{ totalSucursales }}</p>
             </div>
             <div class="card">
@@ -245,7 +245,7 @@ onMounted(async () => {
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
             <div class="card xl:col-span-2">
                 <div class="flex items-center justify-between gap-2 mb-3">
-                    <h2 class="text-lg font-semibold">Top casinos por neto</h2>
+                    <h2 class="text-lg font-semibold">Desempeño por sucursal (neto)</h2>
                     <Tag value="Año en curso" severity="info" />
                 </div>
                 <ComponenteGraficas
@@ -255,26 +255,26 @@ onMounted(async () => {
                     :options="opcionesGraficaNetoSucursales"
                     :series="serieGraficaNetoSucursales"
                 />
-                <Message v-else severity="warn" :closable="false">No hay datos suficientes para graficar casinos.</Message>
+                <Message v-else severity="warn" :closable="false">Sin información suficiente para generar la gráfica de sucursales.</Message>
             </div>
 
             <div class="card space-y-3">
                 <h2 class="text-lg font-semibold">Acciones rápidas</h2>
                 <router-link to="/admin/centro-control" class="block rounded-lg border border-surface-200 dark:border-surface-700 p-3 hover:border-primary transition-colors">
                     <p class="font-semibold">Centro de control</p>
-                    <small class="text-surface-500">Estado de aplicación, tareas y salud de servidor.</small>
+                    <small class="text-surface-500">Estado de la aplicación, tareas programadas y monitoreo de infraestructura.</small>
                 </router-link>
                 <router-link to="/admin/usuarios" class="block rounded-lg border border-surface-200 dark:border-surface-700 p-3 hover:border-primary transition-colors">
                     <p class="font-semibold">Gestión de usuarios</p>
-                    <small class="text-surface-500">Altas, bajas, roles y control de accesos.</small>
+                    <small class="text-surface-500">Administración de altas, bajas, roles y control de acceso.</small>
                 </router-link>
                 <router-link to="/admin/sucursales" class="block rounded-lg border border-surface-200 dark:border-surface-700 p-3 hover:border-primary transition-colors">
                     <p class="font-semibold">Gestión de sucursales</p>
-                    <small class="text-surface-500">Casinos, fondos fijos y operación territorial.</small>
+                    <small class="text-surface-500">Configuración de sucursales, fondos fijos y operación territorial.</small>
                 </router-link>
                 <router-link to="/admin/catalogo-operativo" class="block rounded-lg border border-surface-200 dark:border-surface-700 p-3 hover:border-primary transition-colors">
                     <p class="font-semibold">Catálogo operativo</p>
-                    <small class="text-surface-500">Categorías, conceptos y reglas contables.</small>
+                    <small class="text-surface-500">Definición de categorías, conceptos y reglas contables.</small>
                 </router-link>
             </div>
         </div>

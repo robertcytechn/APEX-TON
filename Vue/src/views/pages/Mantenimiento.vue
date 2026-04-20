@@ -271,7 +271,7 @@ onBeforeUnmount(() => {
                     <i :class="estadoActivo.icono"></i>
                 </div>
                 <div>
-                    <p class="text-xs uppercase tracking-widest text-surface-600 font-semibold">Estado operativo - bloqueado</p>
+                    <p class="text-xs uppercase tracking-widest text-surface-600 font-semibold">Estado operativo &mdash; fuera de servicio</p>
                     <h1 class="text-3xl sm:text-4xl font-extrabold text-surface-900 mt-1">
                         {{ estadoActivo.titulo }}
                     </h1>
@@ -296,7 +296,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div :class="['mt-5 rounded-2xl border p-4 sm:p-5', clasesEstadoActivo.panelDecoradores]">
-                <h2 :class="['font-semibold mb-3', clasesEstadoActivo.textoAcento]">Métricas en desarrollo</h2>
+                <h2 :class="['font-semibold mb-3', clasesEstadoActivo.textoAcento]">Alcance de la intervención</h2>
                 <div class="flex flex-wrap gap-2">
                     <span
                         v-for="(decorador, indiceDecorador) in estadoActivo.decoradores"
@@ -353,7 +353,7 @@ onBeforeUnmount(() => {
             </div>
 
             <div class="mt-6 rounded-2xl border border-surface-200 bg-surface-50 p-4 sm:p-5">
-                <h2 class="font-semibold text-surface-900 mb-3">Qué puedes hacer mientras tanto</h2>
+                <h2 class="font-semibold text-surface-900 mb-3">Acciones recomendadas</h2>
                 <ul class="space-y-2 text-surface-700">
                     <li v-for="(recomendacion, indice) in estadoActivo.recomendaciones" :key="`${indice}-${recomendacion}`" class="flex items-start gap-2">
                         <i class="pi pi-check-circle text-emerald-500 mt-1"></i>
