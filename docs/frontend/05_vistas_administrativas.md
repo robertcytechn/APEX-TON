@@ -44,3 +44,35 @@ Estas vistas (ej. `SucursalesDirector.vue`, `UsuariosDirector.vue`) son versione
 - Se omite por completo el `Toolbar` de creación.
 - No existen botones de acciones por fila (Editar / Borrar).
 - La tabla (`DataTable`) sirve únicamente como un reporte visual con opciones para exportar a CSV o buscar, aprovechando los permisos `EsDirector` o `EsDirectorOAdministradorEnEscritura` del backend (que devuelven 403 si el Director intentara inyectar un POST/PUT malicioso saltándose la UI).
+
+---
+
+## 4. Tableros de Inicio por Rol (`views/pages/`)
+
+La pantalla de Inicio dejó de usar una plantilla vacía y ahora resuelve componentes específicos por perfil.
+
+### 4.1 `InicioAdministrador.vue` (Modo Dios)
+- Consolida indicadores de operación anual (ingresos, egresos, neto, movimientos).
+- Muestra conteo de usuarios/sucursales activas y estado de aplicación del Centro de Control.
+- Incluye accesos rápidos a módulos críticos: Centro de Control, Usuarios, Sucursales y Catálogo Operativo.
+- Usa carga resiliente con `Promise.allSettled`: si un módulo falla, los demás bloques sí se renderizan (carga parcial controlada).
+
+### 4.2 `InicioDirector.vue` (Ejecutivo)
+- Enfocado en análisis de negocio: recaudado por casino, ranking y tendencia diaria de ingresos/egresos.
+- Consume `GET /estado-resultados/estadisticas/` con filtros por período para mostrar acumulados hasta fecha.
+- Presenta visualización directa de desempeño por sala para toma de decisiones.
+- Optimiza rendimiento inicial: período por defecto "Año en curso" y muestreo de series largas para evitar bloqueos al renderizar gráficas masivas.
+
+### 4.3 `SoporteTecnico.vue`
+- Reemplaza el acceso previo a página no encontrada dentro del menú de Soporte.
+- Muestra formulario de ticket para cualquier usuario autenticado.
+- La tarjeta de responsable con datos de contacto (nombre, teléfonos y correos) solo es visible para `DIRECTOR` y `ADMINISTRADOR`.
+- Incluye formulario de ticket con selectores de problema/áreas/comportamiento y descripción detallada.
+- Envía solicitudes al endpoint `POST /usuarios/soporte-tecnico/solicitudes/`, incluyendo datos del usuario autenticado.
+- Acceso habilitado para cualquier perfil con sesión activa.
+
+### 4.4 `SoporteTecnicoAdmin.vue`
+- Vista exclusiva de `ADMINISTRADOR` para operar la bandeja de tickets de soporte.
+- Muestra histórico de eventos con folio, solicitante, problema, prioridad y estado de seguimiento.
+- Permite filtrar por estado, buscar por texto y abrir detalle de cada ticket.
+- Incluye flujo de seguimiento para actualizar estado (`NUEVO`, `EN_PROCESO`, `COMPLETADO`, `DESCARTADO`) y registrar notas internas.

@@ -118,6 +118,12 @@ function extraerMensajesValidacion(payload) {
 function extraerMensajeError(error) {
     const payload = error?.response?.data;
     const codigo = Number(error?.response?.status || 0);
+    const codigoError = String(error?.code || '').toUpperCase();
+    const mensajeMotor = String(error?.message || '').toLowerCase();
+
+    if (codigoError === 'ECONNABORTED' || mensajeMotor.includes('timeout')) {
+        return 'La solicitud tardó demasiado en responder. Intenta nuevamente en unos segundos.';
+    }
 
     const mensajePrincipal = (
         textoLimpio(payload?.message)

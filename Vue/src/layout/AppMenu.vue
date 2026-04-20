@@ -21,11 +21,6 @@ const model = computed(() => {
             to: '/'
         },
         {
-            label: 'Plantilla vacía',
-            icon: 'pi pi-fw pi-file-edit',
-            to: '/pages/empty'
-        },
-        {
             label: 'Estado de resultados',
             icon: 'pi pi-fw pi-chart-line',
             to: '/reportes/estado-resultados'
@@ -62,9 +57,9 @@ const model = computed(() => {
             visiblePara: ['AUTENTICADO'],
             items: [
                 {
-                    label: 'Página no encontrada',
-                    icon: 'pi pi-fw pi-question-circle',
-                    to: '/pages/notfound'
+                    label: 'Soporte técnico',
+                    icon: 'pi pi-fw pi-headphones',
+                    to: '/pages/soporte-tecnico'
                 }
             ]
         }
@@ -100,6 +95,11 @@ const model = computed(() => {
                     label: 'Centro de control',
                     icon: 'pi pi-fw pi-bolt',
                     to: '/admin/centro-control'
+                },
+                {
+                    label: 'Tickets de soporte',
+                    icon: 'pi pi-fw pi-ticket',
+                    to: '/admin/soporte-tecnico'
                 },
                 {
                     label: 'Rubros contables',

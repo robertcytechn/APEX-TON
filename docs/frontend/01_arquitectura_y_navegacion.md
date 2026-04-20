@@ -28,6 +28,10 @@ El archivo de configuración de Vue Router no solo define los endpoints del fron
 ### 2.1 Definición de Rutas (Jerarquía)
 Las rutas están agrupadas bajo un componente de presentación (Layout):
 - **Raíz (`/`)**: Utiliza `AppLayout.vue` como plantilla, que a su vez renderiza un `router-view` hijo para las vistas internas.
+- **Inicio Inteligente por Rol (`/`)**: La ruta `inicio` carga `views/pages/Inicio.vue`, que enruta internamente por perfil:
+  - `CONTADOR` / `GERENTE` → `InicioOperativo.vue`.
+  - `DIRECTOR` → `InicioDirector.vue` con gráficas de recaudación por casino.
+  - `ADMINISTRADOR` / `SUPERUSUARIO` → `InicioAdministrador.vue` con tablero de control (modo dios).
 - **Páginas de Error/Login**: Se renderizan fuera de `AppLayout.vue` (ocupan pantalla completa).
 
 ### 2.2 Metadatos Críticos de las Rutas (`meta`)
@@ -36,6 +40,8 @@ Cada ruta especifica su nivel de acceso mediante atributos `meta`:
 - `requiereSesion: true`: Obliga al usuario a estar logueado.
 - `requiereRoles: ['DIRECTOR', 'ADMINISTRADOR']`: Verifica contra el array de roles del usuario en el store.
 - `requiereAdmin: true`: Verifica el flag `esAdministrador` del store.
+- La ruta `pages/soporte-tecnico` quedó con `requiereSesion: true`, por lo que cualquier perfil autenticado puede reportar incidencias.
+- La ruta `admin/soporte-tecnico` usa `requiereAdmin: true` para concentrar seguimiento de tickets solo en la cabina administrativa.
 
 ### 2.3 Guardia de Navegación (`router.beforeEach`)
 Antes de cada cambio de página, se ejecuta una cadena de validaciones de seguridad:
@@ -60,7 +66,9 @@ El Layout (`AppLayout.vue`) es la estructura visual compartida por casi todas la
 ### 3.2 `AppSidebar.vue` y `AppMenu.vue` (Menú Lateral Dinámico)
 - El Sidebar envuelve al `AppMenu.vue`, cuyo arreglo lógico de navegación (`model`) es **reactivo e inteligente**.
 - El arreglo del menú se construye evaluando dinámicamente:
-  - `sesionStore.cumpleAlgunoRoles(['ADMINISTRADOR'])`: Muestra el bloque "Cabina de Arquitectura" (Usuarios, Sucursales, Catálogos).
+  - El bloque **Principal** ya no expone `Plantilla vacía`; concentra navegación real (Inicio y reportes).
+  - El bloque **Soporte** ahora apunta a `pages/soporte-tecnico` y se muestra para `AUTENTICADO`.
+  - `sesionStore.cumpleAlgunoRoles(['ADMINISTRADOR'])`: Muestra el bloque "Cabina de Arquitectura" (Usuarios, Sucursales, Catálogos y Tickets de soporte).
   - `sesionStore.cumpleAlgunoRoles(['DIRECTOR'])`: Muestra la "Cabina Director" (Modo solo lectura).
   - `sesionStore.cumpleAlgunoRoles(['CONTADOR', 'GERENTE'])`: Llama al `categoriasOperativasStore` para obtener las pestañas del día y renderizar un link por cada categoría activa.
 - Utiliza recursividad mediante el componente `<AppMenuItem />` para pintar links (`to`), íconos de PrimeIcons y separadores.

@@ -286,3 +286,202 @@ class UsuarioRol(models.Model):
         verbose_name_plural = "Usuarios – Roles"
         db_table = "usuarios_roles"
         unique_together = ('usuario', 'rol')
+
+
+class TicketSoporteTecnico(ModeloBase):
+    """
+    Registro histórico de tickets de soporte técnico levantados desde frontend.
+    Persiste datos del formulario y metadatos del usuario para trazabilidad.
+    """
+
+    class EstadoSeguimiento(models.TextChoices):
+        NUEVO = 'NUEVO', 'Nuevo'
+        EN_PROCESO = 'EN_PROCESO', 'En proceso'
+        COMPLETADO = 'COMPLETADO', 'Completado'
+        DESCARTADO = 'DESCARTADO', 'Descartado'
+
+    folio = models.CharField(
+        max_length=60,
+        unique=True,
+        db_index=True,
+        verbose_name='Folio',
+        help_text='Folio único del ticket de soporte (ej. ST-20260419-120300-15-AB12CD).',
+    )
+    usuario = models.ForeignKey(
+        Usuario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tickets_soporte_levantados',
+        verbose_name='Usuario solicitante',
+        help_text='Usuario autenticado que levantó el ticket.',
+    )
+    usuario_nombre = models.CharField(
+        max_length=180,
+        verbose_name='Nombre del usuario',
+        help_text='Nombre visible del usuario al momento de levantar el ticket.',
+    )
+    usuario_username = models.CharField(
+        max_length=100,
+        verbose_name='Username del usuario',
+        help_text='Identificador de cuenta del usuario al momento de levantar el ticket.',
+    )
+    usuario_correo = models.EmailField(
+        null=True,
+        blank=True,
+        verbose_name='Correo del usuario',
+        help_text='Correo del usuario al momento de levantar el ticket.',
+    )
+    usuario_sucursal = models.CharField(
+        max_length=180,
+        blank=True,
+        default='',
+        verbose_name='Sucursal del usuario',
+        help_text='Sucursal asociada al usuario al momento de levantar el ticket.',
+    )
+    usuario_roles = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Roles del usuario',
+        help_text='Lista de roles del usuario al momento de levantar el ticket.',
+    )
+
+    problema_principal = models.CharField(
+        max_length=40,
+        verbose_name='Problema principal (código)',
+        help_text='Clave del problema principal seleccionado en formulario.',
+    )
+    problema_principal_etiqueta = models.CharField(
+        max_length=220,
+        verbose_name='Problema principal',
+        help_text='Etiqueta textual del problema principal.',
+    )
+    areas_afectadas = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Áreas afectadas (códigos)',
+        help_text='Lista de claves de áreas afectadas seleccionadas.',
+    )
+    areas_afectadas_etiquetas = models.JSONField(
+        default=list,
+        blank=True,
+        verbose_name='Áreas afectadas',
+        help_text='Lista de etiquetas de áreas afectadas seleccionadas.',
+    )
+    comportamiento_observado = models.CharField(
+        max_length=50,
+        verbose_name='Comportamiento observado (código)',
+        help_text='Clave de comportamiento observado seleccionada.',
+    )
+    comportamiento_observado_etiqueta = models.CharField(
+        max_length=220,
+        verbose_name='Comportamiento observado',
+        help_text='Etiqueta textual del comportamiento observado.',
+    )
+    prioridad = models.CharField(
+        max_length=20,
+        default='MEDIA',
+        verbose_name='Prioridad (código)',
+        help_text='Clave de prioridad seleccionada.',
+    )
+    prioridad_etiqueta = models.CharField(
+        max_length=60,
+        default='Media',
+        verbose_name='Prioridad',
+        help_text='Etiqueta textual de prioridad.',
+    )
+    dispositivo = models.CharField(
+        max_length=20,
+        default='ESCRITORIO',
+        verbose_name='Dispositivo (código)',
+        help_text='Clave del dispositivo reportado.',
+    )
+    dispositivo_etiqueta = models.CharField(
+        max_length=80,
+        default='Equipo de escritorio',
+        verbose_name='Dispositivo',
+        help_text='Etiqueta textual de dispositivo.',
+    )
+    pagina_afectada = models.CharField(
+        max_length=300,
+        blank=True,
+        default='',
+        verbose_name='Página afectada',
+        help_text='Ruta/pantalla reportada por el usuario.',
+    )
+    descripcion_detallada = models.TextField(
+        verbose_name='Descripción detallada',
+        help_text='Descripción principal del incidente.',
+    )
+    pasos_reproduccion = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Pasos para reproducir',
+        help_text='Secuencia opcional para reproducir el incidente.',
+    )
+    bloqueo_operativo = models.BooleanField(
+        default=False,
+        verbose_name='Bloqueo operativo',
+        help_text='Indica si el incidente bloquea operación diaria del usuario.',
+    )
+
+    estado_seguimiento = models.CharField(
+        max_length=20,
+        choices=EstadoSeguimiento.choices,
+        default=EstadoSeguimiento.NUEVO,
+        verbose_name='Estado de seguimiento',
+        help_text='Estado de atención administrativa del ticket.',
+    )
+    notas_seguimiento = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Notas de seguimiento',
+        help_text='Notas internas del administrador sobre el avance/cierre.',
+    )
+    atendido_por = models.ForeignKey(
+        Usuario,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='tickets_soporte_atendidos',
+        verbose_name='Atendido por',
+        help_text='Administrador que actualizó el estado del ticket por última vez.',
+    )
+    atendido_en = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Atendido en',
+        help_text='Fecha y hora de la última actualización de seguimiento.',
+    )
+    resuelto_en = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Resuelto en',
+        help_text='Fecha y hora en que el ticket fue marcado como completado.',
+    )
+
+    correo_soporte_enviado = models.BooleanField(
+        default=False,
+        verbose_name='Correo a soporte enviado',
+        help_text='Indica si el correo al canal de soporte técnico se envió correctamente.',
+    )
+    correo_confirmacion_enviado = models.BooleanField(
+        default=False,
+        verbose_name='Correo de confirmación enviado',
+        help_text='Indica si se notificó al usuario solicitante con folio del ticket.',
+    )
+    detalle_error_envio = models.TextField(
+        blank=True,
+        default='',
+        verbose_name='Detalle de error de envío',
+        help_text='Detalle técnico de errores de envío de correo (si aplica).',
+    )
+
+    def __str__(self):
+        return f"{self.folio} - {self.problema_principal_etiqueta}"
+
+    class Meta:
+        verbose_name = 'Ticket de Soporte Técnico'
+        verbose_name_plural = 'Tickets de Soporte Técnico'
+        db_table = 'tickets_soporte_tecnico'
+        ordering = ['-creado_en']

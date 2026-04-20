@@ -40,23 +40,23 @@ const router = createRouter({
                     path: '',
                     name: 'inicio',
                     meta: { requiereSesion: true },
-                    component: () => import('@/views/pages/Empty.vue')
+                    component: () => import('@/views/pages/Inicio.vue')
                 },
                 {
                     path: 'pages',
-                    redirect: '/pages/empty'
-                },
-                {
-                    path: 'pages/empty',
-                    name: 'plantilla',
-                    meta: { requiereSesion: true },
-                    component: () => import('@/views/pages/Empty.vue')
+                    redirect: '/pages/perfil'
                 },
                 {
                     path: 'pages/perfil',
                     name: 'perfil-usuario',
                     meta: { requiereSesion: true },
                     component: () => import('@/views/pages/PerfilUsuario.vue')
+                },
+                {
+                    path: 'pages/soporte-tecnico',
+                    name: 'soporte-tecnico',
+                    meta: { requiereSesion: true },
+                    component: () => import('@/views/pages/SoporteTecnico.vue')
                 },
                 {
                     path: 'reportes/estado-resultados',
@@ -167,6 +167,12 @@ const router = createRouter({
                     name: 'admin-centro-control',
                     meta: { requiereSesion: true, requiereAdmin: true },
                     component: () => import('@/views/admin/CentroControlAdmin.vue')
+                },
+                {
+                    path: 'admin/soporte-tecnico',
+                    name: 'admin-soporte-tecnico',
+                    meta: { requiereSesion: true, requiereAdmin: true },
+                    component: () => import('@/views/admin/SoporteTecnicoAdmin.vue')
                 },
                 {
                     path: 'admin/categorias-operativas',

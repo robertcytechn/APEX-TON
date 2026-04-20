@@ -8,6 +8,12 @@ Este módulo define la capa de comunicación HTTP (Axios) entre el frontend en V
 
 Es la instancia central de Axios (`const api = axios.create(...)`). Todos los servicios de la aplicación deben importar y utilizar esta instancia en lugar de invocar a `axios` directamente.
 
+### 1.0 Control de Timeouts (anti-bloqueo)
+- La instancia base define `timeout` global para evitar que la UI quede cargando de forma indefinida cuando un endpoint no responde.
+- Valor por defecto: `20000 ms`.
+- Valor configurable por entorno con `VITE_API_TIMEOUT_MS` (siempre que sea mayor o igual a `5000 ms`).
+- Efecto esperado: la petición falla de forma explícita y la vista puede mostrar error controlado en lugar de quedarse congelada.
+
 ### 1.1 Inyección de Seguridad (CSRF)
 Django requiere un token CSRF para operaciones de mutación (`POST`, `PUT`, `PATCH`, `DELETE`).
 - **Interceptor de Petición:** Antes de enviar una solicitud de mutación, verifica si el token (`csrftoken`) existe en las cookies del navegador. Si no existe, pausa la solicitud, hace un `GET /usuarios/csrf/` para obtenerlo e inyectarlo, y luego reanuda la petición original.
@@ -37,6 +43,8 @@ Esta utilidad:
 3. Concatena los errores en un mensaje legible (ej. "Monto: Debe ser mayor a 0 | Observaciones: Requerido").
 4. Manda llamar al componente `<Toast>` global de PrimeVue a través de `agregarToast()`.
 
+Además, detecta errores por timeout (`ECONNABORTED` o mensajes de tiempo de espera) y devuelve un texto amigable para usuario final: la solicitud tardó demasiado y debe reintentarse.
+
 ---
 
 ## 3. Servicios por Dominio (Patrón Wrapper)
@@ -48,3 +56,7 @@ Ejemplos principales:
 - **`cabinaArquitecturaServicio.js`**: CRUD para los catálogos operativos, sucursales y usuarios de administración.
 - **`capturaOperativaServicio.js`**: Recupera las categorías y conceptos disponibles para el contador, y envía los reportes diarios.
 - **`estadoResultadosServicio.js`**: Obtiene los cierres mensuales o históricos.
+- **`soporteTecnicoServicio.js`**:
+	- `enviarSolicitudSoporteTecnico(payload)` para crear tickets vía `POST /usuarios/soporte-tecnico/solicitudes/`.
+	- `listarEventosSoporteTecnico(params)` para consultar bandeja admin vía `GET /usuarios/soporte-tecnico/eventos/`.
+	- `actualizarEventoSoporteTecnico(ticketId, payload)` para seguimiento admin vía `PATCH /usuarios/soporte-tecnico/eventos/{ticketId}/`.

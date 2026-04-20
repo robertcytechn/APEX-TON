@@ -27,10 +27,6 @@ const claseResultadoNeto = computed(() => {
     return 'text-surface-700';
 });
 
-// 1) Para qué sirve: refrescar tablero rápido del día contable actual.
-// 2) Cómo funciona: consulta endpoint resumen-actual por sucursal del usuario.
-// 3) Qué hace: muestra métricas y faltantes recurrentes para control operativo.
-// 4) Cómo editarla: agrega filtros adicionales al payload cuando negocio lo requiera.
 async function cargarResumenDiaContable() {
     if (!esContadorOGerente.value) {
         return;
@@ -44,6 +40,7 @@ async function cargarResumenDiaContable() {
 
     cargandoResumen.value = true;
     mensajePantalla.value = '';
+
     try {
         const { data } = await obtenerResumenDiaContableActual({ sucursal_id: sucursalId.value });
         resumenDia.value = data?.data || null;
@@ -55,10 +52,6 @@ async function cargarResumenDiaContable() {
     }
 }
 
-// 1) Para qué sirve: ejecutar cierre de día contable desde dashboard.
-// 2) Cómo funciona: confirma acción y llama endpoint cerrar-actual por sucursal.
-// 3) Qué hace: bloquea por completo el día para evitar nuevas modificaciones.
-// 4) Cómo editarla: integra doble confirmación si se requiere protocolo más estricto.
 async function cerrarDiaDesdeDashboard() {
     if (!puedeCerrarDia.value || !sucursalId.value) {
         return;
@@ -77,6 +70,7 @@ async function cerrarDiaDesdeDashboard() {
 
     cerrandoDia.value = true;
     mensajePantalla.value = '';
+
     try {
         await cerrarDiaContableActual({
             sucursal_id: sucursalId.value,
@@ -97,23 +91,26 @@ onMounted(async () => {
 </script>
 
 <template>
-    <section v-if="esContadorOGerente" class="space-y-4">
-        <div class="card">
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div>
-                    <h1 class="text-2xl font-semibold">Resumen del día contable</h1>
-                    <p class="text-surface-500 mt-1">Vista rápida de avances para validar si falta captura antes del cierre.</p>
-                </div>
-                <div class="flex flex-wrap items-center gap-2">
-                    <Button icon="pi pi-refresh" label="Actualizar" text :loading="cargandoResumen" @click="cargarResumenDiaContable" />
-                    <Button
-                        icon="pi pi-lock"
-                        label="Cierre de día"
-                        severity="danger"
-                        :loading="cerrandoDia"
-                        :disabled="!puedeCerrarDia"
-                        @click="cerrarDiaDesdeDashboard"
-                    />
+    <section class="space-y-4">
+        <div class="card border border-surface-200/80 dark:border-surface-700/80 overflow-hidden">
+            <div class="rounded-xl p-5 sm:p-6 bg-[linear-gradient(120deg,#0f172a_0%,#1e3a8a_45%,#0f766e_100%)] text-white">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div>
+                        <small class="uppercase tracking-widest text-white/80">Operación diaria</small>
+                        <h1 class="text-2xl sm:text-3xl font-semibold mt-2">Resumen del día contable</h1>
+                        <p class="text-white/85 mt-2">Vista rápida para validar captura pendiente y ejecutar cierre diario cuando corresponda.</p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <Button icon="pi pi-refresh" label="Actualizar" severity="contrast" outlined :loading="cargandoResumen" @click="cargarResumenDiaContable" />
+                        <Button
+                            icon="pi pi-lock"
+                            label="Cierre de día"
+                            severity="danger"
+                            :loading="cerrandoDia"
+                            :disabled="!puedeCerrarDia"
+                            @click="cerrarDiaDesdeDashboard"
+                        />
+                    </div>
                 </div>
             </div>
         </div>
@@ -152,12 +149,12 @@ onMounted(async () => {
         </div>
 
         <div v-if="resumenDia" class="card space-y-3">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between gap-2">
                 <h2 class="text-lg font-semibold">Conceptos recurrentes pendientes</h2>
                 <Tag :value="`Pendientes: ${resumenDia.conceptos_recurrentes_faltantes || 0}`" severity="warn" />
             </div>
             <div v-if="faltantesVisibles.length" class="grid grid-cols-1 md:grid-cols-2 gap-2">
-                <div v-for="faltante in faltantesVisibles" :key="faltante.id" class="rounded-lg border border-surface-200 bg-surface-50 px-3 py-2">
+                <div v-for="faltante in faltantesVisibles" :key="faltante.id" class="rounded-lg border border-surface-200 bg-surface-50 px-3 py-2 dark:border-surface-700 dark:bg-surface-800/70">
                     <p class="font-semibold text-sm">{{ faltante.nombre }}</p>
                     <small class="text-surface-500">{{ faltante.categoria_nombre }} · {{ faltante.tipo }}</small>
                 </div>
@@ -165,15 +162,4 @@ onMounted(async () => {
             <small v-else class="text-emerald-700 font-semibold">No hay conceptos recurrentes pendientes en este día contable.</small>
         </div>
     </section>
-
-    <section v-else class="card border border-dashed border-surface-300 dark:border-surface-700 min-h-[65vh] flex items-center justify-center">
-        <div class="text-center max-w-2xl px-4">
-            <i class="pi pi-file-edit text-5xl text-primary mb-4"></i>
-            <h1 class="text-3xl font-semibold text-surface-900 dark:text-surface-0 mb-3">Panel principal</h1>
-            <p class="text-surface-600 dark:text-surface-300">
-                Esta página está lista para construir módulos del sistema por perfil de usuario.
-            </p>
-        </div>
-    </section>
 </template>
-

@@ -72,6 +72,15 @@ Controlador más importante que agrupa CRUD de usuarios y métodos de autenticac
   - Maneja métodos GET y PATCH.
   - Soporta MultiPart/Form Data para carga de imágenes (`foto_perfil`).
   - Maneja validaciones obligatorias de cambio de contraseña si `requiere_cambio_password` está en `True`.
+- **Soporte técnico (`/soporte-tecnico/solicitudes/`):**
+  - Endpoint autenticado para registrar tickets de soporte.
+  - Persiste cada solicitud en el modelo `TicketSoporteTecnico` con folio único, snapshot del usuario, detalle del incidente y estado de seguimiento.
+  - Valida selectores de problema/áreas/comportamiento y descripción detallada.
+  - Envía correo al canal técnico con destinatario principal `robert-cyby@hotmail.com` y copia a `robertot@gbentretenimiento.com`, incluyendo nombre/correo del usuario autenticado.
+  - Envía correo de confirmación al usuario solicitante con folio y resumen del ticket.
+- **Seguimiento administrativo de soporte (`/soporte-tecnico/eventos/`):**
+  - Endpoint exclusivo de administrador para listar tickets y consultar su historial.
+  - Permite actualizar estado (`NUEVO`, `EN_PROCESO`, `COMPLETADO`, `DESCARTADO`) y notas de seguimiento.
 - **Administración de Roles (`asignar-rol`, `quitar-rol`):** Endpoints anidados explícitos.
 - **Baja Lógica (`destroy()`):** El borrado establece `is_active=False` y nunca ejecuta borrado físico.
 
@@ -93,6 +102,9 @@ A través del `DefaultRouter`, los recursos quedan estructurados así:
 | `/api/usuarios/usuarios/cerrar-sesion/` | Auth | POST | Cierra la sesión activa. |
 | `/api/usuarios/usuarios/sesion-actual/` | Auth | GET | Retorna datos del perfil y sus permisos. |
 | `/api/usuarios/usuarios/perfil-propio/` | Perfil | GET, PATCH | Gestión personal. Recibe `FormData` para imagen y validaciones de contraseña (`password_actual`, `password_nueva`, `password_confirmacion`). |
+| `/api/usuarios/soporte-tecnico/solicitudes/` | Soporte | POST | Crea y guarda ticket de soporte, envía correo al canal técnico y correo de acuse al usuario con folio. |
+| `/api/usuarios/soporte-tecnico/eventos/` | Soporte Admin | GET | Lista tickets de soporte para seguimiento administrativo (solo administrador). |
+| `/api/usuarios/soporte-tecnico/eventos/{ticket_id}/` | Soporte Admin | PATCH | Actualiza estado y notas de seguimiento del ticket (solo administrador). |
 | `/api/usuarios/usuarios/` | CRUD | GET, POST | Listar o crear usuarios administrativos. |
 | `/api/usuarios/usuarios/{id}/` | CRUD | GET, PUT, PATCH, DELETE | Manipulación directa del usuario objetivo. |
 | `/api/usuarios/usuarios/{id}/asignar-rol/` | Custom | POST | Asocia el rol. Requiere `{rol: <rol_id>}`. |

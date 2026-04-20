@@ -101,6 +101,8 @@ class EsAdministrador(BasePermission):
     Se usa para acciones excepcionales como la reapertura de un día cerrado.
     """
 
+    message = 'Solo administradores pueden acceder a este recurso.'
+
     def has_permission(self, request, view):
         return usuario_tiene_rol(request.user, 'ADMINISTRADOR')
 

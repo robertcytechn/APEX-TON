@@ -937,15 +937,21 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
         }
 
         if psutil:
-            memoria = psutil.virtual_memory()
-            recursos.update(
-                {
-                    'cpu_porcentaje': round(float(psutil.cpu_percent(interval=0.25)), 2),
-                    'memoria_total_mb': self._bytes_a_mb(memoria.total),
-                    'memoria_disponible_mb': self._bytes_a_mb(memoria.available),
-                    'memoria_usada_porcentaje': round(float(memoria.percent), 2),
-                }
-            )
+            try:
+                memoria = psutil.virtual_memory()
+                recursos.update(
+                    {
+                        'cpu_porcentaje': round(float(psutil.cpu_percent(interval=0.25)), 2),
+                        'memoria_total_mb': self._bytes_a_mb(memoria.total),
+                        'memoria_disponible_mb': self._bytes_a_mb(memoria.available),
+                        'memoria_usada_porcentaje': round(float(memoria.percent), 2),
+                    }
+                )
+            except Exception as exc:
+                recursos['psutil_disponible'] = False
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f'Error obteniendo métricas de psutil: {exc}')
 
         db_config = settings.DATABASES.get('default', {})
         inicio_db = time.perf_counter()

@@ -226,6 +226,14 @@ async function cargarSaludServidor() {
     try {
         const { data } = await obtenerSaludServidorCentroControlAdmin();
         saludServidor.value = data?.data || null;
+        
+        if (!saludServidor.value?.recursos?.psutil_disponible) {
+            console.warn('ADVERTENCIA: psutil no está disponible. Las métricas de CPU y RAM pueden no funcionar correctamente.');
+        }
+    } catch (error) {
+        console.error('Error al cargar salud del servidor:', error);
+        const detalle = error?.response?.data?.message || error?.message || 'Error desconocido';
+        mostrarMensaje(`Error al cargar métricas: ${detalle}`, 'error');
     } finally {
         cargandoSalud.value = false;
     }
@@ -238,7 +246,10 @@ async function cargarInicial() {
             cargarEstadoCentroControl(),
             cargarTareasCentroControl(),
             cargarSucursalesTareas(),
-            cargarSaludServidor()
+            cargarSaludServidor().catch((error) => {
+                console.error('Salud del servidor no disponible:', error);
+                // No interrumpir la carga inicial si falla la salud del servidor
+            })
         ]);
         mostrarMensaje('Centro de Control cargado correctamente.', 'success');
     } catch (error) {
@@ -684,6 +695,11 @@ onBeforeUnmount(() => {
             <div v-if="cargandoInicial" class="text-surface-500">Cargando métricas del servidor...</div>
 
             <div v-else-if="saludServidor" class="space-y-4">
+                <Message v-if="!saludServidor.recursos?.psutil_disponible" severity="warn" :closable="false">
+                    ⚠️ <strong>Atención:</strong> La librería psutil no está disponible en el servidor. Los indicadores de CPU y RAM mostrarán 0%. 
+                    Para habilitar estas métricas, instala psutil en el entorno del servidor: <code>pip install psutil</code>
+                </Message>
+
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="p-3 rounded-lg border border-surface-200 bg-surface-50">
                         <div class="flex items-center justify-between mb-2">

@@ -7,6 +7,15 @@ import { procesarErrorConToast, procesarRespuestaExitosaConToast } from '@/servi
 // - Desarrollo: /api/ (usa proxy de Vite)
 // - Produccion: /apex/api/ (usa proxy inverso de Apache)
 const URL_BASE_API_PREDETERMINADA = import.meta.env.PROD ? '/apex/api/' : '/api/';
+const TIMEOUT_API_MS_PREDETERMINADO = 20000;
+
+function resolverTimeoutApiMs() {
+    const timeoutDefinido = Number(import.meta.env.VITE_API_TIMEOUT_MS);
+    if (Number.isFinite(timeoutDefinido) && timeoutDefinido >= 5000) {
+        return timeoutDefinido;
+    }
+    return TIMEOUT_API_MS_PREDETERMINADO;
+}
 
 function normalizarUrlBaseApi(urlBase) {
     const texto = String(urlBase || '').trim();
@@ -24,6 +33,7 @@ function normalizarUrlBaseApi(urlBase) {
 }
 
 const baseURL = normalizarUrlBaseApi(import.meta.env.VITE_API_BASE_URL || URL_BASE_API_PREDETERMINADA);
+const timeoutApiMs = resolverTimeoutApiMs();
 let redireccionandoLogin = false;
 const CLAVE_SESION = 'binsurmx_sesion';
 
@@ -57,7 +67,8 @@ const api = axios.create({
     baseURL,
     withCredentials: true,
     xsrfCookieName: 'csrftoken',
-    xsrfHeaderName: 'X-CSRFToken'
+    xsrfHeaderName: 'X-CSRFToken',
+    timeout: timeoutApiMs
 });
 
 api.interceptors.request.use(async (config) => {

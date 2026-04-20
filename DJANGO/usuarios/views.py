@@ -1,3 +1,7 @@
+import logging
+from uuid import uuid4
+
+from django.conf import settings
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -5,15 +9,27 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from django.contrib.auth import authenticate, login as iniciar_sesion_django, logout as cerrar_sesion_django, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
+from django.core.mail import EmailMultiAlternatives
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Q
 from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
-from .models import Rol, Permiso, RolPermiso, Usuario, UsuarioRol
+from django.utils import timezone
+from core.permisos import usuario_tiene_rol
+from .models import Rol, Permiso, RolPermiso, Usuario, UsuarioRol, TicketSoporteTecnico
 from .serializers import (
     RolSerializer, PermisoSerializer, RolPermisoSerializer,
     UsuarioSerializer, UsuarioListSerializer, UsuarioRolSerializer,
+    SolicitudSoporteTecnicoSerializer, TicketSoporteTecnicoAdminSerializer,
+    TicketSoporteTecnicoSeguimientoSerializer,
 )
+from .servicios_correo_credenciales import normalizar_destinatarios
+
+
+logger = logging.getLogger(__name__)
+
+DESTINATARIO_SOPORTE_PRINCIPAL = 'robert-cyby@hotmail.com'
+DESTINATARIO_SOPORTE_COPIA = 'robertot@gbentretenimiento.com'
 
 
 # 1) Para qué sirve: mantener un formato único de respuesta para toda la app de usuarios.
@@ -69,6 +85,24 @@ def construir_datos_sesion(usuario, request=None):
         ],
         "permisos": permisos,
     }
+
+
+def resolver_etiqueta_opcion(valor, opciones):
+    """Resuelve etiqueta de una opción DRF ChoiceField a partir de su valor."""
+    tabla = dict(opciones)
+    return tabla.get(valor, valor)
+
+
+def generar_folio_soporte(usuario_id):
+    """Construye un folio único y legible para tickets de soporte técnico."""
+    marca_tiempo = timezone.now().strftime('%Y%m%d-%H%M%S')
+    sufijo = uuid4().hex[:6].upper()
+    return f"ST-{marca_tiempo}-{usuario_id}-{sufijo}"
+
+
+def usuario_administrador_habilitado(usuario):
+    """Valida privilegios administrativos para consultas/seguimiento de tickets."""
+    return usuario_tiene_rol(usuario, 'ADMINISTRADOR')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -401,6 +435,302 @@ class UsuarioViewSet(viewsets.ViewSet):
         return respuesta_estandar(
             data=self._construir_datos_perfil_propio(usuario, request),
             mensaje="Perfil actualizado correctamente."
+        )
+
+    @action(detail=False, methods=['post'], url_path='soporte-tecnico/solicitudes')
+    def crear_solicitud_soporte(self, request):
+        """Recibe ticket de soporte, lo persiste y envía correo al canal técnico + acuse al usuario."""
+        if not request.user or not request.user.is_authenticated:
+            return respuesta_estandar(
+                mensaje="No hay sesión activa.",
+                estado="error",
+                codigo=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        serializador = SolicitudSoporteTecnicoSerializer(data=request.data)
+        if not serializador.is_valid():
+            return respuesta_estandar(
+                data=serializador.errors,
+                mensaje="No se pudo enviar la solicitud de soporte.",
+                estado="error",
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        datos = serializador.validated_data
+        usuario = request.user
+
+        nombre_usuario = str(getattr(usuario, 'nombre', '') or '').strip() or str(getattr(usuario, 'username', '') or '').strip()
+        correo_usuario = str(getattr(usuario, 'correo', '') or '').strip()
+        correo_usuario_visible = correo_usuario or 'No capturado'
+        sucursal_nombre = getattr(getattr(usuario, 'sucursal', None), 'nombre', None) or 'No asignada'
+        roles_usuario = list(usuario.usuario_roles.select_related('rol').values_list('rol__nombre', flat=True))
+        roles_texto = ', '.join(roles_usuario) if roles_usuario else 'Sin rol asignado'
+
+        problema_principal_codigo = datos['problema_principal']
+        comportamiento_codigo = datos['comportamiento_observado']
+        prioridad_codigo = datos.get('prioridad', 'MEDIA')
+        dispositivo_codigo = datos.get('dispositivo', 'ESCRITORIO')
+
+        problema_principal = resolver_etiqueta_opcion(problema_principal_codigo, SolicitudSoporteTecnicoSerializer.PROBLEMAS_PRINCIPALES)
+        comportamiento = resolver_etiqueta_opcion(comportamiento_codigo, SolicitudSoporteTecnicoSerializer.COMPORTAMIENTOS)
+        prioridad = resolver_etiqueta_opcion(prioridad_codigo, SolicitudSoporteTecnicoSerializer.PRIORIDADES)
+        dispositivo = resolver_etiqueta_opcion(dispositivo_codigo, SolicitudSoporteTecnicoSerializer.DISPOSITIVOS)
+
+        mapa_areas = dict(SolicitudSoporteTecnicoSerializer.AREAS_AFECTADAS)
+        areas_codigos = list(datos.get('areas_afectadas', []))
+        areas_legibles = [mapa_areas.get(area, area) for area in areas_codigos]
+        areas_texto = ', '.join(areas_legibles) if areas_legibles else 'No especificadas'
+
+        folio = generar_folio_soporte(getattr(usuario, 'id', '0'))
+        intentos_folio = 0
+        while TicketSoporteTecnico.todos.filter(folio=folio).exists() and intentos_folio < 5:
+            folio = generar_folio_soporte(getattr(usuario, 'id', '0'))
+            intentos_folio += 1
+
+        if TicketSoporteTecnico.todos.filter(folio=folio).exists():
+            return respuesta_estandar(
+                mensaje='No fue posible generar un folio único para la solicitud.',
+                estado='error',
+                codigo=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        ticket = TicketSoporteTecnico.objects.create(
+            folio=folio,
+            usuario=usuario,
+            usuario_nombre=nombre_usuario or 'Sin nombre',
+            usuario_username=str(getattr(usuario, 'username', '') or '').strip(),
+            usuario_correo=correo_usuario or None,
+            usuario_sucursal=sucursal_nombre,
+            usuario_roles=roles_usuario,
+            problema_principal=problema_principal_codigo,
+            problema_principal_etiqueta=problema_principal,
+            areas_afectadas=areas_codigos,
+            areas_afectadas_etiquetas=areas_legibles,
+            comportamiento_observado=comportamiento_codigo,
+            comportamiento_observado_etiqueta=comportamiento,
+            prioridad=prioridad_codigo,
+            prioridad_etiqueta=prioridad,
+            dispositivo=dispositivo_codigo,
+            dispositivo_etiqueta=dispositivo,
+            pagina_afectada=datos.get('pagina_afectada') or '',
+            descripcion_detallada=datos['descripcion_detallada'],
+            pasos_reproduccion=datos.get('pasos_reproduccion') or '',
+            bloqueo_operativo=bool(datos.get('bloqueo_operativo')),
+            creado_por=usuario,
+            actualizado_por=usuario,
+        )
+
+        asunto = f"Soporte APEX-TON | {problema_principal} | {ticket.folio}"
+        cuerpo = (
+            "Nueva solicitud de soporte técnico\n"
+            "================================\n\n"
+            f"Folio: {ticket.folio}\n"
+            f"Fecha: {timezone.now():%Y-%m-%d %H:%M:%S}\n"
+            f"Bloqueo operativo: {'Sí' if ticket.bloqueo_operativo else 'No'}\n\n"
+            "Datos del usuario\n"
+            "-----------------\n"
+            f"Nombre: {ticket.usuario_nombre or 'Sin nombre'}\n"
+            f"Usuario: {ticket.usuario_username or 'sin_username'}\n"
+            f"Correo: {correo_usuario_visible}\n"
+            f"Sucursal: {ticket.usuario_sucursal or 'No asignada'}\n"
+            f"Roles: {roles_texto}\n\n"
+            "Detalle del incidente\n"
+            "---------------------\n"
+            f"Problema principal: {ticket.problema_principal_etiqueta}\n"
+            f"Áreas afectadas: {areas_texto}\n"
+            f"Comportamiento observado: {ticket.comportamiento_observado_etiqueta}\n"
+            f"Prioridad: {ticket.prioridad_etiqueta}\n"
+            f"Dispositivo: {ticket.dispositivo_etiqueta}\n"
+            f"Página afectada: {ticket.pagina_afectada or 'No especificada'}\n\n"
+            "Descripción detallada\n"
+            "---------------------\n"
+            f"{ticket.descripcion_detallada}\n\n"
+            "Pasos para reproducir\n"
+            "---------------------\n"
+            f"{ticket.pasos_reproduccion or 'No especificados'}\n"
+        )
+
+        destinatarios_to = normalizar_destinatarios([DESTINATARIO_SOPORTE_PRINCIPAL])
+        destinatarios_cc = normalizar_destinatarios([DESTINATARIO_SOPORTE_COPIA])
+        errores_envio = []
+        correo_soporte_enviado = False
+        correo_confirmacion_enviado = False
+
+        if not destinatarios_to:
+            logger.error('No se encontró destinatario principal para soporte técnico.')
+            errores_envio.append('No existe destinatario principal para soporte técnico.')
+        else:
+            destinatarios_to_lower = {correo.lower() for correo in destinatarios_to}
+            destinatarios_cc = [correo for correo in destinatarios_cc if correo.lower() not in destinatarios_to_lower]
+
+            reply_to = normalizar_destinatarios([correo_usuario]) if correo_usuario else []
+
+            try:
+                mensaje = EmailMultiAlternatives(
+                    subject=asunto,
+                    body=cuerpo,
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                    to=destinatarios_to,
+                    cc=destinatarios_cc,
+                    reply_to=reply_to,
+                )
+
+                enviados = int(mensaje.send(fail_silently=False) or 0)
+                correo_soporte_enviado = enviados > 0
+                if not correo_soporte_enviado:
+                    errores_envio.append('No fue posible confirmar el envío al canal de soporte técnico.')
+            except Exception as exc:
+                logger.exception('Error enviando solicitud de soporte %s para usuario %s', ticket.folio, getattr(usuario, 'id', 'sin_id'))
+                errores_envio.append(f'Error enviando correo a soporte: {exc}')
+
+        destinatario_confirmacion = normalizar_destinatarios([ticket.usuario_correo]) if ticket.usuario_correo else []
+        if destinatario_confirmacion:
+            asunto_confirmacion = f"APEX-TON | Ticket recibido {ticket.folio}"
+            cuerpo_confirmacion = (
+                "Hola,\n\n"
+                "Tu solicitud de soporte técnico fue registrada correctamente en APEX-TON.\n\n"
+                f"Folio: {ticket.folio}\n"
+                f"Fecha de registro: {timezone.now():%Y-%m-%d %H:%M:%S}\n"
+                f"Problema principal: {ticket.problema_principal_etiqueta}\n"
+                f"Prioridad: {ticket.prioridad_etiqueta}\n"
+                "Estado inicial: Nuevo\n\n"
+                "Este folio te servirá para dar seguimiento con el equipo de soporte.\n\n"
+                "Gracias."
+            )
+
+            try:
+                correo_confirmacion = EmailMultiAlternatives(
+                    subject=asunto_confirmacion,
+                    body=cuerpo_confirmacion,
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                    to=destinatario_confirmacion,
+                )
+                confirmacion_enviada = int(correo_confirmacion.send(fail_silently=False) or 0)
+                correo_confirmacion_enviado = confirmacion_enviada > 0
+                if not correo_confirmacion_enviado:
+                    errores_envio.append('No fue posible confirmar el envío del correo de acuse al usuario.')
+            except Exception as exc:
+                logger.exception('Error enviando confirmación de ticket %s al usuario %s', ticket.folio, getattr(usuario, 'id', 'sin_id'))
+                errores_envio.append(f'Error enviando acuse al usuario: {exc}')
+
+        ticket.correo_soporte_enviado = correo_soporte_enviado
+        ticket.correo_confirmacion_enviado = correo_confirmacion_enviado
+        ticket.detalle_error_envio = ' | '.join(errores_envio)
+        ticket.actualizado_por = usuario
+        ticket.save(
+            update_fields=[
+                'correo_soporte_enviado',
+                'correo_confirmacion_enviado',
+                'detalle_error_envio',
+                'actualizado_por',
+                'actualizado_en',
+            ]
+        )
+
+        mensaje_respuesta = 'Solicitud de soporte enviada correctamente.'
+        if not correo_soporte_enviado:
+            mensaje_respuesta = 'Solicitud registrada con folio, pero no se pudo enviar al canal de soporte.'
+        elif ticket.usuario_correo and not correo_confirmacion_enviado:
+            mensaje_respuesta = 'Solicitud enviada a soporte, pero no se pudo enviar correo de confirmación al usuario.'
+
+        return respuesta_estandar(
+            data={
+                'folio': ticket.folio,
+                'ticket_id': ticket.id,
+                'destinatario_principal': destinatarios_to,
+                'destinatario_copia': destinatarios_cc,
+                'correo_soporte_enviado': correo_soporte_enviado,
+                'correo_confirmacion_enviado': correo_confirmacion_enviado,
+                'detalle_error_envio': ticket.detalle_error_envio,
+            },
+            mensaje=mensaje_respuesta,
+            codigo=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=False, methods=['get'], url_path='soporte-tecnico/eventos')
+    def listar_eventos_soporte(self, request):
+        """Lista tickets de soporte técnico para seguimiento administrativo."""
+        if not usuario_administrador_habilitado(request.user):
+            return respuesta_estandar(
+                mensaje='Solo administradores pueden consultar eventos de soporte técnico.',
+                estado='error',
+                codigo=status.HTTP_403_FORBIDDEN,
+            )
+
+        estado_filtro = str(request.query_params.get('estado_seguimiento', '') or '').strip().upper()
+        busqueda = str(request.query_params.get('busqueda', '') or '').strip()
+
+        queryset = TicketSoporteTecnico.objects.select_related('usuario', 'atendido_por').order_by('-creado_en')
+
+        if estado_filtro:
+            queryset = queryset.filter(estado_seguimiento=estado_filtro)
+
+        if busqueda:
+            queryset = queryset.filter(
+                Q(folio__icontains=busqueda)
+                | Q(usuario_nombre__icontains=busqueda)
+                | Q(usuario_username__icontains=busqueda)
+                | Q(usuario_correo__icontains=busqueda)
+                | Q(problema_principal_etiqueta__icontains=busqueda)
+                | Q(descripcion_detallada__icontains=busqueda)
+            )
+
+        data = TicketSoporteTecnicoAdminSerializer(queryset, many=True).data
+        return respuesta_estandar(
+            data=data,
+            mensaje='Eventos de soporte obtenidos correctamente.',
+        )
+
+    @action(detail=False, methods=['patch'], url_path='soporte-tecnico/eventos/(?P<ticket_id>[^/.]+)')
+    def actualizar_evento_soporte(self, request, ticket_id=None):
+        """Permite al administrador actualizar estado y notas de seguimiento de tickets."""
+        if not usuario_administrador_habilitado(request.user):
+            return respuesta_estandar(
+                mensaje='Solo administradores pueden actualizar eventos de soporte técnico.',
+                estado='error',
+                codigo=status.HTTP_403_FORBIDDEN,
+            )
+
+        ticket = get_object_or_404(TicketSoporteTecnico, pk=ticket_id)
+        serializador = TicketSoporteTecnicoSeguimientoSerializer(data=request.data)
+        if not serializador.is_valid():
+            return respuesta_estandar(
+                data=serializador.errors,
+                mensaje='No se pudo actualizar el ticket de soporte.',
+                estado='error',
+                codigo=status.HTTP_400_BAD_REQUEST,
+            )
+
+        datos = serializador.validated_data
+        ticket.estado_seguimiento = datos['estado_seguimiento']
+        ticket.notas_seguimiento = str(datos.get('notas_seguimiento', '') or '').strip()
+        ticket.atendido_por = request.user
+        ticket.atendido_en = timezone.now()
+        ticket.actualizado_por = request.user
+
+        if ticket.estado_seguimiento in {
+            TicketSoporteTecnico.EstadoSeguimiento.COMPLETADO,
+            TicketSoporteTecnico.EstadoSeguimiento.DESCARTADO,
+        }:
+            ticket.resuelto_en = timezone.now()
+        else:
+            ticket.resuelto_en = None
+
+        ticket.save(
+            update_fields=[
+                'estado_seguimiento',
+                'notas_seguimiento',
+                'atendido_por',
+                'atendido_en',
+                'resuelto_en',
+                'actualizado_por',
+                'actualizado_en',
+            ]
+        )
+
+        return respuesta_estandar(
+            data=TicketSoporteTecnicoAdminSerializer(ticket).data,
+            mensaje='Ticket de soporte actualizado correctamente.',
         )
 
     def list(self, request):
