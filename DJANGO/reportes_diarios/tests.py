@@ -2,6 +2,7 @@ from datetime import timedelta
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 from django.conf import settings
 from django.test import SimpleTestCase, override_settings
@@ -79,6 +80,83 @@ class AutoCerrarDiasConGraciaHorarioTests(APITestCase):
 
 		self.assertEqual(resultado.get('status'), 'omitido')
 		self.assertEqual(resultado.get('razon'), 'horario_cierre_invalido')
+
+
+# 1) Para qué sirve: validar umbral mínimo de movimientos en cierre automático con gracia.
+# 2) Cómo funciona: crea reportes abiertos con distintos montos y ejecuta la tarea.
+# 3) Qué hace: asegura que solo se cierre cuando el total de movimientos supera $10.00.
+# 4) Cómo editarla: ajusta montos y aserciones si cambia el umbral de negocio.
+class AutoCerrarDiasConGraciaUmbralMovimientosTests(APITestCase):
+	def setUp(self):
+		self.sucursal = Sucursal.objects.create(
+			nombre='Sucursal Umbral Gracia',
+			clave='SUC-UMBRAL-GRACIA',
+		)
+		self.categoria = CategoriaOperativa.objects.create(
+			nombre='Categoria Umbral Gracia',
+			clave='CAT_UMBRAL_GRACIA',
+			tipo='INGRESO',
+			orden=1,
+		)
+		self.concepto_ingreso = Concepto.objects.create(
+			categoria=self.categoria,
+			nombre='Ingreso Umbral Gracia',
+			clave='INGRESO_UMBRAL_GRACIA',
+			tipo='INGRESO',
+		)
+		ConfiguracionGlobal.objects.update_or_create(
+			clave='HORARIO_CIERRE',
+			defaults={
+				'valor': '00:00:00',
+				'tipo_valor': 'TIME',
+				'descripcion': 'Horario para pruebas de auto cierre con umbral.',
+			},
+		)
+
+	def _crear_reporte_abierto(self, fecha_contable):
+		return ReporteDiario.objects.create(
+			sucursal=self.sucursal,
+			fecha_contable=fecha_contable,
+			estado_reporte=ReporteDiario.EstadoReporte.ABIERTO,
+		)
+
+	@patch('reportes_diarios.tareas.enviar_correo_cierre_reporte.delay')
+	def test_omite_cierre_si_total_movimientos_es_igual_a_10(self, mock_delay):
+		fecha_contable = timezone.localdate() - timedelta(days=1)
+		reporte = self._crear_reporte_abierto(fecha_contable)
+		MovimientoDiario.objects.create(
+			reporte=reporte,
+			concepto=self.concepto_ingreso,
+			monto=Decimal('10.00'),
+		)
+
+		with self.captureOnCommitCallbacks(execute=True):
+			resultado = auto_cerrar_dias_con_gracia.run()
+		reporte.refresh_from_db()
+
+		self.assertEqual(reporte.estado_reporte, ReporteDiario.EstadoReporte.ABIERTO)
+		self.assertEqual(resultado.get('reportes_cerrados'), 0)
+		self.assertEqual(resultado.get('reportes_omitidos_por_umbral'), 1)
+		mock_delay.assert_not_called()
+
+	@patch('reportes_diarios.tareas.enviar_correo_cierre_reporte.delay')
+	def test_cierra_reporte_si_total_movimientos_supera_10(self, mock_delay):
+		fecha_contable = timezone.localdate() - timedelta(days=1)
+		reporte = self._crear_reporte_abierto(fecha_contable)
+		MovimientoDiario.objects.create(
+			reporte=reporte,
+			concepto=self.concepto_ingreso,
+			monto=Decimal('10.01'),
+		)
+
+		with self.captureOnCommitCallbacks(execute=True):
+			resultado = auto_cerrar_dias_con_gracia.run()
+		reporte.refresh_from_db()
+
+		self.assertEqual(reporte.estado_reporte, ReporteDiario.EstadoReporte.CERRADO)
+		self.assertEqual(resultado.get('reportes_cerrados'), 1)
+		self.assertEqual(resultado.get('reportes_omitidos_por_umbral'), 0)
+		mock_delay.assert_called_once_with(reporte.id)
 
 
 # 1) Para que sirve: validar que respaldo BD resuelva destinatarios sin bloquear ejecucion por configuracion incompleta.

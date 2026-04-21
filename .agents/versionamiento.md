@@ -1,4 +1,10 @@
-version_actual: v0.0.8
+version_actual: v0.0.9
+
+## v0.0.9 — 2026-04-21
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se endureció el cierre automático con gracia para cerrar solo reportes con movimientos reales superiores a $10.00, se aseguró el envío de correo post-commit en cierres manuales/automáticos y se amplió la trazabilidad de logs por etapa.
+**Capa(s):** backend
+**Detalle:** `.agents/memory/fix_20260421_backend_cierre_gracia_umbral_correo.md`
 
 ## v0.0.8 — 2026-04-20
 **Autor:** Jose Roberto Tamayo Montejano

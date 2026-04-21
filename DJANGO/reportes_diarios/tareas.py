@@ -13,6 +13,7 @@ import tempfile
 import traceback
 import zipfile
 from datetime import datetime
+from decimal import Decimal
 from celery import shared_task
 from django.core.mail import EmailMessage, get_connection
 from django.core.management import call_command
@@ -23,6 +24,7 @@ import calendar
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+UMBRAL_MINIMO_CIERRE_AUTOMATICO = Decimal('10.00')
 
 
 # 1) Para qué sirve: automatizar el cierre diario contable para todas las sucursales activas.
@@ -69,6 +71,7 @@ def cerrar_dia_contable(self):
 
     sucursales = Sucursal.objects.filter(estado=Sucursal.Estado.ACTIVO)
     reportes_cerrados = 0
+    metricas_correo = {'programados': 0, 'errores_programacion': 0}
     errores = []
 
     for sucursal in sucursales:
@@ -100,10 +103,23 @@ def cerrar_dia_contable(self):
                 reporte.tipo_cambio_eur_snapshot = tc_eur
                 reporte.estado_reporte          = ReporteDiario.EstadoReporte.CERRADO
                 reporte.cerrado_en              = timezone.now()
+                reporte.correo_enviado          = False
                 reporte.save()
 
                 reportes_cerrados += 1
                 logger.info(f"[CIERRE AUTOMÁTICO] {sucursal.nombre}: reporte {fecha_contable} cerrado. Neto: ${neto:,.2f}")
+
+                def _programar_correo_post_commit(reporte_id=reporte.id):
+                    resultado_encolado = _encolar_envio_correo_cierre(
+                        reporte_id,
+                        origen='cerrar_dia_contable',
+                    )
+                    if resultado_encolado.get('status') == 'programado':
+                        metricas_correo['programados'] += 1
+                    else:
+                        metricas_correo['errores_programacion'] += 1
+
+                transaction.on_commit(_programar_correo_post_commit)
 
                 # ── Verificar si es fin de mes para cerrar LibroEstadoResultados ──
                 ultimo_dia_del_mes = calendar.monthrange(fecha_contable.year, fecha_contable.month)[1]
@@ -119,6 +135,8 @@ def cerrar_dia_contable(self):
         "fecha_contable":     str(fecha_contable),
         "sucursales_procesadas": sucursales.count(),
         "reportes_cerrados":  reportes_cerrados,
+        "correos_programados": metricas_correo['programados'],
+        "correos_error_programacion": metricas_correo['errores_programacion'],
         "errores":            errores,
     }
     logger.info(f"[CIERRE AUTOMÁTICO] Finalizado: {resumen}")
@@ -281,6 +299,37 @@ def _resolver_destinatarios_correos_ejecutivos(sucursal):
     return _normalizar_destinatarios_local(destinatarios)
 
 
+# 1) Para qué sirve: centralizar el encolado de correos de cierre con trazabilidad completa.
+# 2) Cómo funciona: intenta programar la tarea Celery y registra task_id, origen y reporte.
+# 3) Qué hace: evita excepciones no controladas cuando el broker no está disponible.
+# 4) Cómo editarla: agrega nuevos campos de contexto si se requieren más métricas operativas.
+def _encolar_envio_correo_cierre(reporte_id, origen='desconocido'):
+    try:
+        tarea_programada = enviar_correo_cierre_reporte.delay(reporte_id)
+        task_id = getattr(tarea_programada, 'id', None)
+        logger.info(
+            '[CIERRE EMAIL][DISPATCH] Programado envio de correo. '
+            f'reporte_id={reporte_id} origen={origen} task_id={task_id}'
+        )
+        return {
+            'status': 'programado',
+            'reporte_id': reporte_id,
+            'origen': origen,
+            'task_id': task_id,
+        }
+    except Exception as exc:
+        logger.exception(
+            '[CIERRE EMAIL][DISPATCH] Error programando envio de correo. '
+            f'reporte_id={reporte_id} origen={origen} error={exc}'
+        )
+        return {
+            'status': 'error',
+            'reporte_id': reporte_id,
+            'origen': origen,
+            'error': str(exc),
+        }
+
+
 # 1) Para qué sirve: enviar correo de notificación cuando se cierra un reporte diario.
 # 2) Cómo funciona: obtiene el reporte, verifica bandera correo_enviado, construye paquete y envía.
 # 3) Qué hace: implementa anti-spam para evitar envíos duplicados del mismo cierre.
@@ -300,56 +349,87 @@ def enviar_correo_cierre_reporte(self, reporte_id):
     )
 
     try:
-        reporte = ReporteDiario.objects.select_for_update().get(pk=reporte_id)
-        
-        if reporte.correo_enviado:
-            logger.info(f"[CIERRE EMAIL] Reporte {reporte.id} ({reporte.fecha_contable}): correo ya fue enviado. Se omite.")
-            return {'status': 'omitido', 'razon': 'correo_ya_enviado'}
-        
-        if reporte.estado_reporte != ReporteDiario.EstadoReporte.CERRADO:
-            logger.warning(f"[CIERRE EMAIL] Reporte {reporte.id}: no está CERRADO aún. Se omite.")
-            return {'status': 'omitido', 'razon': 'reporte_no_cerrado'}
-        
-        sucursal = reporte.sucursal
-        destinatarios = _resolver_destinatarios_correos_ejecutivos(sucursal)
-        
-        if not destinatarios:
-            logger.warning(f"[CIERRE EMAIL] {sucursal.nombre}: omitido por falta de destinatarios.")
+        logger.info(
+            '[CIERRE EMAIL] Inicio de tarea. '
+            f'reporte_id={reporte_id} task_id={getattr(self.request, "id", None)} '
+            f'intento={int(getattr(self.request, "retries", 0)) + 1}'
+        )
+
+        with transaction.atomic():
+            reporte = ReporteDiario.todos.select_for_update().select_related('sucursal').get(pk=reporte_id)
+
+            if reporte.correo_enviado:
+                logger.info(
+                    '[CIERRE EMAIL] Omitido: correo ya enviado. '
+                    f'reporte_id={reporte.id} fecha_contable={reporte.fecha_contable}'
+                )
+                return {'status': 'omitido', 'razon': 'correo_ya_enviado'}
+
+            if reporte.estado_reporte != ReporteDiario.EstadoReporte.CERRADO:
+                logger.warning(
+                    '[CIERRE EMAIL] Omitido: reporte no cerrado. '
+                    f'reporte_id={reporte.id} estado_reporte={reporte.estado_reporte}'
+                )
+                return {'status': 'omitido', 'razon': 'reporte_no_cerrado'}
+
+            sucursal = reporte.sucursal
+            destinatarios = _resolver_destinatarios_correos_ejecutivos(sucursal)
+            logger.info(
+                '[CIERRE EMAIL] Destinatarios resueltos. '
+                f'reporte_id={reporte.id} sucursal={sucursal.nombre} cantidad={len(destinatarios)}'
+            )
+
+            if not destinatarios:
+                logger.warning(
+                    '[CIERRE EMAIL] Omitido por falta de destinatarios. '
+                    f'reporte_id={reporte.id} sucursal={sucursal.nombre}. '
+                    'correo_enviado permanece en False para permitir reintento posterior.'
+                )
+                return {'status': 'omitido', 'razon': 'sin_destinatarios'}
+
+            paquete = construir_paquete_correo_resumen_diario_ejecutivo(
+                sucursal=sucursal,
+                fecha_contable=reporte.fecha_contable,
+            )
+            adjuntos = paquete.get('adjuntos') or []
+            logger.info(
+                '[CIERRE EMAIL] Paquete de correo construido. '
+                f'reporte_id={reporte.id} adjuntos={len(adjuntos)}'
+            )
+
+            resultado = enviar_paquete_correo(
+                paquete_correo=paquete,
+                destinatarios=destinatarios,
+            )
+
             reporte.correo_enviado = True
             reporte.save(update_fields=['correo_enviado'])
-            return {'status': 'omitido', 'razon': 'sin_destinatarios'}
-        
-        paquete = construir_paquete_correo_resumen_diario_ejecutivo(
-            sucursal=sucursal,
-            fecha_contable=reporte.fecha_contable,
-        )
-        
-        resultado = enviar_paquete_correo(
-            paquete_correo=paquete,
-            destinatarios=destinatarios,
-        )
-        
-        reporte.correo_enviado = True
-        reporte.save(update_fields=['correo_enviado'])
-        
-        logger.info(
-            f"[CIERRE EMAIL] {sucursal.nombre} ({reporte.fecha_contable}): "
-            f"enviado a {', '.join(destinatarios)}"
-        )
-        
-        return {
-            'status': 'enviado',
-            'reporte_id': reporte.id,
-            'sucursal': sucursal.nombre,
-            'destinatarios': destinatarios,
-            'resultado': resultado,
-        }
-        
+
+            destinatarios_texto = ', '.join(destinatarios)
+
+            logger.info(
+                '[CIERRE EMAIL] Correo enviado correctamente. '
+                f'reporte_id={reporte.id} sucursal={sucursal.nombre} '
+                f'destinatarios={destinatarios_texto} resultado={resultado}'
+            )
+
+            return {
+                'status': 'enviado',
+                'reporte_id': reporte.id,
+                'sucursal': sucursal.nombre,
+                'destinatarios': destinatarios,
+                'resultado': resultado,
+            }
+
     except ReporteDiario.DoesNotExist:
         logger.error(f"[CIERRE EMAIL] Reporte con ID {reporte_id} no encontrado.")
         return {'status': 'error', 'razon': 'reporte_no_encontrado'}
     except Exception as exc:
-        logger.error(f"[CIERRE EMAIL] Error enviando correo para reporte {reporte_id}: {exc}")
+        logger.exception(
+            '[CIERRE EMAIL] Error enviando correo. '
+            f'reporte_id={reporte_id} task_id={getattr(self.request, "id", None)} '
+            f'intento={int(getattr(self.request, "retries", 0)) + 1} error={exc}'
+        )
         raise self.retry(exc=exc, countdown=60)
 
 
@@ -370,11 +450,16 @@ def auto_cerrar_dias_con_gracia(self):
     La ventana de gracia se define como: fecha_actual - 5 días como máximo.
     """
     from reportes_diarios.models import ReporteDiario
-    from sucursales.models import Sucursal
     from configuraciones_globales.models import ConfiguracionGlobal
     from datetime import time
 
     try:
+        logger.info(
+            '[CIERRE AUTOMÁTICO CON GRACIA] Inicio de tarea. '
+            f'task_id={getattr(self.request, "id", None)} '
+            f'intento={int(getattr(self.request, "retries", 0)) + 1}'
+        )
+
         # 1. Leer HORARIO_CIERRE desde configuración
         config_horario = ConfiguracionGlobal.objects.filter(clave='HORARIO_CIERRE').first()
         if not config_horario:
@@ -420,8 +505,18 @@ def auto_cerrar_dias_con_gracia(self):
             estado_reporte=ReporteDiario.EstadoReporte.ABIERTO,
             eliminado_en__isnull=True,
         ).select_related('sucursal')
+
+        total_candidatos = reportes_para_cerrar.count()
+        logger.info(
+            '[CIERRE AUTOMÁTICO CON GRACIA] Candidatos detectados para cierre. '
+            f'cantidad={total_candidatos} ventana={desde_hace_5_dias}..{hoy} '
+            f'horario_cierre={hora_cierre}'
+        )
         
         reportes_cerrados = 0
+        reportes_omitidos_sin_movimientos = 0
+        reportes_omitidos_por_umbral = 0
+        metricas_correo = {'programados': 0, 'errores_programacion': 0}
         errores = []
         
         for reporte in reportes_para_cerrar:
@@ -448,9 +543,38 @@ def auto_cerrar_dias_con_gracia(self):
                     
                     # Calcular totales
                     movimientos = reporte_lock.movimientos.filter(eliminado_en__isnull=True)
+                    cantidad_movimientos = movimientos.count()
                     ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
                     egresos = movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'] or 0
                     neto = ingresos - egresos
+                    total_movimientos = ingresos + egresos
+
+                    logger.info(
+                        '[CIERRE AUTOMÁTICO CON GRACIA] Evaluando reporte. '
+                        f'reporte_id={reporte_lock.id} sucursal={reporte_lock.sucursal.nombre} '
+                        f'fecha_contable={reporte_lock.fecha_contable} '
+                        f'cantidad_movimientos={cantidad_movimientos} '
+                        f'total_movimientos={total_movimientos} neto={neto}'
+                    )
+
+                    if cantidad_movimientos <= 0:
+                        reportes_omitidos_sin_movimientos += 1
+                        logger.warning(
+                            '[CIERRE AUTOMÁTICO CON GRACIA] Omitido: reporte sin movimientos. '
+                            f'reporte_id={reporte_lock.id} sucursal={reporte_lock.sucursal.nombre} '
+                            f'fecha_contable={reporte_lock.fecha_contable}'
+                        )
+                        continue
+
+                    if total_movimientos <= UMBRAL_MINIMO_CIERRE_AUTOMATICO:
+                        reportes_omitidos_por_umbral += 1
+                        logger.warning(
+                            '[CIERRE AUTOMÁTICO CON GRACIA] Omitido: total de movimientos por debajo del umbral. '
+                            f'reporte_id={reporte_lock.id} sucursal={reporte_lock.sucursal.nombre} '
+                            f'fecha_contable={reporte_lock.fecha_contable} total_movimientos={total_movimientos} '
+                            f'umbral={UMBRAL_MINIMO_CIERRE_AUTOMATICO}'
+                        )
+                        continue
                     
                     # Actualizar reporte
                     reporte_lock.total_ingresos = ingresos
@@ -470,8 +594,18 @@ def auto_cerrar_dias_con_gracia(self):
                         f"({reporte_lock.fecha_contable}): cerrado automáticamente. Neto: ${neto:,.2f}"
                     )
                     
-                    # Dispara tarea de envío de email
-                    enviar_correo_cierre_reporte.delay(reporte_lock.id)
+                    # Dispara tarea de envío de email al confirmar commit de la transacción.
+                    def _programar_correo_post_commit(reporte_id=reporte_lock.id):
+                        resultado_encolado = _encolar_envio_correo_cierre(
+                            reporte_id,
+                            origen='auto_cerrar_dias_con_gracia',
+                        )
+                        if resultado_encolado.get('status') == 'programado':
+                            metricas_correo['programados'] += 1
+                        else:
+                            metricas_correo['errores_programacion'] += 1
+
+                    transaction.on_commit(_programar_correo_post_commit)
                     
                     # Verificar si es fin de mes para cerrar LibroEstadoResultados
                     ultimo_dia_del_mes = calendar.monthrange(reporte_lock.fecha_contable.year, reporte_lock.fecha_contable.month)[1]
@@ -486,22 +620,28 @@ def auto_cerrar_dias_con_gracia(self):
                     
             except Exception as exc:
                 error_msg = f"[CIERRE AUTOMÁTICO CON GRACIA] Error cerrando {reporte.sucursal.nombre} ({reporte.fecha_contable}): {exc}"
-                logger.error(error_msg)
+                logger.exception(error_msg)
                 errores.append(error_msg)
-        
+
         resumen = {
             "fecha_ejecucion": str(ahora),
             "ventana_gracia": f"{desde_hace_5_dias} a {hoy}",
             "horario_cierre": str(hora_cierre),
+            "umbral_minimo_movimientos": str(UMBRAL_MINIMO_CIERRE_AUTOMATICO),
+            "reportes_evaluados": total_candidatos,
             "reportes_cerrados": reportes_cerrados,
+            "reportes_omitidos_sin_movimientos": reportes_omitidos_sin_movimientos,
+            "reportes_omitidos_por_umbral": reportes_omitidos_por_umbral,
+            "correos_programados": metricas_correo['programados'],
+            "correos_error_programacion": metricas_correo['errores_programacion'],
             "errores": errores,
         }
-        
+
         logger.info(f"[CIERRE AUTOMÁTICO CON GRACIA] Finalizado: {resumen}")
         return resumen
-        
+
     except Exception as exc:
-        logger.error(f"[CIERRE AUTOMÁTICO CON GRACIA] Error general: {exc}")
+        logger.exception(f"[CIERRE AUTOMÁTICO CON GRACIA] Error general: {exc}")
         raise self.retry(exc=exc, countdown=300)
 
 

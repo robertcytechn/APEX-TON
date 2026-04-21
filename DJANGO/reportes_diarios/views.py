@@ -1,4 +1,5 @@
 import json
+import logging
 import unicodedata
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
@@ -23,6 +24,9 @@ from .serializers import (
     MovimientoDiarioSerializer, MovimientoDiarioListSerializer,
 )
 from sucursales.models import Sucursal
+
+
+logger = logging.getLogger(__name__)
 
 
 # 1) Para qué sirve: homologar la estructura JSON de salida de este módulo.
@@ -657,6 +661,7 @@ def _cerrar_reporte_diario(reporte, usuario):
     reporte.estado_reporte = ReporteDiario.EstadoReporte.CERRADO
     reporte.cerrado_en = timezone.now()
     reporte.cerrado_por = usuario
+    reporte.correo_enviado = False
     reporte.save()
 
     # Mantener continuidad de arrastre cuando el siguiente día ya existe en estado abierto.
@@ -670,6 +675,29 @@ def _cerrar_reporte_diario(reporte, usuario):
         reporte_siguiente.save()
 
     return reporte
+
+
+# 1) Para qué sirve: programar el envío de correo del cierre manual al confirmar transacción.
+# 2) Cómo funciona: registra callback post-commit y encola tarea Celery de forma segura.
+# 3) Qué hace: evita carreras entre cierre y lectura del estado CERRADO por la tarea de correo.
+# 4) Cómo editarla: cambia el valor de origen para distinguir nuevos flujos de cierre.
+def _programar_envio_correo_cierre_post_commit(reporte_id, origen):
+    def _callback_envio_correo():
+        try:
+            from reportes_diarios.tareas import _encolar_envio_correo_cierre
+
+            _encolar_envio_correo_cierre(reporte_id=reporte_id, origen=origen)
+        except Exception as exc:
+            logger.exception(
+                '[CIERRE MANUAL][EMAIL] Error al encolar correo post-commit. '
+                f'reporte_id={reporte_id} origen={origen} error={exc}'
+            )
+
+    transaction.on_commit(_callback_envio_correo)
+    logger.info(
+        '[CIERRE MANUAL][EMAIL] Programado envío post-commit. '
+        f'reporte_id={reporte_id} origen={origen}'
+    )
 
 
 # 1) Para qué sirve: construir un resumen ejecutivo del día contable para tablero rápido.
@@ -1505,6 +1533,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 )
 
             reporte = _cerrar_reporte_diario(reporte, request.user)
+            _programar_envio_correo_cierre_post_commit(reporte.id, origen='cerrar_actual')
 
         return respuesta_estandar(
             data=ReporteDiarioSerializer(reporte, context={'request': request}).data,
@@ -1703,6 +1732,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 return respuesta_estandar(mensaje="El reporte ya está cerrado.", estado="error", codigo=status.HTTP_400_BAD_REQUEST)
 
             reporte = _cerrar_reporte_diario(reporte, request.user)
+            _programar_envio_correo_cierre_post_commit(reporte.id, origen='cerrar')
 
         return respuesta_estandar(data=ReporteDiarioSerializer(reporte, context={'request': request}).data, mensaje=f"Reporte del día {reporte.fecha_contable} cerrado correctamente.")
 

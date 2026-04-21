@@ -109,3 +109,26 @@ Rutas anidadas en el router bajo `/api/reportes_diarios/`.
 |----------|--------|--------|-------------|
 | `/` | CRUD | POST, GET | Captura transacciones. Soporta `FormData` para envío de comprobantes en el campo `archivo_respaldo`. |
 | `/{id}/` | CRUD | GET, PUT, PATCH, DELETE | Modificación y borrado lógico de registros (siempre y cuando el reporte siga ABIERTO). |
+
+---
+
+## 5. Automatización de Cierre y Correos (Celery)
+
+### 5.1 Cierre Automático con Gracia (`auto_cerrar_dias_con_gracia`)
+- Evalúa reportes `ABIERTO` de los últimos 5 días contables (excluye hoy).
+- Solo cierra un reporte cuando se cumplen **ambas** condiciones:
+  - Tiene movimientos registrados (`cantidad_movimientos > 0`).
+  - La suma de movimientos del día supera el umbral operativo: `total_ingresos + total_egresos > 10.00`.
+- Si un reporte tiene montos en cero o totales menores/iguales a $10.00, se omite y queda abierto para revisión.
+
+### 5.2 Envío de Correo de Cierre
+- El correo de cierre se agenda **después de confirmar la transacción** (`transaction.on_commit`) para evitar carreras entre cierre y lectura del estado del reporte.
+- Este comportamiento aplica en:
+  - Cierre manual (`cerrar_actual`, `cerrar`).
+  - Cierre automático diario (`cerrar_dia_contable`).
+  - Cierre automático con gracia (`auto_cerrar_dias_con_gracia`).
+- La tarea `enviar_correo_cierre_reporte` conserva anti-duplicado con `correo_enviado`, pero ya no marca el correo como enviado cuando faltan destinatarios; así se permite reintento posterior tras corregir configuración.
+
+### 5.3 Logging Operativo
+- Las tareas registran eventos por etapa: inicio, selección de candidatos, evaluación por reporte, criterio de omisión, cierre exitoso, programación de correo y errores.
+- Los resúmenes finales incluyen métricas de control (`reportes_cerrados`, `reportes_omitidos_por_umbral`, `correos_programados`, `errores`).
