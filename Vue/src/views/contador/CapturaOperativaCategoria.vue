@@ -45,6 +45,10 @@ const temporizadoresGuardado = new Map();
 const temporizadoresEstado = new Map();
 const intervaloMinutosCliente = ref(null);
 const minutosActualesCliente = ref(0);
+const resumenDiaBasePersistido = reactive({
+    ingresos: 0,
+    egresos: 0
+});
 const horarioOperacion = reactive({
     aperturaTexto: '',
     cierreTexto: '',
@@ -185,15 +189,66 @@ const categoriaUsaSaldoInicialMensual = computed(() => !!categoria.value?.usa_sa
 
 const estadoSaldoInicialCategoria = computed(() => saldoInicialCategoriaMensual.value || {});
 
+const resumenMovimientosDia = computed(() => calcularResumenMovimientosDia());
+
+const ingresosCategoriaDia = computed(() => normalizarNumero(resumenMovimientosDia.value.ingresos || 0));
+const egresosCategoriaDia = computed(() => normalizarNumero(resumenMovimientosDia.value.egresos || 0));
+const resultadoNetoCategoriaDia = computed(() => normalizarNumero(ingresosCategoriaDia.value - egresosCategoriaDia.value));
+
 const requiereCapturaManualSaldoInicial = computed(() => {
     return categoriaUsaSaldoInicialMensual.value && !!estadoSaldoInicialCategoria.value?.requiere_captura_manual;
 });
 
-const saldoInicialCategoriaMes = computed(() => normalizarNumero(estadoSaldoInicialCategoria.value?.saldo_inicial || 0));
-const ingresosCategoriaMes = computed(() => normalizarNumero(estadoSaldoInicialCategoria.value?.ingresos_mes || 0));
-const egresosCategoriaMes = computed(() => normalizarNumero(estadoSaldoInicialCategoria.value?.egresos_mes || 0));
-const resultadoNetoCategoriaMes = computed(() => normalizarNumero(estadoSaldoInicialCategoria.value?.resultado_neto_mes || 0));
-const saldoFinalCategoriaMes = computed(() => normalizarNumero(estadoSaldoInicialCategoria.value?.saldo_final_mes || 0));
+const ajusteIngresosCategoriaMes = computed(() => {
+    const baseIngresos = normalizarNumero(resumenDiaBasePersistido.ingresos || 0);
+    return normalizarNumero(ingresosCategoriaDia.value - baseIngresos);
+});
+
+const ajusteEgresosCategoriaMes = computed(() => {
+    const baseEgresos = normalizarNumero(resumenDiaBasePersistido.egresos || 0);
+    return normalizarNumero(egresosCategoriaDia.value - baseEgresos);
+});
+
+const categoriaEsAdministracion = computed(() => {
+    const banderaBackend = Boolean(estadoSaldoInicialCategoria.value?.es_categoria_administracion);
+    if (banderaBackend) {
+        return true;
+    }
+
+    const nombre = String(categoria.value?.nombre || '');
+    const clave = String(categoria.value?.clave || '');
+    const huella = `${nombre} ${clave}`
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase();
+    return huella.includes('ADMINISTRACION');
+});
+
+const fondosFijosSucursalCategoriaMes = computed(() => normalizarNumero(estadoSaldoInicialCategoria.value?.fondos_fijos_sucursal || 0));
+
+const saldoInicialCategoriaMes = computed(() => {
+    const saldoInicialAdministracion = estadoSaldoInicialCategoria.value?.saldo_inicial_administracion;
+    if (categoriaEsAdministracion.value && saldoInicialAdministracion !== null && saldoInicialAdministracion !== undefined) {
+        return normalizarNumero(saldoInicialAdministracion);
+    }
+    return normalizarNumero(estadoSaldoInicialCategoria.value?.saldo_inicial || 0);
+});
+const ingresosCategoriaMes = computed(() => {
+    const ingresosBaseMes = normalizarNumero(estadoSaldoInicialCategoria.value?.ingresos_mes || 0);
+    return normalizarNumero(ingresosBaseMes + ajusteIngresosCategoriaMes.value);
+});
+const egresosCategoriaMes = computed(() => {
+    const egresosBaseMes = normalizarNumero(estadoSaldoInicialCategoria.value?.egresos_mes || 0);
+    return normalizarNumero(egresosBaseMes + ajusteEgresosCategoriaMes.value);
+});
+const resultadoNetoCategoriaMes = computed(() => normalizarNumero(ingresosCategoriaMes.value - egresosCategoriaMes.value));
+const saldoFinalCategoriaMes = computed(() => normalizarNumero(saldoInicialCategoriaMes.value + resultadoNetoCategoriaMes.value));
+const etiquetaQuintaTarjetaSaldoMensual = computed(() => {
+    return categoriaEsAdministracion.value ? 'Fondos fijos de la sucursal' : 'Saldo final del mes';
+});
+const montoQuintaTarjetaSaldoMensual = computed(() => {
+    return categoriaEsAdministracion.value ? fondosFijosSucursalCategoriaMes.value : saldoFinalCategoriaMes.value;
+});
 
 const origenSaldoInicialCategoria = computed(() => {
     const origen = String(estadoSaldoInicialCategoria.value?.origen_saldo_inicial || '').toUpperCase();
@@ -283,6 +338,14 @@ const fechaContableCierre = computed(() => {
         return fechaDesdeReporte;
     }
     return String(fechaContableSeleccionadaIso.value || '').trim();
+});
+
+const fechaContableActivaEtiqueta = computed(() => {
+    const fechaSeleccionada = String(fechaContableSeleccionadaIso.value || '').trim();
+    if (fechaSeleccionada) {
+        return fechaSeleccionada;
+    }
+    return String(reporteActual.value?.fecha_contable || 'Sin definir').trim();
 });
 
 const puedeCerrarDiaContable = computed(() => {
@@ -664,17 +727,76 @@ function normalizarNumero(valor) {
     return Number.isFinite(numero) ? numero : 0;
 }
 
+// 1) Para qué sirve: unificar conversión de montos capturados a la moneda de vista previa.
+// 2) Cómo funciona: normaliza monto; en categoría DOLARES aplica tasa actual a MXN.
+// 3) Qué hace: asegura cálculos consistentes entre tabla y tarjetas resumen.
+// 4) Cómo editarla: agrega reglas aquí si se requieren redondeos especiales.
+function convertirMontoCapturaAMonedaVistaPrevia(montoCapturado) {
+    const montoNormalizado = normalizarNumero(montoCapturado || 0);
+    if (!esCategoriaDolares.value) {
+        return montoNormalizado;
+    }
+    return montoNormalizado * tasaCambioDolares.value;
+}
+
+// 1) Para qué sirve: resumir en vivo ingresos/egresos del día según lo capturado en pantalla.
+// 2) Cómo funciona: recorre filas visibles, clasifica por tipo de concepto y acumula montos.
+// 3) Qué hace: alimenta tarjeta diaria y ajustes reactivos de la tarjeta mensual.
+// 4) Cómo editarla: agrega más métricas aquí si se requieren indicadores adicionales.
+function calcularResumenMovimientosDia() {
+    let ingresos = 0;
+    let egresos = 0;
+
+    for (const concepto of conceptosVisibles.value) {
+        const idFila = String(concepto?.__filaId || '').trim();
+        if (!idFila) {
+            continue;
+        }
+
+        const estadoCaptura = capturasPorConcepto[idFila];
+        const montoCalculado = normalizarNumero(
+            convertirMontoCapturaAMonedaVistaPrevia(estadoCaptura?.monto)
+        );
+
+        if (!montoCalculado) {
+            continue;
+        }
+
+        const tipoConcepto = String(concepto?.tipo || '').trim().toUpperCase();
+        if (tipoConcepto === 'INGRESO') {
+            ingresos += montoCalculado;
+            continue;
+        }
+
+        if (tipoConcepto === 'EGRESO') {
+            egresos += montoCalculado;
+        }
+    }
+
+    return {
+        ingresos: normalizarNumero(ingresos),
+        egresos: normalizarNumero(egresos),
+        resultadoNeto: normalizarNumero(ingresos - egresos)
+    };
+}
+
+// 1) Para qué sirve: fijar referencia base del día ya persistido al cargar la pantalla.
+// 2) Cómo funciona: toma el resumen actual y lo guarda como línea base para ajustes mensuales.
+// 3) Qué hace: evita duplicar montos en resumen mensual cuando se edita sin recargar.
+// 4) Cómo editarla: invócala tras cargas iniciales adicionales que hidraten capturas.
+function actualizarResumenDiaBasePersistido() {
+    const resumenActual = calcularResumenMovimientosDia();
+    resumenDiaBasePersistido.ingresos = normalizarNumero(resumenActual.ingresos || 0);
+    resumenDiaBasePersistido.egresos = normalizarNumero(resumenActual.egresos || 0);
+}
+
 // 1) Para qué sirve: calcular monto mostrado en vista previa monetaria.
 // 2) Cómo funciona: usa monto directo o conversión por tasa cuando categoría es DOLARES.
 // 3) Qué hace: refleja al usuario el valor final en MXN de forma inmediata.
 // 4) Cómo editarla: cambia fórmula si negocio introduce comisiones o redondeo especial.
 function calcularMontoVistaPrevia(idFila) {
     const estado = obtenerEstadoCaptura(idFila);
-    const montoCapturado = normalizarNumero(estado.monto || 0);
-    if (!esCategoriaDolares.value) {
-        return montoCapturado;
-    }
-    return montoCapturado * tasaCambioDolares.value;
+    return convertirMontoCapturaAMonedaVistaPrevia(estado.monto);
 }
 
 // 1) Para qué sirve: cerrar el día contable visible en la pantalla de captura.
@@ -799,6 +921,8 @@ async function cargarPantalla() {
     saldoInicialCategoriaMensual.value = null;
     mensajeSaldoInicialCategoria.value = '';
     montoSaldoInicialManual.value = 0;
+    resumenDiaBasePersistido.ingresos = 0;
+    resumenDiaBasePersistido.egresos = 0;
 
     try {
         if (!sucursalId.value) {
@@ -848,6 +972,8 @@ async function cargarPantalla() {
         for (const movimiento of movimientosExistentes.value) {
             hidratarCapturaDesdeMovimiento(movimiento);
         }
+
+        actualizarResumenDiaBasePersistido();
     } catch (error) {
         mensajePantalla.value = error?.response?.data?.message || 'Ocurrió un error al cargar la captura operativa.';
     } finally {
@@ -1189,8 +1315,8 @@ onBeforeUnmount(() => {
                         <MontoMonedaColoreado :monto="resultadoNetoCategoriaMes" />
                     </div>
                     <div class="rounded-lg border border-surface-200 bg-white p-3 space-y-1">
-                        <small class="text-surface-500 block">Saldo final del mes</small>
-                        <MontoMonedaColoreado :monto="saldoFinalCategoriaMes" />
+                        <small class="text-surface-500 block">{{ etiquetaQuintaTarjetaSaldoMensual }}</small>
+                        <MontoMonedaColoreado :monto="montoQuintaTarjetaSaldoMensual" />
                     </div>
                 </div>
 
@@ -1226,6 +1352,29 @@ onBeforeUnmount(() => {
                         :disabled="capturaBloqueada || capturandoSaldoInicialManual"
                         @click="guardarSaldoInicialCategoriaManual"
                     />
+                </div>
+            </div>
+
+            <div class="rounded-xl border border-surface-200 bg-surface-50 p-4 space-y-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <h3 class="text-lg font-semibold">Saldo diario del día contable</h3>
+                    <Tag severity="contrast" :value="`Día contable: ${fechaContableActivaEtiqueta}`" />
+                    <Tag severity="info" value="Calculadora reactiva en pantalla" />
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    <div class="rounded-lg border border-surface-200 bg-white p-3 space-y-1">
+                        <small class="text-surface-500 block">Ingresos del día</small>
+                        <MontoMonedaColoreado :monto="ingresosCategoriaDia" />
+                    </div>
+                    <div class="rounded-lg border border-surface-200 bg-white p-3 space-y-1">
+                        <small class="text-surface-500 block">Egresos del día</small>
+                        <MontoMonedaColoreado :monto="egresosCategoriaDia" />
+                    </div>
+                    <div class="rounded-lg border border-surface-200 bg-white p-3 space-y-1">
+                        <small class="text-surface-500 block">Resultado neto del día</small>
+                        <MontoMonedaColoreado :monto="resultadoNetoCategoriaDia" />
+                    </div>
                 </div>
             </div>
 

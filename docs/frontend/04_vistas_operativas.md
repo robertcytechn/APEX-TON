@@ -12,7 +12,7 @@ Este componente es el más extenso y crítico del sistema operativo. Genera una 
 Dado que los contadores pueden capturar decenas de movimientos por categoría, la pantalla **no tiene un botón general de "Guardar"**. En su lugar, implementa un modelo de autoguardado por fila (Drafting):
 - **Diccionario de Capturas (`capturasPorConcepto`)**: Construye un estado reactivo en memoria (`reactive({})`) por cada fila visible (concepto).
 - **Firma de Estado (`construirFirmaEstado`)**: Genera un hash/JSON del valor de la fila (Monto, Detalles, Notas).
-- **Debounce de Red (`programarGuardado`)**: Al detectar un cambio en la firma, espera `800ms` sin actividad antes de enviar el `POST`/`PUT` en segundo plano a la API de `capturaOperativaServicio`.
+- **Debounce de Red (`programarGuardado`)**: Al detectar un cambio en la firma, espera `1000ms` sin actividad antes de enviar el `POST`/`PUT` en segundo plano a la API de `capturaOperativaServicio`.
 
 ### 1.2 Reglas de Bloqueo por Ventana Horaria en Tiempo Real
 El componente lee `HORARIO_APERTURA` y `HORARIO_CIERRE` de las configuraciones globales.
@@ -22,6 +22,13 @@ El componente lee `HORARIO_APERTURA` y `HORARIO_CIERRE` de las configuraciones g
 ### 1.3 Comportamiento Multi-Fila y Saldo Inicial
 - Si la categoría tiene la bandera `usa_saldo_inicial` (ej. SOBRANTES O PRESTAMOS), el componente bloquea la visualización de conceptos hasta que el contador establezca (o confirme) el arrastre inicial de la bolsa de dinero a través de `guardarSaldoInicialCategoriaManual()`.
 - Soporta capturar múltiples veces un mismo concepto gracias a un generador de Ids sintéticos (`generarIdentificadorFilaConcepto`), lo cual inyecta filas extra a la tabla bajo demanda (Botón "Agregar otro").
+
+### 1.4 Calculadora Reactiva de Saldos (Solo Frontend)
+- Se mantiene la tarjeta de **saldo mensual** (saldo inicial, ingresos, egresos, resultado neto, saldo final), pero ahora los montos reaccionan al vuelo con lo que el usuario captura en la tabla, sin recargar.
+- Se agrega una segunda tarjeta de **saldo diario del día contable** (ingresos, egresos, resultado neto) con cálculo referencial en pantalla y saldo inicial diario implícito en `0.00`.
+- La lógica es estrictamente de frontend: no crea tablas ni persiste información adicional en base de datos.
+- Para evitar doble conteo en el resumen mensual, el componente toma una línea base del día ya persistido al cargar y aplica únicamente el delta de la edición activa del usuario.
+- Para la categoría **Administración**, la quinta tarjeta mensual ya no muestra `saldo final del mes`; ahora muestra **fondos fijos de la sucursal** usando el campo entregado por backend, y el `saldo inicial` se consume con la fórmula especial de Administración calculada del lado servidor.
 
 ---
 

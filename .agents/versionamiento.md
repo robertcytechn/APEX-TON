@@ -1,4 +1,22 @@
-version_actual: v0.0.5
+version_actual: v0.0.8
+
+## v0.0.8 — 2026-04-20
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se implementó regla especial de saldo inicial para la categoría Administración (fondos fijos + ajustes por Sobrantes/Pérdidas/Por Comprobar), aplicada en captura operativa y en el saldo inicial del libro diario.
+**Capa(s):** ambas
+**Detalle:** `.agents/memory/feat_20260420_ambas_formula_saldo_inicial_administracion.md`
+
+## v0.0.7 — 2026-04-20
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se eliminó la métrica redundante de saldo final diario en captura operativa, conservando resultado neto del día como indicador único.
+**Capa(s):** frontend
+**Detalle:** `.agents/memory/refactor_20260420_frontend_saldo_diario_sin_duplicado.md`
+
+## v0.0.6 — 2026-04-20
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se implementó calculadora reactiva de saldos diarios y ajuste en vivo de saldos mensuales dentro de la captura operativa por categoría, sin persistencia adicional en backend.
+**Capa(s):** frontend
+**Detalle:** `.agents/memory/feat_20260420_frontend_calculadora_saldos_reactiva_captura.md`
 
 ## v0.0.5 — 2026-04-20
 **Autor:** Jose Roberto Tamayo Montejano

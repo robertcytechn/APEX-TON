@@ -10,8 +10,9 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from categoria_operativa.models import CategoriaOperativa, Concepto, DetalleParametrizado
+from categoria_operativa.models import CategoriaOperativa, Concepto, DetalleParametrizado, SaldoInicialCategoriaMensual
 from configuraciones_globales.models import ConfiguracionGlobal
+from fondos_fijos.models import FondoFijo, SucursalFondoFijo
 from reportes_diarios.models import ReporteDiario, MovimientoDiario
 from reportes_diarios.tareas import (
 	auto_cerrar_dias_con_gracia,
@@ -606,3 +607,265 @@ class ReporteDiarioLibroOperativoTests(APITestCase):
 		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
 		saldo_arrastre_inicio = Decimal(str(respuesta.data.get('data', {}).get('saldo_arrastre_inicio', '0')))
 		self.assertEqual(saldo_arrastre_inicio, Decimal('41500.00'))
+
+
+class SaldoInicialAdministracionFormulaTests(APITestCase):
+	def setUp(self):
+		self.sucursal = Sucursal.objects.create(nombre='Sucursal Formula Admin', clave='SUC-FORMULA-ADMIN')
+		self.usuario = Usuario.objects.create_user(
+			username='staff_formula_admin',
+			password='password_seguro_123',
+			nombre='Staff Formula Admin',
+			is_staff=True,
+			sucursal=self.sucursal,
+		)
+		self.client.force_authenticate(user=self.usuario)
+
+		self.fecha_contable = timezone.localdate() - timedelta(days=1)
+		self.anio = self.fecha_contable.year
+		self.mes = self.fecha_contable.month
+
+		self.categoria_admin = CategoriaOperativa.objects.create(
+			nombre='ADMINISTRACION TEST FORMULA',
+			clave='ADMIN_FORMULA_TEST',
+			tipo='MIXTO',
+			orden=1,
+			usa_saldo_inicial=True,
+		)
+		self.categoria_sobrantes = CategoriaOperativa.objects.create(
+			nombre='SOBRANTES TEST FORMULA',
+			clave='SOBRANTES_FORMULA_TEST',
+			tipo='MIXTO',
+			orden=2,
+		)
+		self.categoria_perdidas = CategoriaOperativa.objects.create(
+			nombre='PERDIDAS TEST FORMULA',
+			clave='PERDIDAS_FORMULA_TEST',
+			tipo='MIXTO',
+			orden=3,
+		)
+		self.categoria_por_comprobar = CategoriaOperativa.objects.create(
+			nombre='POR COMPROBAR TEST FORMULA',
+			clave='POR_COMPROBAR_FORMULA_TEST',
+			tipo='MIXTO',
+			orden=4,
+		)
+
+		self.concepto_sobrantes_ingreso = Concepto.objects.create(
+			categoria=self.categoria_sobrantes,
+			nombre='Sobrante ingreso',
+			clave='SOBRANTE_INGRESO_FORMULA',
+			tipo='INGRESO',
+		)
+		self.concepto_sobrantes_egreso = Concepto.objects.create(
+			categoria=self.categoria_sobrantes,
+			nombre='Sobrante egreso',
+			clave='SOBRANTE_EGRESO_FORMULA',
+			tipo='EGRESO',
+		)
+		self.concepto_perdidas_ingreso = Concepto.objects.create(
+			categoria=self.categoria_perdidas,
+			nombre='Perdida ingreso',
+			clave='PERDIDA_INGRESO_FORMULA',
+			tipo='INGRESO',
+		)
+		self.concepto_perdidas_egreso = Concepto.objects.create(
+			categoria=self.categoria_perdidas,
+			nombre='Perdida egreso',
+			clave='PERDIDA_EGRESO_FORMULA',
+			tipo='EGRESO',
+		)
+		self.concepto_por_comprobar_egreso = Concepto.objects.create(
+			categoria=self.categoria_por_comprobar,
+			nombre='Por comprobar egreso',
+			clave='POR_COMPROBAR_EGRESO_FORMULA',
+			tipo='EGRESO',
+		)
+
+		SaldoInicialCategoriaMensual.objects.create(
+			sucursal=self.sucursal,
+			categoria=self.categoria_admin,
+			anio=self.anio,
+			mes=self.mes,
+			saldo_inicial=Decimal('1000.00'),
+			origen_saldo_inicial=SaldoInicialCategoriaMensual.OrigenSaldoInicial.MANUAL,
+			bloqueado_edicion=True,
+		)
+
+		fondo_a = FondoFijo.objects.create(nombre='Fondo A Formula')
+		fondo_b = FondoFijo.objects.create(nombre='Fondo B Formula')
+		SucursalFondoFijo.objects.create(sucursal=self.sucursal, fondo_fijo=fondo_a, monto_asignado=Decimal('300.00'))
+		SucursalFondoFijo.objects.create(sucursal=self.sucursal, fondo_fijo=fondo_b, monto_asignado=Decimal('200.00'))
+
+		self.url_saldo_categoria = reverse('reportediario-saldo-inicial-categoria')
+		if settings.FORCE_SCRIPT_NAME and self.url_saldo_categoria.startswith(settings.FORCE_SCRIPT_NAME):
+			self.url_saldo_categoria = self.url_saldo_categoria[len(settings.FORCE_SCRIPT_NAME):] or '/'
+
+	def _crear_movimiento(self, fecha_contable, concepto, monto):
+		reporte, _ = ReporteDiario.objects.get_or_create(
+			sucursal=self.sucursal,
+			fecha_contable=fecha_contable,
+			defaults={'estado_reporte': ReporteDiario.EstadoReporte.ABIERTO},
+		)
+		return MovimientoDiario.objects.create(
+			reporte=reporte,
+			concepto=concepto,
+			monto=Decimal(str(monto)),
+		)
+
+	def test_saldo_inicial_categoria_administracion_incluye_fondos_y_ajustes(self):
+		self._crear_movimiento(self.fecha_contable, self.concepto_sobrantes_ingreso, '120.00')
+		self._crear_movimiento(self.fecha_contable, self.concepto_sobrantes_egreso, '20.00')
+		self._crear_movimiento(self.fecha_contable, self.concepto_perdidas_ingreso, '10.00')
+		self._crear_movimiento(self.fecha_contable, self.concepto_perdidas_egreso, '50.00')
+		self._crear_movimiento(self.fecha_contable, self.concepto_por_comprobar_egreso, '30.00')
+
+		respuesta = self.client.get(
+			self.url_saldo_categoria,
+			{
+				'sucursal_id': self.sucursal.id,
+				'categoria_id': self.categoria_admin.id,
+				'fecha_contable': self.fecha_contable.isoformat(),
+			},
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+		data = respuesta.data.get('data', {})
+
+		self.assertTrue(data.get('es_categoria_administracion'))
+		self.assertEqual(float(data.get('fondos_fijos_sucursal') or 0), 500.0)
+		self.assertEqual(float(data.get('resultado_sobrantes') or 0), 100.0)
+		self.assertEqual(float(data.get('resultado_perdidas') or 0), 40.0)
+		self.assertEqual(float(data.get('egresos_por_comprobar') or 0), 30.0)
+		self.assertEqual(float(data.get('saldo_inicial') or 0), 1530.0)
+
+
+class LibroOperativoSaldoInicialAdministracionTests(APITestCase):
+	def setUp(self):
+		self.sucursal = Sucursal.objects.create(nombre='Sucursal Libro Formula', clave='SUC-LIBRO-FORMULA')
+
+		self.usuario_director = Usuario.objects.create_user(
+			username='director_libro_formula',
+			password='password_seguro_123',
+			nombre='Director Libro Formula',
+			sucursal=self.sucursal,
+		)
+		_asignar_rol_usuario(self.usuario_director, 'DIRECTOR')
+
+		self.client.force_authenticate(user=self.usuario_director)
+
+		self.fecha_consulta = timezone.localdate() - timedelta(days=2)
+		self.fecha_previa = self.fecha_consulta - timedelta(days=1)
+		self.anio = self.fecha_consulta.year
+		self.mes = self.fecha_consulta.month
+
+		self.categoria_admin = CategoriaOperativa.objects.create(
+			nombre='ADMINISTRACION LIBRO FORMULA',
+			clave='ADMIN_LIBRO_FORMULA',
+			tipo='MIXTO',
+			orden=1,
+			usa_saldo_inicial=True,
+		)
+		self.categoria_sobrantes = CategoriaOperativa.objects.create(
+			nombre='SOBRANTES LIBRO FORMULA',
+			clave='SOBRANTES_LIBRO_FORMULA',
+			tipo='MIXTO',
+			orden=2,
+		)
+		self.categoria_perdidas = CategoriaOperativa.objects.create(
+			nombre='PERDIDAS LIBRO FORMULA',
+			clave='PERDIDAS_LIBRO_FORMULA',
+			tipo='MIXTO',
+			orden=3,
+		)
+		self.categoria_por_comprobar = CategoriaOperativa.objects.create(
+			nombre='POR COMPROBAR LIBRO FORMULA',
+			clave='POR_COMPROBAR_LIBRO_FORMULA',
+			tipo='MIXTO',
+			orden=4,
+		)
+
+		self.concepto_admin_ingreso = Concepto.objects.create(
+			categoria=self.categoria_admin,
+			nombre='Ingreso admin libro formula',
+			clave='INGRESO_ADMIN_LIBRO_FORMULA',
+			tipo='INGRESO',
+		)
+		self.concepto_admin_egreso = Concepto.objects.create(
+			categoria=self.categoria_admin,
+			nombre='Egreso admin libro formula',
+			clave='EGRESO_ADMIN_LIBRO_FORMULA',
+			tipo='EGRESO',
+		)
+		self.concepto_sobrantes_ingreso = Concepto.objects.create(
+			categoria=self.categoria_sobrantes,
+			nombre='Sobrante ingreso libro',
+			clave='SOBRANTE_INGRESO_LIBRO_FORMULA',
+			tipo='INGRESO',
+		)
+		self.concepto_perdidas_egreso = Concepto.objects.create(
+			categoria=self.categoria_perdidas,
+			nombre='Perdida egreso libro',
+			clave='PERDIDA_EGRESO_LIBRO_FORMULA',
+			tipo='EGRESO',
+		)
+		self.concepto_por_comprobar_egreso = Concepto.objects.create(
+			categoria=self.categoria_por_comprobar,
+			nombre='Por comprobar egreso libro',
+			clave='POR_COMPROBAR_EGRESO_LIBRO_FORMULA',
+			tipo='EGRESO',
+		)
+
+		SaldoInicialCategoriaMensual.objects.create(
+			sucursal=self.sucursal,
+			categoria=self.categoria_admin,
+			anio=self.anio,
+			mes=self.mes,
+			saldo_inicial=Decimal('1000.00'),
+			origen_saldo_inicial=SaldoInicialCategoriaMensual.OrigenSaldoInicial.MANUAL,
+			bloqueado_edicion=True,
+		)
+
+		fondo = FondoFijo.objects.create(nombre='Fondo Libro Formula')
+		SucursalFondoFijo.objects.create(sucursal=self.sucursal, fondo_fijo=fondo, monto_asignado=Decimal('500.00'))
+
+		self.url_libro_operativo = reverse('reportediario-libro-operativo')
+		if settings.FORCE_SCRIPT_NAME and self.url_libro_operativo.startswith(settings.FORCE_SCRIPT_NAME):
+			self.url_libro_operativo = self.url_libro_operativo[len(settings.FORCE_SCRIPT_NAME):] or '/'
+
+	def _crear_movimiento(self, fecha_contable, concepto, monto):
+		reporte, _ = ReporteDiario.objects.get_or_create(
+			sucursal=self.sucursal,
+			fecha_contable=fecha_contable,
+			defaults={'estado_reporte': ReporteDiario.EstadoReporte.ABIERTO},
+		)
+		return MovimientoDiario.objects.create(
+			reporte=reporte,
+			concepto=concepto,
+			monto=Decimal(str(monto)),
+		)
+
+	def test_libro_operativo_usa_formula_administracion_en_saldo_inicial(self):
+		self._crear_movimiento(self.fecha_previa, self.concepto_sobrantes_ingreso, '100.00')
+		self._crear_movimiento(self.fecha_previa, self.concepto_perdidas_egreso, '40.00')
+		self._crear_movimiento(self.fecha_previa, self.concepto_por_comprobar_egreso, '20.00')
+
+		self._crear_movimiento(self.fecha_consulta, self.concepto_admin_ingreso, '200.00')
+		self._crear_movimiento(self.fecha_consulta, self.concepto_admin_egreso, '50.00')
+
+		respuesta = self.client.get(
+			self.url_libro_operativo,
+			{
+				'sucursal_id': self.sucursal.id,
+				'fecha_inicio': self.fecha_consulta.isoformat(),
+				'fecha_fin': self.fecha_consulta.isoformat(),
+			},
+		)
+
+		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
+		resumen = respuesta.data.get('data', {}).get('resumen', {})
+
+		self.assertEqual(float(resumen.get('saldo_inicial') or 0), 1540.0)
+		self.assertEqual(float(resumen.get('total_ingresos') or 0), 200.0)
+		self.assertEqual(float(resumen.get('total_egresos') or 0), 50.0)
+		self.assertEqual(float(resumen.get('saldo_final') or 0), 1690.0)

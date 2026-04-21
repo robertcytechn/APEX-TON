@@ -1,4 +1,5 @@
 import json
+import unicodedata
 from decimal import Decimal, InvalidOperation
 from datetime import datetime, timedelta
 from calendar import monthrange
@@ -15,6 +16,7 @@ from django.shortcuts import get_object_or_404
 
 from categoria_operativa.models import Concepto, CategoriaOperativa, SaldoInicialCategoriaMensual
 from core.permisos import VentanaHorariaPermiso, EsAdministrador
+from fondos_fijos.models import SucursalFondoFijo
 from .models import ReporteDiario, MovimientoDiario
 from .serializers import (
     ReporteDiarioSerializer, ReporteDiarioListSerializer,
@@ -139,6 +141,263 @@ def _a_flotante(valor):
         return float(valor or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+PATRONES_CATEGORIA_ADMINISTRACION = (
+    'ADMINISTRACION',
+)
+
+PATRONES_CATEGORIA_SOBRANTES = (
+    'SOBRANTES',
+    'SOBRANTE',
+)
+
+PATRONES_CATEGORIA_PERDIDAS = (
+    'PERDIDAS',
+    'PERDIDA',
+)
+
+PATRONES_CATEGORIA_POR_COMPROBAR = (
+    'POR COMPROBAR',
+    'POR_COMPROBAR',
+    'PORCOMPROBAR',
+)
+
+
+# 1) Para qué sirve: normalizar textos de nombre/clave para comparación robusta de categorías.
+# 2) Cómo funciona: elimina acentos, conserva ASCII básico y convierte a mayúsculas.
+# 3) Qué hace: evita fallos de matching por tildes o variantes de escritura.
+# 4) Cómo editarla: amplía normalización si negocio incorpora otros alfabetos.
+def _normalizar_huella_categoria(valor):
+    texto = unicodedata.normalize('NFKD', str(valor or ''))
+    texto_sin_acentos = ''.join(caracter for caracter in texto if not unicodedata.combining(caracter))
+    return texto_sin_acentos.upper().strip()
+
+
+# 1) Para qué sirve: validar si una categoría coincide con un conjunto de patrones de negocio.
+# 2) Cómo funciona: compara nombre+clave normalizados contra patrones normalizados.
+# 3) Qué hace: permite detectar ADMINISTRACION/SOBRANTES/PERDIDAS/POR COMPROBAR sin ids fijos.
+# 4) Cómo editarla: agrega patrones adicionales sin tocar consumidores.
+def _categoria_coincide_patrones(categoria, patrones):
+    if not categoria:
+        return False
+
+    huella = _normalizar_huella_categoria(f"{getattr(categoria, 'nombre', '')} {getattr(categoria, 'clave', '')}")
+    for patron in patrones:
+        if _normalizar_huella_categoria(patron) in huella:
+            return True
+    return False
+
+
+# 1) Para qué sirve: resolver ids de categorías especiales para cálculo de saldo de Administración.
+# 2) Cómo funciona: recorre categorías activas y toma la primera coincidencia por patrón.
+# 3) Qué hace: desacopla la lógica de ids hardcodeados en base de datos.
+# 4) Cómo editarla: ajusta orden/patrones si cambian nombres operativos.
+def _resolver_categorias_especiales_saldo_administracion():
+    categorias = list(
+        CategoriaOperativa.objects.filter(eliminado_en__isnull=True).order_by('orden', 'nombre')
+    )
+
+    resultado = {
+        'administracion_id': None,
+        'sobrantes_id': None,
+        'perdidas_id': None,
+        'por_comprobar_id': None,
+    }
+
+    for categoria in categorias:
+        if resultado['administracion_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_ADMINISTRACION):
+            resultado['administracion_id'] = categoria.id
+        if resultado['sobrantes_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_SOBRANTES):
+            resultado['sobrantes_id'] = categoria.id
+        if resultado['perdidas_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_PERDIDAS):
+            resultado['perdidas_id'] = categoria.id
+        if resultado['por_comprobar_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_POR_COMPROBAR):
+            resultado['por_comprobar_id'] = categoria.id
+
+        if all(resultado.values()):
+            break
+
+    return resultado
+
+
+# 1) Para qué sirve: indicar si la categoría consultada corresponde al flujo de Administración.
+# 2) Cómo funciona: reutiliza matching de nombre/clave por patrones de negocio.
+# 3) Qué hace: habilita regla especial solo para esta categoría.
+# 4) Cómo editarla: cambia patrones si se renombra la categoría en catálogo.
+def _es_categoria_administracion(categoria):
+    return _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_ADMINISTRACION)
+
+
+# 1) Para qué sirve: sumar fondos fijos asignados a una sucursal.
+# 2) Cómo funciona: agrega monto_asignado de registros vigentes por sucursal.
+# 3) Qué hace: aporta componente fijo al saldo inicial de Administración.
+# 4) Cómo editarla: agrega filtros por vigencia/estado si se incorpora historización.
+def _obtener_total_fondos_fijos_sucursal(sucursal_id):
+    total = SucursalFondoFijo.objects.filter(
+        sucursal_id=sucursal_id,
+        eliminado_en__isnull=True,
+    ).aggregate(t=Sum('monto_asignado'))['t']
+    return _a_decimal(total)
+
+
+# 1) Para qué sirve: obtener ingresos/egresos/neto de una categoría en un rango de fechas.
+# 2) Cómo funciona: filtra movimientos por sucursal, categoría y fechas de reporte.
+# 3) Qué hace: soporta cálculo de saldo inicial diario basado en acumulados del mes.
+# 4) Cómo editarla: agrega filtros contables adicionales cuando el negocio lo pida.
+def _calcular_totales_categoria_rango(sucursal_id, categoria_id, fecha_inicio, fecha_fin):
+    if not categoria_id or not fecha_inicio or not fecha_fin or fecha_inicio > fecha_fin:
+        return Decimal('0'), Decimal('0'), Decimal('0')
+
+    movimientos = MovimientoDiario.objects.filter(
+        reporte__sucursal_id=sucursal_id,
+        reporte__fecha_contable__range=(fecha_inicio, fecha_fin),
+        concepto__categoria_id=categoria_id,
+        eliminado_en__isnull=True,
+    )
+
+    ingresos = _a_decimal(movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'])
+    egresos = _a_decimal(movimientos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'])
+    resultado_neto = ingresos - egresos
+    return ingresos, egresos, resultado_neto
+
+
+# 1) Para qué sirve: calcular componentes de saldo inicial especial para Administración.
+# 2) Cómo funciona: combina saldo base + fondos fijos + sobrantes - pérdidas - por comprobar.
+# 3) Qué hace: entrega desglose reusable para tarjeta mensual y saldo inicial de libro diario.
+# 4) Cómo editarla: incorpora nuevos componentes en un solo punto de verdad.
+def _calcular_componentes_saldo_inicial_administracion(
+    sucursal_id,
+    saldo_inicial_base,
+    anio=None,
+    mes=None,
+    fecha_inicio=None,
+    fecha_fin=None,
+):
+    categorias_especiales = _resolver_categorias_especiales_saldo_administracion()
+    fondos_fijos_sucursal = _obtener_total_fondos_fijos_sucursal(sucursal_id)
+
+    sobrantes_id = categorias_especiales.get('sobrantes_id')
+    perdidas_id = categorias_especiales.get('perdidas_id')
+    por_comprobar_id = categorias_especiales.get('por_comprobar_id')
+
+    if anio and mes:
+        ingresos_sobrantes, egresos_sobrantes, resultado_sobrantes = _calcular_totales_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=sobrantes_id,
+            anio=anio,
+            mes=mes,
+        ) if sobrantes_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        ingresos_perdidas, egresos_perdidas, _ = _calcular_totales_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=perdidas_id,
+            anio=anio,
+            mes=mes,
+        ) if perdidas_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        _, egresos_por_comprobar, _ = _calcular_totales_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=por_comprobar_id,
+            anio=anio,
+            mes=mes,
+        ) if por_comprobar_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+    else:
+        ingresos_sobrantes, egresos_sobrantes, resultado_sobrantes = _calcular_totales_categoria_rango(
+            sucursal_id=sucursal_id,
+            categoria_id=sobrantes_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if sobrantes_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        ingresos_perdidas, egresos_perdidas, _ = _calcular_totales_categoria_rango(
+            sucursal_id=sucursal_id,
+            categoria_id=perdidas_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if perdidas_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        _, egresos_por_comprobar, _ = _calcular_totales_categoria_rango(
+            sucursal_id=sucursal_id,
+            categoria_id=por_comprobar_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if por_comprobar_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+    resultado_perdidas = egresos_perdidas - ingresos_perdidas
+    saldo_inicial_administracion = (
+        _a_decimal(saldo_inicial_base)
+        + fondos_fijos_sucursal
+        + resultado_sobrantes
+        - resultado_perdidas
+        - egresos_por_comprobar
+    )
+
+    return {
+        'fondos_fijos_sucursal': _a_flotante(fondos_fijos_sucursal),
+        'resultado_sobrantes': _a_flotante(resultado_sobrantes),
+        'resultado_perdidas': _a_flotante(resultado_perdidas),
+        'egresos_por_comprobar': _a_flotante(egresos_por_comprobar),
+        'saldo_inicial_administracion': _a_flotante(saldo_inicial_administracion),
+    }
+
+
+# 1) Para qué sirve: obtener saldo de arrastre tradicional desde el reporte anterior.
+# 2) Cómo funciona: usa saldo_fin cerrado o recalcula dinámico si anterior sigue abierto.
+# 3) Qué hace: mantiene compatibilidad con lógica histórica de reporte diario.
+# 4) Cómo editarla: ajusta recalculo si se agregan nuevas fuentes de saldo en reportes.
+def _calcular_saldo_arrastre_desde_reporte_previo(sucursal_id, fecha_inicio):
+    reporte_previo = ReporteDiario.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_contable__lt=fecha_inicio,
+    ).order_by('-fecha_contable').first()
+
+    saldo_arrastre = Decimal('0')
+    if not reporte_previo:
+        return saldo_arrastre
+
+    if reporte_previo.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO:
+        movimientos_previos = reporte_previo.movimientos.filter(eliminado_en__isnull=True)
+        ingresos_previos = _a_decimal(movimientos_previos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'])
+        egresos_previos = _a_decimal(movimientos_previos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'])
+        return _a_decimal(reporte_previo.saldo_arrastre_inicio) + ingresos_previos - egresos_previos
+
+    return _a_decimal(reporte_previo.saldo_arrastre_fin)
+
+
+# 1) Para qué sirve: calcular saldo inicial de libro diario con regla especial de Administración.
+# 2) Cómo funciona: usa saldo base mensual de Administración y acumulados hasta el día previo.
+# 3) Qué hace: alinea el saldo inicial de reporte diario con la lógica de captura operativa.
+# 4) Cómo editarla: modifica ventana de acumulación si negocio redefine el corte diario.
+def _calcular_saldo_inicial_libro_operativo(sucursal_id, fecha_inicio):
+    categorias_especiales = _resolver_categorias_especiales_saldo_administracion()
+    categoria_administracion_id = categorias_especiales.get('administracion_id')
+
+    if not categoria_administracion_id:
+        return _calcular_saldo_arrastre_desde_reporte_previo(sucursal_id=sucursal_id, fecha_inicio=fecha_inicio)
+
+    anio, mes = _resolver_periodo_anio_mes(fecha_inicio)
+    registro_administracion = SaldoInicialCategoriaMensual.objects.filter(
+        sucursal_id=sucursal_id,
+        categoria_id=categoria_administracion_id,
+        anio=anio,
+        mes=mes,
+    ).first()
+
+    if registro_administracion is None:
+        return _calcular_saldo_arrastre_desde_reporte_previo(sucursal_id=sucursal_id, fecha_inicio=fecha_inicio)
+
+    fecha_inicio_mes = fecha_inicio.replace(day=1)
+    fecha_corte = fecha_inicio - timedelta(days=1)
+
+    componentes = _calcular_componentes_saldo_inicial_administracion(
+        sucursal_id=sucursal_id,
+        saldo_inicial_base=registro_administracion.saldo_inicial,
+        fecha_inicio=fecha_inicio_mes,
+        fecha_fin=fecha_corte,
+    )
+
+    return _a_decimal(componentes.get('saldo_inicial_administracion'))
 
 
 # 1) Para qué sirve: obtener periodo contable (año y mes) desde una fecha objetivo.
@@ -739,22 +998,11 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                 resumen_por_categoria[categoria.id]['egreso'] += monto_movimiento
                 totales_por_fecha[fecha_movimiento]['egreso'] += monto_movimiento
 
-        reporte_previo = ReporteDiario.objects.filter(
+        saldo_inicial_rango = _calcular_saldo_inicial_libro_operativo(
             sucursal_id=filtros['sucursal_id'],
-            fecha_contable__lt=fecha_inicio,
-        ).order_by('-fecha_contable').first()
-
-        saldo_arrastre_actual = Decimal('0')
-        if reporte_previo:
-            if reporte_previo.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO:
-                movimientos_previos = reporte_previo.movimientos.filter(eliminado_en__isnull=True)
-                ingresos_previos = _a_decimal(movimientos_previos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'])
-                egresos_previos = _a_decimal(movimientos_previos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'])
-                saldo_arrastre_actual = _a_decimal(reporte_previo.saldo_arrastre_inicio) + ingresos_previos - egresos_previos
-            else:
-                saldo_arrastre_actual = _a_decimal(reporte_previo.saldo_arrastre_fin)
-
-        saldo_inicial_rango = saldo_arrastre_actual
+            fecha_inicio=fecha_inicio,
+        )
+        saldo_arrastre_actual = saldo_inicial_rango
         total_ingresos_rango = Decimal('0')
         total_egresos_rango = Decimal('0')
         dias_con_reporte = 0
@@ -960,6 +1208,22 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         data['categoria_usa_saldo_inicial'] = True
         data['estado_generacion'] = estado_generacion
         data['categoria_nombre'] = categoria.nombre
+
+        es_categoria_administracion = _es_categoria_administracion(categoria)
+        data['es_categoria_administracion'] = es_categoria_administracion
+
+        if es_categoria_administracion:
+            saldo_inicial_base = _a_decimal(data.get('saldo_inicial'))
+            componentes_administracion = _calcular_componentes_saldo_inicial_administracion(
+                sucursal_id=sucursal_id,
+                saldo_inicial_base=saldo_inicial_base,
+                anio=anio,
+                mes=mes,
+            )
+
+            data['saldo_inicial_base_mes'] = _a_flotante(saldo_inicial_base)
+            data.update(componentes_administracion)
+            data['saldo_inicial'] = componentes_administracion.get('saldo_inicial_administracion', 0.0)
 
         mensaje = 'Saldo inicial mensual de categoría obtenido.'
         if estado_generacion == 'GENERADO_AUTOMATICO':
