@@ -121,6 +121,12 @@ const router = createRouter({
                     component: () => import('@/views/director/CatalogoOperativoDirector.vue')
                 },
                 {
+                    path: 'director/consulta-captura-operativa',
+                    name: 'director-consulta-captura-operativa',
+                    meta: { requiereSesion: true, requiereRoles: ['DIRECTOR', 'ADMINISTRADOR', 'SUPERUSUARIO'] },
+                    component: () => import('@/views/director/ConsultaCapturaOperativaDirector.vue')
+                },
+                {
                     path: 'admin/usuarios',
                     name: 'admin-usuarios',
                     meta: { requiereSesion: true, requiereAdmin: true },

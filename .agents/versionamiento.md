@@ -1,4 +1,10 @@
-version_actual: v0.0.9
+version_actual: v0.0.10
+
+## v0.0.10 — 2026-04-21
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se agregó una vista de consulta detallada de captura operativa (solo lectura) para Director/Administrador con filtros por casino, día contable y categoría, además de su integración en rutas y menú.
+**Capa(s):** frontend
+**Detalle:** `.agents/memory/feat_20260421_frontend_consulta_captura_operativa_director_admin.md`
 
 ## v0.0.9 — 2026-04-21
 **Autor:** Jose Roberto Tamayo Montejano

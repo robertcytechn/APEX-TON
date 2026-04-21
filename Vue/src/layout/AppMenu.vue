@@ -43,6 +43,12 @@ const model = computed(() => {
             icon: 'pi pi-fw pi-chart-bar',
             to: '/reportes/estadisticas'
         });
+
+        itemsPrincipal.push({
+            label: 'Captura operativa detallada',
+            icon: 'pi pi-fw pi-table',
+            to: '/director/consulta-captura-operativa'
+        });
     }
 
     const menuBase = [

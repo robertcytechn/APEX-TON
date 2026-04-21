@@ -40,7 +40,17 @@ La vista más compleja de la administración. Es una UI jerárquica para constru
 
 Estas vistas (ej. `SucursalesDirector.vue`, `UsuariosDirector.vue`) son versiones simplificadas y seguras de las de Administrador.
 
-### 3.1 Patrón "Solo Lectura" (Read-Only)
+### 3.1 `ConsultaCapturaOperativaDirector.vue` (Director/Admin)
+- Pantalla de consulta detallada de capturas operativas por **casino**, **día contable** y **categoría operativa**.
+- Se implementa en modo **solo lectura** para auditoría diaria: no expone acciones de crear, editar o eliminar.
+- Flujo de datos en frontend:
+	1. Obtiene sucursales activas y categorías operativas activas para poblar filtros.
+	2. Resuelve el `reporte_diario` del día seleccionado con `listarReportesDiarios`.
+	3. Consulta movimientos con `listarMovimientosDiarios` filtrando por `reporte_id` y, opcionalmente, `categoria_id`.
+- Presenta tabla estilo Excel (`DataTable` con `showGridlines`) con columnas de sello de captura, concepto, categoría, tipo, monto, detalles parametrizados, notas y evidencia.
+- Incluye tarjetas de resumen rápido (movimientos, ingresos, egresos y neto) para lectura ejecutiva sin perder granularidad.
+
+### 3.2 Patrón "Solo Lectura" (Read-Only)
 - Se omite por completo el `Toolbar` de creación.
 - No existen botones de acciones por fila (Editar / Borrar).
 - La tabla (`DataTable`) sirve únicamente como un reporte visual con opciones para exportar a CSV o buscar, aprovechando los permisos `EsDirector` o `EsDirectorOAdministradorEnEscritura` del backend (que devuelven 403 si el Director intentara inyectar un POST/PUT malicioso saltándose la UI).
