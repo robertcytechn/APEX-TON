@@ -167,6 +167,10 @@ PATRONES_CATEGORIA_POR_COMPROBAR = (
     'PORCOMPROBAR',
 )
 
+PATRONES_CATEGORIA_DOLARES = (
+    'DOLARES',
+)
+
 
 # 1) Para qué sirve: normalizar textos de nombre/clave para comparación robusta de categorías.
 # 2) Cómo funciona: elimina acentos, conserva ASCII básico y convierte a mayúsculas.
@@ -207,6 +211,7 @@ def _resolver_categorias_especiales_saldo_administracion():
         'sobrantes_id': None,
         'perdidas_id': None,
         'por_comprobar_id': None,
+        'dolares_id': None,
     }
 
     for categoria in categorias:
@@ -218,6 +223,8 @@ def _resolver_categorias_especiales_saldo_administracion():
             resultado['perdidas_id'] = categoria.id
         if resultado['por_comprobar_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_POR_COMPROBAR):
             resultado['por_comprobar_id'] = categoria.id
+        if resultado['dolares_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_DOLARES):
+            resultado['dolares_id'] = categoria.id
 
         if all(resultado.values()):
             break
@@ -284,6 +291,7 @@ def _calcular_componentes_saldo_inicial_administracion(
     sobrantes_id = categorias_especiales.get('sobrantes_id')
     perdidas_id = categorias_especiales.get('perdidas_id')
     por_comprobar_id = categorias_especiales.get('por_comprobar_id')
+    dolares_id = categorias_especiales.get('dolares_id')
 
     if anio and mes:
         ingresos_sobrantes, egresos_sobrantes, resultado_sobrantes = _calcular_totales_categoria_mes(
@@ -306,6 +314,13 @@ def _calcular_componentes_saldo_inicial_administracion(
             anio=anio,
             mes=mes,
         ) if por_comprobar_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        _, _, resultado_dolares = _calcular_totales_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=dolares_id,
+            anio=anio,
+            mes=mes,
+        ) if dolares_id else (Decimal('0'), Decimal('0'), Decimal('0'))
     else:
         ingresos_sobrantes, egresos_sobrantes, resultado_sobrantes = _calcular_totales_categoria_rango(
             sucursal_id=sucursal_id,
@@ -328,13 +343,21 @@ def _calcular_componentes_saldo_inicial_administracion(
             fecha_fin=fecha_fin,
         ) if por_comprobar_id else (Decimal('0'), Decimal('0'), Decimal('0'))
 
+        _, _, resultado_dolares = _calcular_totales_categoria_rango(
+            sucursal_id=sucursal_id,
+            categoria_id=dolares_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if dolares_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
     resultado_perdidas = egresos_perdidas - ingresos_perdidas
     saldo_inicial_administracion = (
         _a_decimal(saldo_inicial_base)
-        + fondos_fijos_sucursal
-        + resultado_sobrantes
-        - resultado_perdidas
+        - fondos_fijos_sucursal
+        - resultado_dolares
         - egresos_por_comprobar
+        - resultado_perdidas
+        + resultado_sobrantes
     )
 
     return {
@@ -342,6 +365,7 @@ def _calcular_componentes_saldo_inicial_administracion(
         'resultado_sobrantes': _a_flotante(resultado_sobrantes),
         'resultado_perdidas': _a_flotante(resultado_perdidas),
         'egresos_por_comprobar': _a_flotante(egresos_por_comprobar),
+        'resultado_dolares': _a_flotante(resultado_dolares),
         'saldo_inicial_administracion': _a_flotante(saldo_inicial_administracion),
     }
 
@@ -490,7 +514,7 @@ def _obtener_o_generar_saldo_categoria_mes(sucursal_id, categoria_id, anio, mes,
         'mes': mes,
         'saldo_inicial': saldo_final_mes_anterior,
         'origen_saldo_inicial': SaldoInicialCategoriaMensual.OrigenSaldoInicial.AUTOMATICO,
-        'bloqueado_edicion': True,
+        'bloqueado_edicion': False,
     }
 
     if usuario and getattr(usuario, 'is_authenticated', False):
@@ -543,9 +567,9 @@ def _construir_estado_saldo_categoria(registro_saldo, sucursal_id, categoria_id,
         'resultado_neto_mes': _a_flotante(resultado_neto_mes),
         'saldo_final_mes': _a_flotante(saldo_final_mes),
         'origen_saldo_inicial': registro_saldo.origen_saldo_inicial,
-        'bloqueado_edicion': bool(registro_saldo.bloqueado_edicion),
+        'bloqueado_edicion': False,
         'requiere_captura_manual': False,
-        'permite_captura_manual': False,
+        'permite_captura_manual': True,
     }
 
 
@@ -1355,10 +1379,28 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             mes=mes,
         ).first()
         if existente:
+            existente.saldo_inicial = saldo_inicial_decimal
+            if request.user and request.user.is_authenticated:
+                existente.actualizado_por = request.user
+            existente.origen_saldo_inicial = SaldoInicialCategoriaMensual.OrigenSaldoInicial.MANUAL
+            existente.bloqueado_edicion = False
+            existente.save()
+
+            data = _construir_estado_saldo_categoria(
+                registro_saldo=existente,
+                sucursal_id=sucursal_id,
+                categoria_id=categoria_id,
+                anio=anio,
+                mes=mes,
+            )
+            data['categoria_usa_saldo_inicial'] = True
+            data['estado_generacion'] = 'MANUAL_ACTUALIZADO'
+            data['categoria_nombre'] = categoria.nombre
+
             return respuesta_estandar(
-                mensaje='El saldo inicial de este mes ya fue definido y se encuentra bloqueado para edición.',
-                estado='error',
-                codigo=status.HTTP_400_BAD_REQUEST,
+                data=data,
+                mensaje='Saldo inicial manual actualizado correctamente para la categoría en el mes actual.',
+                codigo=status.HTTP_200_OK,
             )
 
         anio_anterior, mes_anterior = _resolver_periodo_anterior(anio, mes)
@@ -1382,7 +1424,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             'mes': mes,
             'saldo_inicial': saldo_inicial_decimal,
             'origen_saldo_inicial': SaldoInicialCategoriaMensual.OrigenSaldoInicial.MANUAL,
-            'bloqueado_edicion': True,
+            'bloqueado_edicion': False,
         }
         if request.user and request.user.is_authenticated:
             datos_creacion['creado_por'] = request.user

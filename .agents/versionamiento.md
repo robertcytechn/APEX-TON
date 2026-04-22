@@ -1,4 +1,10 @@
-version_actual: v0.0.10
+version_actual: v0.0.11
+
+## v0.0.11 — 2026-04-21
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se actualizó la fórmula del saldo inicial de Administración para incluir Dólares y se eliminó el bloqueo que impedía la edición del saldo inicial manual en categorías operativas.
+**Capa(s):** ambas
+**Detalle:** `.agents/memory/feat_20260421_ambas_formula_dolares_y_desbloqueo_saldo_inicial.md`
 
 ## v0.0.10 — 2026-04-21
 **Autor:** Jose Roberto Tamayo Montejano

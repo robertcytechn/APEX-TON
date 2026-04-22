@@ -14,7 +14,6 @@
 | **Frontend**        | `Vue/` → Vue 3 + Pinia + PrimeVue + Tailwind CSS + Vite                              |
 | **Documentación**   | `docs/backend/` y `docs/frontend/`                                                    |
 | **Memoria de IA**   | `.agents/memory/` + `.agents/versionamiento.md`                                       |
-| **Skills de IA**    | `.agents/skills/`                                                                      |
 
 ---
 
@@ -132,8 +131,7 @@ Vue/src/
 PASO 1 → Identificar qué capa toca el cambio: DJANGO/, Vue/, o ambas.
 PASO 2 → Leer el código relevante existente antes de generar nada nuevo.
 PASO 3 → Revisar impacto en: rutas, permisos, contrato API, serializers y vistas.
-PASO 4 → Activar la SKILL correspondiente (ver §4.4).
-PASO 5 → Ejecutar el cambio y documentarlo.
+PASO 4 → Ejecutar el cambio y documentarlo.
 ```
 
 > ⚠️ **NUNCA asumir cómo funciona el código existente. Siempre leerlo primero.**
@@ -154,21 +152,7 @@ PASO 5 → Ejecutar el cambio y documentarlo.
 - **Backend (Django)**: nombres de modelos, campos y relaciones en **español**, siguiendo convenciones Django/DRF. Evitar anglicismos innecesarios.
 - **Código interno** (variables, funciones): español para dominio de negocio; inglés solo para patrones técnicos estándar (`queryset`, `serializer`, etc.).
 
-### 4.4 Regla de SKILLS — cuándo activar cada una
-
-| SKILL                  | Activar cuando…                                                                 |
-|------------------------|---------------------------------------------------------------------------------|
-| `django-pro`           | Cualquier cambio en modelos, serializers, viewsets, Celery, permisos o rutas.  |
-| `ui-ux-pro-max`        | Cualquier cambio en componentes Vue, vistas, layouts o estilos.                |
-| `planning`             | Tarea con más de 5 pasos o que afecte múltiples capas simultáneamente.         |
-| `agent-memory-systems` | Al cerrar una sesión de trabajo significativa o resolver un bug complejo.       |
-
-**Flujo de activación:**
-1. Completar Pasos 1-3 de §4.1.
-2. Leer `SKILL.md` de la skill correspondiente con `view_file`.
-3. Seguir las instrucciones de la skill al pie de la letra.
-
-### 4.5 Regla de documentación
+### 4.4 Regla de documentación
 
 Actualizar documentación **solo cuando el comportamiento cambie**:
 
@@ -226,13 +210,12 @@ Contenido obligatorio:
 ```
 [1] Leer modelos existentes relacionados (models.py de la app afectada y de core/).
 [2] Leer serializers.py y views.py de la misma app.
-[3] Activar SKILL django-pro.
-[4] Definir/modificar modelo → generar migración.
-[5] Actualizar serializer (campos, validaciones, permisos por rol).
-[6] Actualizar o crear ViewSet/APIView y registrar URL.
-[7] Verificar impacto en tareas Celery si el modelo participa en flujos asíncronos.
-[8] Actualizar docs/backend/<app>.md.
-[9] Registrar cambio en .agents/versionamiento.md y .agents/memory/.
+[3] Definir/modificar modelo → generar migración.
+[4] Actualizar serializer (campos, validaciones, permisos por rol).
+[5] Actualizar o crear ViewSet/APIView y registrar URL.
+[6] Verificar impacto en tareas Celery si el modelo participa en flujos asíncronos.
+[7] Actualizar docs/backend/<app>.md.
+[8] Registrar cambio en .agents/versionamiento.md y .agents/memory/.
 ```
 
 **Checklist de calidad backend:**
@@ -251,13 +234,12 @@ Contenido obligatorio:
 [1] Identificar el rol que accede a la vista (Admin, Contador, Director, Gerente).
 [2] Leer el servicio Axios relacionado en Vue/src/service/.
 [3] Leer el store Pinia relacionado en Vue/src/stores/.
-[4] Activar SKILL ui-ux-pro-max.
-[5] Crear/modificar el componente o vista.
-[6] Registrar la ruta en Vue/src/router/ con guard de rol si aplica.
-[7] Actualizar el store si el estado compartido cambia.
-[8] Verificar textos: español mexicano, acentos, sin anglicismos en UI.
-[9] Actualizar docs/frontend/<vista>.md.
-[10] Registrar cambio en .agents/versionamiento.md y .agents/memory/.
+[4] Crear/modificar el componente o vista.
+[5] Registrar la ruta en Vue/src/router/ con guard de rol si aplica.
+[6] Actualizar el store si el estado compartido cambia.
+[7] Verificar textos: español mexicano, acentos, sin anglicismos en UI.
+[8] Actualizar docs/frontend/<vista>.md.
+[9] Registrar cambio en .agents/versionamiento.md y .agents/memory/.
 ```
 
 **Checklist de calidad frontend:**
@@ -273,13 +255,12 @@ Contenido obligatorio:
 ### WF-03 · Full-Stack (feature que toca backend y frontend simultáneamente)
 
 ```
-[1] Activar SKILL planning para generar un plan de acción antes de codificar.
-[2] Ejecutar WF-01 completo para la parte backend.
-[3] Verificar contrato de API (campos devueltos, tipos, permisos).
-[4] Ejecutar WF-02 completo para la parte frontend.
-[5] Probar el flujo end-to-end: autenticación → request → respuesta → render.
-[6] Actualizar docs/backend/ y docs/frontend/ en el mismo commit o PR.
-[7] Registrar cambio en .agents/versionamiento.md y .agents/memory/.
+[1] Ejecutar WF-01 completo para la parte backend.
+[2] Verificar contrato de API (campos devueltos, tipos, permisos).
+[3] Ejecutar WF-02 completo para la parte frontend.
+[4] Probar el flujo end-to-end: autenticación → request → respuesta → render.
+[5] Actualizar docs/backend/ y docs/frontend/ en el mismo commit o PR.
+[6] Registrar cambio en .agents/versionamiento.md y .agents/memory/.
 ```
 
 **Checklist adicional full-stack:**
@@ -295,13 +276,12 @@ Contenido obligatorio:
 ```
 [1] Definir: ¿quién accede? ¿qué datos necesita? ¿qué acciones permite?
 [2] Si requiere nuevos endpoints → ejecutar WF-01 primero.
-[3] Activar SKILL ui-ux-pro-max para diseño y estructura del componente.
-[4] Crear la vista en Vue/src/views/<rol>/<NombreVista>.vue.
-[5] Registrar ruta en router con meta de roles permitidos.
-[6] Agregar entrada en el menú lateral (layout/) si corresponde.
-[7] Crear servicio Axios en Vue/src/service/ si no existe.
-[8] Documentar en docs/frontend/.
-[9] Registrar en .agents/versionamiento.md.
+[3] Crear la vista en Vue/src/views/<rol>/<NombreVista>.vue.
+[4] Registrar ruta en router con meta de roles permitidos.
+[5] Agregar entrada en el menú lateral (layout/) si corresponde.
+[6] Crear servicio Axios en Vue/src/service/ si no existe.
+[7] Documentar en docs/frontend/.
+[8] Registrar en .agents/versionamiento.md.
 ```
 
 ---
@@ -314,9 +294,8 @@ Contenido obligatorio:
 [3] Leer el código afectado completo antes de proponer fix.
 [4] Aplicar el fix mínimo que resuelva el problema sin efectos colaterales.
 [5] Verificar que los flujos relacionados siguen funcionando.
-[6] Activar SKILL agent-memory-systems para registrar el bug y la solución.
-[7] Registrar en .agents/memory/ con prefijo fix_.
-[8] Actualizar .agents/versionamiento.md (incrementar parche Z).
+[6] Registrar en .agents/memory/ con prefijo fix_.
+[7] Actualizar .agents/versionamiento.md (incrementar parche Z).
 ```
 
 ---
@@ -325,12 +304,11 @@ Contenido obligatorio:
 
 ```
 [1] Leer TODO el código a refactorizar antes de proponer cambios.
-[2] Activar SKILL planning si el refactor afecta más de 3 archivos.
-[3] Definir el alcance: ¿qué mejora y qué NO cambia?
-[4] Ejecutar el refactor manteniendo el contrato externo (API o props de componente).
-[5] Verificar que ningún test existente se rompe.
-[6] Actualizar documentación si la estructura cambia.
-[7] Registrar en .agents/memory/ con prefijo refactor_.
+[2] Definir el alcance: ¿qué mejora y qué NO cambia?
+[3] Ejecutar el refactor manteniendo el contrato externo (API o props de componente).
+[4] Verificar que ningún test existente se rompe.
+[5] Actualizar documentación si la estructura cambia.
+[6] Registrar en .agents/memory/ con prefijo refactor_.
 ```
 
 ---
@@ -338,11 +316,10 @@ Contenido obligatorio:
 ### WF-07 · Cierre de Sesión de Trabajo (fin de tarea o conversación significativa)
 
 ```
-[1] Activar SKILL agent-memory-systems.
-[2] Crear archivo de memoria en .agents/memory/ con todos los cambios de la sesión.
-[3] Actualizar .agents/versionamiento.md con la nueva versión.
-[4] Verificar que docs/ estén al día.
-[5] Proponer mensaje de commit Git descriptivo al usuario.
+[1] Crear archivo de memoria en .agents/memory/ con todos los cambios de la sesión.
+[2] Actualizar .agents/versionamiento.md con la nueva versión.
+[3] Verificar que docs/ estén al día.
+[4] Proponer mensaje de commit Git descriptivo al usuario.
 ```
 
 ---
@@ -353,11 +330,10 @@ Contenido obligatorio:
 [1] Leer backend/celery.py y la app de tareas relacionada (ej: reportes_diarios/tareas.py).
 [2] Identificar si la tarea es periódica (beat) o disparada por evento.
 [3] Verificar que el flag de control (ej: correo_enviado) esté implementado para idempotencia.
-[4] Activar SKILL django-pro.
-[5] Implementar o modificar la tarea.
-[6] Asegurar manejo de errores y logging dentro de la tarea.
-[7] Documentar el comportamiento en docs/backend/.
-[8] Registrar en .agents/memory/.
+[4] Implementar o modificar la tarea.
+[5] Asegurar manejo de errores y logging dentro de la tarea.
+[6] Documentar el comportamiento en docs/backend/.
+[7] Registrar en .agents/memory/.
 ```
 
 ---
@@ -374,4 +350,4 @@ Contenido obligatorio:
 | Refactor / limpieza de código                       | WF-06                       |
 | Fin de sesión / cierre de tarea                     | WF-07                       |
 | Tarea Celery nueva o modificada                     | WF-08                       |
-| Cambio que afecta > 3 archivos o > 2 capas          | WF-03 + SKILL planning      |
+| Cambio que afecta > 3 archivos o > 2 capas          | WF-03                       |

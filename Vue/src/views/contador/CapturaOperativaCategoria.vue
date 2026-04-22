@@ -199,6 +199,10 @@ const requiereCapturaManualSaldoInicial = computed(() => {
     return categoriaUsaSaldoInicialMensual.value && !!estadoSaldoInicialCategoria.value?.requiere_captura_manual;
 });
 
+const permiteCapturaManualSaldoInicial = computed(() => {
+    return categoriaUsaSaldoInicialMensual.value && !!estadoSaldoInicialCategoria.value?.permite_captura_manual;
+});
+
 const ajusteIngresosCategoriaMes = computed(() => {
     const baseIngresos = normalizarNumero(resumenDiaBasePersistido.ingresos || 0);
     return normalizarNumero(ingresosCategoriaDia.value - baseIngresos);
@@ -880,10 +884,10 @@ async function cargarSaldoInicialCategoriaMensual() {
 
 // 1) Para qué sirve: fijar manualmente el primer saldo inicial mensual de una categoría.
 // 2) Cómo funciona: envía sucursal/categoría/fecha/monto al endpoint manual y recarga estado.
-// 3) Qué hace: bloquea edición posterior y deja listo el arrastre de meses siguientes.
+// 3) Qué hace: guarda o actualiza el saldo inicial manual.
 // 4) Cómo editarla: agrega doble confirmación si la operación requiere control adicional.
 async function guardarSaldoInicialCategoriaManual() {
-    if (capturaBloqueada.value || !requiereCapturaManualSaldoInicial.value) {
+    if (capturaBloqueada.value || !permiteCapturaManualSaldoInicial.value) {
         return;
     }
 
@@ -900,7 +904,7 @@ async function guardarSaldoInicialCategoriaManual() {
         };
         await establecerSaldoInicialCategoriaManual(payload);
         await cargarSaldoInicialCategoriaMensual();
-        mensajeSaldoInicialCategoria.value = 'Saldo inicial manual guardado y bloqueado correctamente para este mes.';
+        mensajeSaldoInicialCategoria.value = 'Saldo inicial manual guardado correctamente para este mes.';
     } catch (error) {
         mensajeSaldoInicialCategoria.value = error?.response?.data?.message || 'No fue posible guardar el saldo inicial manual.';
     } finally {
@@ -1320,7 +1324,7 @@ onBeforeUnmount(() => {
                     </div>
                 </div>
 
-                <div v-if="requiereCapturaManualSaldoInicial" class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end border border-amber-300 bg-amber-50 rounded-lg p-3">
+                <div v-if="permiteCapturaManualSaldoInicial" class="grid grid-cols-1 md:grid-cols-3 gap-3 items-end border border-amber-300 bg-amber-50 rounded-lg p-3">
                     <div class="md:col-span-2">
                         <label class="block text-sm font-semibold mb-2">
                             Captura manual saldo inicial mensual <span class="text-red-500">*</span>
@@ -1338,7 +1342,6 @@ onBeforeUnmount(() => {
                             placeholder="0.00"
                             @focus="limpiarSaldoInicialManualEnFoco"
                         />
-                        <small class="text-surface-500 block mt-1">Este registro se bloquea al guardar para preservar la trazabilidad.</small>
                         <div class="mt-2">
                             <small class="text-surface-500 block mb-1">Vista previa monetaria</small>
                             <MontoMonedaColoreado :monto="normalizarNumero(montoSaldoInicialManual || 0)" />
@@ -1346,7 +1349,7 @@ onBeforeUnmount(() => {
                     </div>
                     <Button
                         icon="pi pi-save"
-                        label="Guardar saldo inicial"
+                        :label="requiereCapturaManualSaldoInicial ? 'Guardar saldo inicial' : 'Actualizar saldo inicial'"
                         class="w-full"
                         :loading="capturandoSaldoInicialManual"
                         :disabled="capturaBloqueada || capturandoSaldoInicialManual"
