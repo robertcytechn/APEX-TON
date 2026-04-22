@@ -127,11 +127,20 @@ function claseFilaLibro(fila) {
     if (tipoFila === 'SALDO_INICIAL') {
         return 'bg-sky-50 font-semibold';
     }
+    if (tipoFila === 'SEPARADOR_FECHA') {
+        return 'bg-sky-200 font-semibold text-sky-950';
+    }
+    if (tipoFila === 'SEPARADOR_AJUSTES') {
+        return 'bg-amber-200 font-semibold text-amber-950';
+    }
+    if (tipoFila === 'AJUSTE_CONTABLE') {
+        return 'bg-stone-100 font-semibold text-stone-900';
+    }
     if (tipoFila === 'TOTAL_PERIODO') {
         return 'bg-amber-100 font-semibold text-amber-950';
     }
     if (tipoFila === 'EFECTIVO_FISICO') {
-        return 'bg-emerald-100 font-semibold text-emerald-950';
+        return 'bg-red-100 font-semibold text-red-900';
     }
     return '';
 }
@@ -166,6 +175,23 @@ function formatearFecha(fechaIso) {
     });
 }
 
+// 1) Para qué sirve: renderizar una fecha de fila en formato corto para la tabla.
+// 2) Cómo funciona: usa parseo ISO local y muestra dd/mm/aa.
+// 3) Qué hace: mejora legibilidad de cortes por día en el libro operativo.
+// 4) Cómo editarla: cambia locale o patrón si dirección solicita otro formato.
+function formatearFechaFila(fechaIso) {
+    const texto = String(fechaIso || '').trim();
+    if (!texto) {
+        return '';
+    }
+    const fecha = convertirIsoAFecha(texto);
+    return fecha.toLocaleDateString('es-MX', {
+        year: '2-digit',
+        month: '2-digit',
+        day: '2-digit'
+    });
+}
+
 // 1) Para qué sirve: obtener etiqueta textual del periodo actualmente consultado.
 // 2) Cómo funciona: toma fecha inicio/fin aplicadas y construye rango o fecha única.
 // 3) Qué hace: inserta contexto de filtros en Excel y PDF.
@@ -189,7 +215,7 @@ function obtenerPeriodoTextoExportacion() {
 // 4) Cómo editarla: agrega columnas nuevas cuando cambie el contrato del libro.
 function construirFilasExcelLibro() {
     return filasLibro.value.map((fila) => ({
-        Partida: String(fila?.partida || ''),
+        Fecha: String(formatearFecha(fila?.fecha) || ''),
         Concepto: String(fila?.concepto || ''),
         Ingreso: celdaTieneMonto(fila?.ingreso) ? Number(fila.ingreso) : '',
         Egreso: celdaTieneMonto(fila?.egreso) ? Number(fila.egreso) : '',
@@ -291,11 +317,20 @@ function colorFondoPorTipoFila(tipoFila) {
     if (tipo === 'SALDO_INICIAL') {
         return '#e0f2fe';
     }
+    if (tipo === 'SEPARADOR_FECHA') {
+        return '#bfdbfe';
+    }
+    if (tipo === 'SEPARADOR_AJUSTES') {
+        return '#fef3c7';
+    }
+    if (tipo === 'AJUSTE_CONTABLE') {
+        return '#f5f5f4';
+    }
     if (tipo === 'TOTAL_PERIODO') {
         return '#fde68a';
     }
     if (tipo === 'EFECTIVO_FISICO') {
-        return '#a7f3d0';
+        return '#fecaca';
     }
     return '#ffffff';
 }
@@ -349,7 +384,7 @@ function construirSvgPaginaPdf({
 
     partes.push(`<rect x="${margen}" y="${inicioTablaY}" width="${anchoContenido}" height="${altoEncabezadoTabla}" fill="#0f172a" />`);
 
-    const encabezados = ['Partida', 'Concepto', 'Ingreso', 'Egreso', 'Saldo'];
+    const encabezados = ['Fecha', 'Concepto', 'Ingreso', 'Egreso', 'Saldo'];
     let cursorXEncabezado = margen;
     for (let indice = 0; indice < encabezados.length; indice += 1) {
         const anchoColumna = anchosColumnas[indice];
@@ -364,13 +399,14 @@ function construirSvgPaginaPdf({
     filasPagina.forEach((fila, indiceFila) => {
         const yFila = inicioTablaY + altoEncabezadoTabla + (indiceFila * altoFila);
         const fondoFila = colorFondoPorTipoFila(fila?.tipo_fila);
-        const colorTexto = String(fila?.tipo_fila || '') === 'TOTAL_PERIODO' || String(fila?.tipo_fila || '') === 'EFECTIVO_FISICO' ? '#111827' : '#1e293b';
-        const pesoTexto = String(fila?.tipo_fila || '') === 'CATEGORIA_RESUMEN' ? '500' : '700';
+        const tipoFila = String(fila?.tipo_fila || '');
+        const colorTexto = tipoFila === 'TOTAL_PERIODO' || tipoFila === 'EFECTIVO_FISICO' ? '#111827' : '#1e293b';
+        const pesoTexto = tipoFila === 'MOVIMIENTO_ADMIN' ? '500' : '700';
 
         partes.push(`<rect x="${margen}" y="${yFila}" width="${anchoContenido}" height="${altoFila}" fill="${fondoFila}" />`);
 
         const valores = [
-            truncarTexto(fila?.partida || '-', 20),
+            truncarTexto(formatearFechaFila(fila?.fecha) || '-', 14),
             truncarTexto(fila?.concepto || '-', 42),
             celdaTieneMonto(fila?.ingreso) ? formatearMonto(fila.ingreso) : '-',
             celdaTieneMonto(fila?.egreso) ? formatearMonto(fila.egreso) : '-',
@@ -537,7 +573,7 @@ const cargarSucursales = async () => {
 
 // 1) Para qué sirve: consultar libro operativo diario en formato columnar.
 // 2) Cómo funciona: envía sucursal y rango según rol al endpoint de libro-operativo.
-// 3) Qué hace: hidrata filas PARTIDA/CONCEPTO/INGRESO/EGRESO/SALDO y resumen.
+// 3) Qué hace: hidrata filas FECHA/CONCEPTO/INGRESO/EGRESO/SALDO y resumen.
 // 4) Cómo editarla: agrega parámetros de segmentación cuando backend los exponga.
 const consultar = async () => {
     mensaje.value = '';
@@ -620,7 +656,7 @@ onMounted(async () => {
         <div class="card space-y-4">
             <div>
                 <h1 class="text-2xl font-semibold">Reporte diario operativo</h1>
-                <p class="text-surface-500 mt-1">Formato columnar tipo libro: ingreso, egreso y saldo acumulado usando categorías de operación.</p>
+                <p class="text-surface-500 mt-1">Formato columnar por fecha: movimientos de Administración, ajustes contables finales y saldo acumulado.</p>
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -730,7 +766,11 @@ onMounted(async () => {
                 responsiveLayout="scroll"
                 :rowClass="claseFilaLibro"
             >
-                <Column field="partida" header="Partida" style="min-width: 10rem" />
+                <Column field="fecha" header="Fecha" style="min-width: 9rem">
+                    <template #body="slotProps">
+                        <span class="font-semibold">{{ formatearFechaFila(slotProps.data?.fecha) }}</span>
+                    </template>
+                </Column>
                 <Column field="concepto" header="Concepto" style="min-width: 16rem" />
                 <Column field="ingreso" header="Ingreso" style="min-width: 10rem">
                     <template #body="slotProps">

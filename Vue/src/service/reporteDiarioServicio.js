@@ -28,7 +28,7 @@ export function listarMovimientosPorReporte(idReporte) {
 
 // 1) Para qué sirve: obtener el libro operativo diario con formato columnar por rango.
 // 2) Cómo funciona: envía sucursal y fechas al endpoint dedicado de reportes diarios.
-// 3) Qué hace: retorna filas de FECHA/PARTIDA/CONCEPTO/INGRESO/EGRESO/SALDO y resumen.
+// 3) Qué hace: retorna filas de FECHA/CONCEPTO/INGRESO/EGRESO/SALDO y resumen.
 // 4) Cómo editarla: amplía params cuando backend exponga segmentaciones adicionales.
 export function obtenerLibroOperativoDiario(params = {}) {
     return api.get('/reportes-diarios/libro-operativo/', { params });

@@ -610,6 +610,9 @@ class ReporteDiarioLibroOperativoTests(APITestCase):
 		self.assertTrue(filtro.get('filtro_forzado'))
 
 		filas = respuesta.data.get('data', {}).get('filas', [])
+		filas_fecha = [fila for fila in filas if fila.get('tipo_fila') == 'SEPARADOR_FECHA']
+		self.assertEqual(len(filas_fecha), 1)
+		self.assertEqual(filas_fecha[0].get('fecha'), fecha_actual.isoformat())
 		fila_total = next((fila for fila in filas if fila.get('tipo_fila') == 'TOTAL_PERIODO'), None)
 		self.assertIsNotNone(fila_total)
 		self.assertEqual(float(fila_total.get('ingreso') or 0), 300.0)
@@ -649,10 +652,14 @@ class ReporteDiarioLibroOperativoTests(APITestCase):
 		self.assertEqual(resumen.get('dias_consultados'), 2)
 
 		filas = respuesta.data.get('data', {}).get('filas', [])
-		fila_categoria = next((fila for fila in filas if fila.get('partida') == 'ADMIN_LIBRO'), None)
-		self.assertIsNotNone(fila_categoria)
-		self.assertEqual(float(fila_categoria.get('ingreso') or 0), 1200.0)
-		self.assertEqual(float(fila_categoria.get('egreso') or 0), 300.0)
+		filas_fecha = [fila for fila in filas if fila.get('tipo_fila') == 'SEPARADOR_FECHA']
+		self.assertEqual(len(filas_fecha), 2)
+		filas_movimientos = [fila for fila in filas if fila.get('tipo_fila') == 'MOVIMIENTO_ADMIN']
+		self.assertEqual(len(filas_movimientos), 4)
+		ingresos_movimientos = sum(float(fila.get('ingreso') or 0) for fila in filas_movimientos)
+		egresos_movimientos = sum(float(fila.get('egreso') or 0) for fila in filas_movimientos)
+		self.assertEqual(ingresos_movimientos, 1200.0)
+		self.assertEqual(egresos_movimientos, 300.0)
 		fila_total = next((fila for fila in filas if fila.get('tipo_fila') == 'TOTAL_PERIODO'), None)
 		fila_efectivo = next((fila for fila in filas if fila.get('tipo_fila') == 'EFECTIVO_FISICO'), None)
 		self.assertIsNotNone(fila_total)
@@ -943,7 +950,12 @@ class LibroOperativoSaldoInicialAdministracionTests(APITestCase):
 		self.assertEqual(respuesta.status_code, status.HTTP_200_OK)
 		resumen = respuesta.data.get('data', {}).get('resumen', {})
 
-		self.assertEqual(float(resumen.get('saldo_inicial') or 0), 1540.0)
+		self.assertEqual(float(resumen.get('saldo_inicial') or 0), 540.0)
 		self.assertEqual(float(resumen.get('total_ingresos') or 0), 200.0)
-		self.assertEqual(float(resumen.get('total_egresos') or 0), 50.0)
-		self.assertEqual(float(resumen.get('saldo_final') or 0), 1690.0)
+		self.assertEqual(float(resumen.get('total_egresos') or 0), 550.0)
+		self.assertEqual(float(resumen.get('saldo_final') or 0), 190.0)
+
+		filas = respuesta.data.get('data', {}).get('filas', [])
+		fila_fondos = next((fila for fila in filas if fila.get('tipo_fila') == 'AJUSTE_CONTABLE' and fila.get('concepto') == 'FONDOS FIJOS'), None)
+		self.assertIsNotNone(fila_fondos)
+		self.assertEqual(float(fila_fondos.get('egreso') or 0), 500.0)

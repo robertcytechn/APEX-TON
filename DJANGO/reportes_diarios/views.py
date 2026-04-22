@@ -171,6 +171,27 @@ PATRONES_CATEGORIA_DOLARES = (
     'DOLARES',
 )
 
+PATRONES_CATEGORIA_BANORTE_AHIS = (
+    'BANORTE AHIS',
+    'BANORTE_AHIS',
+    'BANORTEAHIS',
+)
+
+PATRONES_CATEGORIA_BANORTE_BAHIA = (
+    'BANORTE BAHIA',
+    'BANORTE_BAHIA',
+    'BANORTEBAHIA',
+)
+
+PATRONES_CATEGORIA_BBVA_BAHIA = (
+    'BBVA BAHIA',
+    'BBVA_BAHIA',
+    'BBVABAHIA',
+    'BANCOMER BAHIA',
+    'BANCOMER_BAHIA',
+    'BANCOMERBAHIA',
+)
+
 
 # 1) Para qué sirve: normalizar textos de nombre/clave para comparación robusta de categorías.
 # 2) Cómo funciona: elimina acentos, conserva ASCII básico y convierte a mayúsculas.
@@ -212,6 +233,9 @@ def _resolver_categorias_especiales_saldo_administracion():
         'perdidas_id': None,
         'por_comprobar_id': None,
         'dolares_id': None,
+        'banorte_ahis_id': None,
+        'banorte_bahia_id': None,
+        'bbva_bahia_id': None,
     }
 
     for categoria in categorias:
@@ -225,6 +249,12 @@ def _resolver_categorias_especiales_saldo_administracion():
             resultado['por_comprobar_id'] = categoria.id
         if resultado['dolares_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_DOLARES):
             resultado['dolares_id'] = categoria.id
+        if resultado['banorte_ahis_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_BANORTE_AHIS):
+            resultado['banorte_ahis_id'] = categoria.id
+        if resultado['banorte_bahia_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_BANORTE_BAHIA):
+            resultado['banorte_bahia_id'] = categoria.id
+        if resultado['bbva_bahia_id'] is None and _categoria_coincide_patrones(categoria, PATRONES_CATEGORIA_BBVA_BAHIA):
+            resultado['bbva_bahia_id'] = categoria.id
 
         if all(resultado.values()):
             break
@@ -965,12 +995,14 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
     def libro_operativo(self, request):
         """
         Devuelve el reporte diario en formato tabular por columnas:
-        FECHA | PARTIDA | CONCEPTO | INGRESO | EGRESO | SALDO.
+                FECHA | CONCEPTO | INGRESO | EGRESO | SALDO.
 
         Reglas:
         - CONTADOR/GERENTE: solo día contable actual y sucursal asignada.
         - DIRECTOR/ADMINISTRADOR: puede consultar rango de fechas.
-        - El armado usa categorías de base de datos y calcula arrastre secuencial.
+                - El detalle muestra movimientos de la categoría Administración agrupados por fecha.
+                - Al final agrega ajustes contables (fondos fijos, faltantes, sobrantes,
+                    por comprobar, dólares y bancos) para obtener el saldo final esperado.
         """
         try:
             filtros = _resolver_filtros_consulta_reportes(request)
@@ -1007,56 +1039,36 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             MovimientoDiario.objects.filter(
                 reporte_id__in=ids_reportes,
                 eliminado_en__isnull=True,
-            ).select_related('reporte', 'concepto__categoria')
+            ).select_related('reporte', 'concepto__categoria').order_by('reporte__fecha_contable', 'creado_en', 'id')
         )
 
-        resumen_por_categoria = defaultdict(lambda: {'ingreso': Decimal('0'), 'egreso': Decimal('0')})
         totales_por_fecha = defaultdict(lambda: {'ingreso': Decimal('0'), 'egreso': Decimal('0')})
 
-        categorias_consulta = list(
-            CategoriaOperativa.objects.filter(eliminado_en__isnull=True)
-            .order_by('orden', 'nombre')
-            .values('id', 'clave', 'nombre', 'orden')
-        )
-        categorias_por_id = {categoria['id']: categoria for categoria in categorias_consulta}
-
         for movimiento in movimientos:
-            categoria = getattr(getattr(movimiento, 'concepto', None), 'categoria', None)
-            if categoria and categoria.id not in categorias_por_id:
-                registro_categoria = {
-                    'id': categoria.id,
-                    'clave': categoria.clave,
-                    'nombre': categoria.nombre,
-                    'orden': categoria.orden,
-                }
-                categorias_consulta.append(registro_categoria)
-                categorias_por_id[categoria.id] = registro_categoria
-
-        categorias_consulta.sort(key=lambda categoria: (categoria.get('orden') or 0, categoria.get('nombre') or ''))
-
-        for movimiento in movimientos:
-            categoria = getattr(getattr(movimiento, 'concepto', None), 'categoria', None)
-            if not categoria:
-                continue
-
             fecha_movimiento = movimiento.reporte.fecha_contable
             monto_movimiento = _a_decimal(movimiento.monto)
             tipo_movimiento = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
 
             if tipo_movimiento == 'INGRESO':
-                resumen_por_categoria[categoria.id]['ingreso'] += monto_movimiento
                 totales_por_fecha[fecha_movimiento]['ingreso'] += monto_movimiento
             else:
-                resumen_por_categoria[categoria.id]['egreso'] += monto_movimiento
                 totales_por_fecha[fecha_movimiento]['egreso'] += monto_movimiento
+
+        categorias_especiales = _resolver_categorias_especiales_saldo_administracion()
+        categoria_administracion_id = categorias_especiales.get('administracion_id')
+        movimientos_admin_por_fecha = defaultdict(list)
+
+        if categoria_administracion_id:
+            for movimiento in movimientos:
+                categoria_id_movimiento = getattr(getattr(movimiento, 'concepto', None), 'categoria_id', None)
+                if categoria_id_movimiento == categoria_administracion_id:
+                    movimientos_admin_por_fecha[movimiento.reporte.fecha_contable].append(movimiento)
 
         saldo_inicial_rango = _calcular_saldo_inicial_libro_operativo(
             sucursal_id=filtros['sucursal_id'],
             fecha_inicio=fecha_inicio,
         )
         saldo_arrastre_actual = saldo_inicial_rango
-        total_ingresos_rango = Decimal('0')
-        total_egresos_rango = Decimal('0')
         dias_con_reporte = 0
 
         # Recalcular y sincronizar totales por día para reportes abiertos del rango.
@@ -1088,15 +1100,77 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
                     reporte_dia.saldo_arrastre_fin = saldo_fin_dia
                     reporte_dia.save()
 
-            total_ingresos_rango += ingreso_dia
-            total_egresos_rango += egreso_dia
+            saldo_arrastre_actual = saldo_inicial_dia + neto_dia
             fecha_cursor += timedelta(days=1)
+
+        fondos_fijos_sucursal = _obtener_total_fondos_fijos_sucursal(filtros['sucursal_id'])
+
+        categoria_sobrantes_id = categorias_especiales.get('sobrantes_id')
+        categoria_perdidas_id = categorias_especiales.get('perdidas_id')
+        categoria_por_comprobar_id = categorias_especiales.get('por_comprobar_id')
+        categoria_dolares_id = categorias_especiales.get('dolares_id')
+        categoria_banorte_ahis_id = categorias_especiales.get('banorte_ahis_id')
+        categoria_banorte_bahia_id = categorias_especiales.get('banorte_bahia_id')
+        categoria_bbva_bahia_id = categorias_especiales.get('bbva_bahia_id')
+
+        _, _, resultado_sobrantes = _calcular_totales_categoria_rango(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_sobrantes_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if categoria_sobrantes_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        ingresos_perdidas, egresos_perdidas, _ = _calcular_totales_categoria_rango(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_perdidas_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if categoria_perdidas_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        _, egresos_por_comprobar, _ = _calcular_totales_categoria_rango(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_por_comprobar_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if categoria_por_comprobar_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        _, _, resultado_dolares = _calcular_totales_categoria_rango(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_dolares_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if categoria_dolares_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        _, _, resultado_banorte_ahis = _calcular_totales_categoria_rango(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_banorte_ahis_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if categoria_banorte_ahis_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        _, _, resultado_banorte_bahia = _calcular_totales_categoria_rango(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_banorte_bahia_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if categoria_banorte_bahia_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        _, _, resultado_bbva_bahia = _calcular_totales_categoria_rango(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_bbva_bahia_id,
+            fecha_inicio=fecha_inicio,
+            fecha_fin=fecha_fin,
+        ) if categoria_bbva_bahia_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        resultado_perdidas = egresos_perdidas - ingresos_perdidas
 
         filas = []
         saldo_acumulado = saldo_inicial_rango
+        total_ingresos_rango = Decimal('0')
+        total_egresos_rango = Decimal('0')
 
         filas.append({
-            'partida': 'SALDO',
+            'fecha': None,
             'concepto': 'SALDO INICIAL',
             'ingreso': None,
             'egreso': None,
@@ -1104,23 +1178,102 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             'tipo_fila': 'SALDO_INICIAL',
         })
 
-        for categoria in categorias_consulta:
-            resumen_categoria = resumen_por_categoria.get(categoria['id']) or {'ingreso': Decimal('0'), 'egreso': Decimal('0')}
-            ingreso_categoria = _a_decimal(resumen_categoria['ingreso'])
-            egreso_categoria = _a_decimal(resumen_categoria['egreso'])
-            saldo_acumulado = saldo_acumulado + ingreso_categoria - egreso_categoria
+        def _agregar_fila_operacion(concepto, monto, naturaleza='INGRESO', tipo_fila='MOVIMIENTO_ADMIN', fecha=None):
+            nonlocal saldo_acumulado, total_ingresos_rango, total_egresos_rango
+
+            monto_decimal = _a_decimal(monto)
+            naturaleza_normalizada = str(naturaleza or 'INGRESO').upper()
+            ingreso = None
+            egreso = None
+
+            if monto_decimal == 0:
+                filas.append({
+                    'fecha': fecha,
+                    'concepto': str(concepto or 'SIN CONCEPTO').upper(),
+                    'ingreso': None,
+                    'egreso': None,
+                    'saldo': _a_flotante(saldo_acumulado),
+                    'tipo_fila': tipo_fila,
+                })
+                return
+
+            if naturaleza_normalizada == 'EGRESO':
+                if monto_decimal >= 0:
+                    egreso = monto_decimal
+                    total_egresos_rango += monto_decimal
+                    saldo_acumulado -= monto_decimal
+                else:
+                    ingreso = abs(monto_decimal)
+                    total_ingresos_rango += abs(monto_decimal)
+                    saldo_acumulado += abs(monto_decimal)
+            else:
+                if monto_decimal >= 0:
+                    ingreso = monto_decimal
+                    total_ingresos_rango += monto_decimal
+                    saldo_acumulado += monto_decimal
+                else:
+                    egreso = abs(monto_decimal)
+                    total_egresos_rango += abs(monto_decimal)
+                    saldo_acumulado -= abs(monto_decimal)
 
             filas.append({
-                'partida': categoria.get('clave') or 'CATEGORIA',
-                'concepto': categoria.get('nombre') or 'SIN CATEGORIA',
-                'ingreso': _a_flotante(ingreso_categoria) if ingreso_categoria > 0 else None,
-                'egreso': _a_flotante(egreso_categoria) if egreso_categoria > 0 else None,
+                'fecha': fecha,
+                'concepto': str(concepto or 'SIN CONCEPTO').upper(),
+                'ingreso': _a_flotante(ingreso) if ingreso is not None else None,
+                'egreso': _a_flotante(egreso) if egreso is not None else None,
                 'saldo': _a_flotante(saldo_acumulado),
-                'tipo_fila': 'CATEGORIA_RESUMEN',
+                'tipo_fila': tipo_fila,
             })
 
+        for fecha_movimiento in sorted(movimientos_admin_por_fecha.keys()):
+            filas.append({
+                'fecha': fecha_movimiento.isoformat(),
+                'concepto': '',
+                'ingreso': None,
+                'egreso': None,
+                'saldo': _a_flotante(saldo_acumulado),
+                'tipo_fila': 'SEPARADOR_FECHA',
+            })
+
+            for movimiento in movimientos_admin_por_fecha[fecha_movimiento]:
+                tipo_movimiento = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
+                _agregar_fila_operacion(
+                    concepto=getattr(movimiento.concepto, 'nombre', 'SIN CONCEPTO'),
+                    monto=movimiento.monto,
+                    naturaleza=tipo_movimiento,
+                    tipo_fila='MOVIMIENTO_ADMIN',
+                )
+
         filas.append({
-            'partida': 'TOTAL',
+            'fecha': None,
+            'concepto': 'AJUSTES CONTABLES',
+            'ingreso': None,
+            'egreso': None,
+            'saldo': _a_flotante(saldo_acumulado),
+            'tipo_fila': 'SEPARADOR_AJUSTES',
+        })
+
+        ajustes_contables = [
+            ('FONDOS FIJOS', fondos_fijos_sucursal, 'EGRESO'),
+            ('FALTANTES', resultado_perdidas, 'EGRESO'),
+            ('SOBRANTES', resultado_sobrantes, 'INGRESO'),
+            ('POR COMPROBAR', egresos_por_comprobar, 'EGRESO'),
+            ('DOLARES', resultado_dolares, 'EGRESO'),
+            ('BANORTE AHIS', resultado_banorte_ahis, 'INGRESO'),
+            ('BANORTE BAHIA', resultado_banorte_bahia, 'INGRESO'),
+            ('BBVA BAHIA', resultado_bbva_bahia, 'INGRESO'),
+        ]
+
+        for concepto_ajuste, monto_ajuste, naturaleza_ajuste in ajustes_contables:
+            _agregar_fila_operacion(
+                concepto=concepto_ajuste,
+                monto=monto_ajuste,
+                naturaleza=naturaleza_ajuste,
+                tipo_fila='AJUSTE_CONTABLE',
+            )
+
+        filas.append({
+            'fecha': None,
             'concepto': 'TOTAL DEL PERIODO',
             'ingreso': _a_flotante(total_ingresos_rango),
             'egreso': _a_flotante(total_egresos_rango),
@@ -1129,7 +1282,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         })
 
         filas.append({
-            'partida': 'EFECTIVO',
+            'fecha': None,
             'concepto': 'EFECTIVO FISICO ESPERADO EN SALA',
             'ingreso': None,
             'egreso': None,

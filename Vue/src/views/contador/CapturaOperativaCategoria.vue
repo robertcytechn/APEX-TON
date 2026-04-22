@@ -1290,6 +1290,7 @@ onBeforeUnmount(() => {
             <div v-if="categoriaUsaSaldoInicialMensual" class="rounded-xl border border-surface-200 bg-surface-50 p-4 space-y-3">
                 <div class="flex flex-wrap items-center gap-2">
                     <h3 class="text-lg font-semibold">Saldo inicial mensual de categoría</h3>
+                    <small>formula de saldo inicial [saldo_inicial = - fondos fijos - perdidas - por comprobar + sobrantes]</small>
                     <Tag severity="info" :value="`Origen: ${origenSaldoInicialCategoria}`" />
                     <Tag
                         :severity="requiereCapturaManualSaldoInicial ? 'warn' : 'success'"

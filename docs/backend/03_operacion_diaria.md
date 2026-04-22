@@ -62,17 +62,18 @@ Contiene una alta densidad de reglas de negocio para asegurar la integridad de l
   - **Perfil Directivo (Administrador/Director):** Pueden consultar cualquier sucursal y proveer rangos de fechas (`fecha_inicio` y `fecha_fin`).
   - Límite máximo de consultas: 63 días. Fechas futuras bloqueadas.
 - **Regla Especial Administración (Saldo Inicial):** cuando la categoría consultada es Administración, el backend calcula un saldo inicial ajustado con la fórmula:
-  - `saldo_inicial_administracion = saldo_inicial_base_mes + fondos_fijos_sucursal + resultado_sobrantes - resultado_perdidas - egresos_por_comprobar`
+  - `saldo_inicial_administracion = saldo_inicial_base_mes - fondos_fijos_sucursal - resultado_dolares - egresos_por_comprobar - resultado_perdidas + resultado_sobrantes`
   - `fondos_fijos_sucursal` se toma de `SucursalFondoFijo.monto_asignado`.
   - `resultado_sobrantes` se calcula como `ingresos - egresos` de la categoría Sobrantes.
   - `resultado_perdidas` se calcula como `egresos - ingresos` de la categoría Pérdidas.
   - `egresos_por_comprobar` usa solo egresos de la categoría Por Comprobar.
+  - `resultado_dolares` se calcula como `ingresos - egresos` de la categoría Dólares.
 
 ### 3.1 `ReporteDiarioViewSet`
 Aplica `VentanaHorariaPermiso` en acciones de escritura (bloquea operaciones fuera de horario laboral de oficina).
 - **Acciones principales:**
   - `list()`: Respeta la visibilidad por rol.
-  - `@action libro-operativo`: Genera una matriz consolidada (Ingresos/Egresos/Saldo por fecha y categoría) arrastrando el saldo. Para sucursales con categoría Administración configurada, el saldo inicial parte de la fórmula especial de Administración y después suma/resta categorías del rango consultado.
+  - `@action libro-operativo`: Genera una matriz por `FECHA / CONCEPTO / INGRESO / EGRESO / SALDO`, mostrando movimientos de la categoría Administración agrupados por día y agregando al final un bloque de ajustes contables (fondos fijos, faltantes, sobrantes, por comprobar, dólares y bancos) para obtener el saldo final esperado.
   - `@action resumen-rapido`: Devuelve KPIs del día, incluyendo una alerta de "Conceptos Recurrentes Faltantes" (qué falta por capturar).
   - `@action saldo-inicial-categoria`: Devuelve estado mensual por categoría; en Administración incluye desglose de fondos fijos, sobrantes, pérdidas y por comprobar.
   - `@action saldo-inicial-categoria/manual`: Permite captura manual del saldo inicial mensual cuando no existe arrastre previo.
@@ -96,7 +97,7 @@ Rutas anidadas en el router bajo `/api/reportes_diarios/`.
 |----------|--------|--------|-------------|
 | `/` | Listar | GET | Filtra por `sucursal_id`, `fecha_inicio`, `fecha_fin`. |
 | `/{id}/` | Detalle | GET | Retorna cabecera y lista de movimientos anidados. |
-| `/libro-operativo/` | Consulta | GET | Genera la sábana contable cruzada por categorías y fechas. |
+| `/libro-operativo/` | Consulta | GET | Genera tabla por fecha con movimientos de Administración y bloque final de ajustes contables. |
 | `/saldo-inicial-categoria/` | Consulta | GET | Devuelve estado mensual de saldo inicial por categoría; en Administración agrega componentes de fórmula especial. |
 | `/saldo-inicial-categoria/manual/` | Operativo | POST | Captura manual del saldo inicial mensual cuando no hay arrastre previo. |
 | `/actual/` | Operativo | GET | Retorna (o crea autómaticamente) el reporte del día actual (`T-1`). |

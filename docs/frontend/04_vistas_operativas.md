@@ -41,8 +41,10 @@ Pantallas de solo lectura que consolidan y muestran el estado histórico.
 - Al tratarse de un registro "Snapshot Inmutable", la vista simplemente rinde el JSON y asegura que las descripciones y montos no puedan alterarse.
 
 ### 2.2 Reporte Diario (`ReporteDiario.vue`)
-- Muestra el resumen (Ingresos, Egresos, Cierre) del día T-1 actual.
-- Utiliza la misma validación dinámica de roles para permitir que el Director vea todas las sucursales, mientras que el Contador queda anclado a ver exclusivamente el reporte de su propia sucursal (`sesionStore.usuario.sucursal_id`).
+- Muestra una tabla tipo libro por columnas `Fecha / Concepto / Ingreso / Egreso / Saldo`.
+- El detalle principal del cuerpo muestra movimientos de la categoría **Administración** agrupados por fecha contable.
+- Incluye un bloque de ajustes contables al final del listado (fondos fijos, faltantes, sobrantes, por comprobar, dólares y bancos) para cerrar el saldo esperado.
+- Mantiene control de visibilidad por rol: Director/Administrador con filtros amplios por sucursal y rango, Contador/Gerente restringidos a su sucursal y día contable vigente.
 
 ### 2.3 Estadísticas Generales (`Estadisticas.vue`)
 - Es un tablero analítico.
