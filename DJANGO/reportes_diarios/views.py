@@ -428,6 +428,8 @@ def _calcular_saldo_arrastre_desde_reporte_previo(sucursal_id, fecha_inicio):
 # 3) Qué hace: alinea el saldo inicial de reporte diario con la lógica de captura operativa.
 # 4) Cómo editarla: modifica ventana de acumulación si negocio redefine el corte diario.
 def _calcular_saldo_inicial_libro_operativo(sucursal_id, fecha_inicio):
+    # Traer el saldo inicial directamente de la base de datos (del catálogo de saldos mensuales)
+    # sin aplicar fórmulas adicionales, tal como solicitó el usuario.
     categorias_especiales = _resolver_categorias_especiales_saldo_administracion()
     categoria_administracion_id = categorias_especiales.get('administracion_id')
 
@@ -442,20 +444,10 @@ def _calcular_saldo_inicial_libro_operativo(sucursal_id, fecha_inicio):
         mes=mes,
     ).first()
 
-    if registro_administracion is None:
-        return _calcular_saldo_arrastre_desde_reporte_previo(sucursal_id=sucursal_id, fecha_inicio=fecha_inicio)
-
-    fecha_inicio_mes = fecha_inicio.replace(day=1)
-    fecha_corte = fecha_inicio - timedelta(days=1)
-
-    componentes = _calcular_componentes_saldo_inicial_administracion(
-        sucursal_id=sucursal_id,
-        saldo_inicial_base=registro_administracion.saldo_inicial,
-        fecha_inicio=fecha_inicio_mes,
-        fecha_fin=fecha_corte,
-    )
-
-    return _a_decimal(componentes.get('saldo_inicial_administracion'))
+    if registro_administracion is not None and registro_administracion.saldo_inicial is not None:
+        return _a_decimal(registro_administracion.saldo_inicial)
+        
+    return _calcular_saldo_arrastre_desde_reporte_previo(sucursal_id=sucursal_id, fecha_inicio=fecha_inicio)
 
 
 # 1) Para qué sirve: obtener periodo contable (año y mes) desde una fecha objetivo.
@@ -1259,9 +1251,6 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             ('SOBRANTES', resultado_sobrantes, 'INGRESO'),
             ('POR COMPROBAR', egresos_por_comprobar, 'EGRESO'),
             ('DOLARES', resultado_dolares, 'EGRESO'),
-            ('BANORTE AHIS', resultado_banorte_ahis, 'INGRESO'),
-            ('BANORTE BAHIA', resultado_banorte_bahia, 'INGRESO'),
-            ('BBVA BAHIA', resultado_bbva_bahia, 'INGRESO'),
         ]
 
         for concepto_ajuste, monto_ajuste, naturaleza_ajuste in ajustes_contables:
@@ -1289,6 +1278,25 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             'saldo': _a_flotante(saldo_acumulado),
             'tipo_fila': 'EFECTIVO_FISICO',
         })
+
+        bancos_informativos = [
+            ('BANORTE AHIS', resultado_banorte_ahis, 'INGRESO'),
+            ('BANORTE BAHIA', resultado_banorte_bahia, 'INGRESO'),
+            ('BBVA BAHIA', resultado_bbva_bahia, 'INGRESO'),
+        ]
+
+        for concepto_banco, monto_banco, naturaleza_banco in bancos_informativos:
+            monto_decimal = _a_decimal(monto_banco)
+            ingreso_banco = _a_flotante(monto_decimal) if naturaleza_banco == 'INGRESO' else None
+            egreso_banco = _a_flotante(monto_decimal) if naturaleza_banco == 'EGRESO' else None
+            filas.append({
+                'fecha': None,
+                'concepto': concepto_banco,
+                'ingreso': ingreso_banco,
+                'egreso': egreso_banco,
+                'saldo': None,
+                'tipo_fila': 'AJUSTE_CONTABLE',
+            })
 
         resumen = {
             'saldo_inicial': _a_flotante(saldo_inicial_rango),

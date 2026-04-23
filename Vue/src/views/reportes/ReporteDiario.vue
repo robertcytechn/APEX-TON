@@ -13,6 +13,23 @@ const exportandoExcel = ref(false);
 const exportandoPdf = ref(false);
 const sucursales = ref([]);
 const filasLibro = ref([]);
+
+const nombresBancosInformativos = ['BANORTE AHIS', 'BANORTE BAHIA', 'BBVA BAHIA'];
+
+const filasLibroPrincipal = computed(() => {
+    return filasLibro.value.filter(fila => {
+        const concepto = String(fila?.concepto || '').trim().toUpperCase();
+        return !nombresBancosInformativos.includes(concepto);
+    });
+});
+
+const filasBancosInformativos = computed(() => {
+    return filasLibro.value.filter(fila => {
+        const concepto = String(fila?.concepto || '').trim().toUpperCase();
+        return nombresBancosInformativos.includes(concepto);
+    });
+});
+
 const resumenLibro = ref({
     saldo_inicial: 0,
     total_ingresos: 0,
@@ -125,22 +142,41 @@ function obtenerRangoNormalizado() {
 function claseFilaLibro(fila) {
     const tipoFila = String(fila?.tipo_fila || '');
     if (tipoFila === 'SALDO_INICIAL') {
-        return 'bg-sky-50 font-semibold';
+        return 'fila-saldo-inicial';
     }
     if (tipoFila === 'SEPARADOR_FECHA') {
-        return 'bg-sky-200 font-semibold text-sky-950';
+        return 'fila-separador-fecha';
     }
     if (tipoFila === 'SEPARADOR_AJUSTES') {
-        return 'bg-amber-200 font-semibold text-amber-950';
+        return 'fila-separador-ajustes';
     }
     if (tipoFila === 'AJUSTE_CONTABLE') {
-        return 'bg-stone-100 font-semibold text-stone-900';
+        return 'fila-ajuste-contable';
     }
     if (tipoFila === 'TOTAL_PERIODO') {
-        return 'bg-amber-100 font-semibold text-amber-950';
+        return 'fila-total-periodo';
     }
     if (tipoFila === 'EFECTIVO_FISICO') {
-        return 'bg-red-100 font-semibold text-red-900';
+        return 'fila-efectivo-fisico';
+    }
+    return '';
+}
+
+// 1) Para qué sirve: colorear celdas específicas de ciertas filas (de concepto en adelante).
+// 2) Cómo funciona: evalúa el concepto y retorna una clase de fondo de Tailwind.
+// 3) Qué hace: resalta visualmente filas importantes sin afectar la columna fecha.
+// 4) Cómo editarla: ajusta palabras clave o colores según requerimientos.
+function claseCeldaConceptoAdelante(data) {
+    const concepto = String(data?.concepto || '').toLowerCase();
+    
+    if (concepto.includes('faltante') || concepto.includes('sobrante') || concepto.includes('por comprobar')) {
+        return 'celda-faltante';
+    }
+    if (concepto.includes('dolar') || concepto.includes('dólar') || concepto.includes('dolares') || concepto.includes('dólares')) {
+        return 'celda-dolar';
+    }
+    if (concepto.includes('fondo fijo') || concepto.includes('fondos fijos')) {
+        return 'celda-fondo-fijo';
     }
     return '';
 }
@@ -214,7 +250,7 @@ function obtenerPeriodoTextoExportacion() {
 // 3) Qué hace: garantiza compatibilidad de apertura/uso nativo en Excel.
 // 4) Cómo editarla: agrega columnas nuevas cuando cambie el contrato del libro.
 function construirFilasExcelLibro() {
-    return filasLibro.value.map((fila) => ({
+    return filasLibroPrincipal.value.map((fila) => ({
         Fecha: String(formatearFecha(fila?.fecha) || ''),
         Concepto: String(fila?.concepto || ''),
         Ingreso: celdaTieneMonto(fila?.ingreso) ? Number(fila.ingreso) : '',
@@ -318,7 +354,7 @@ function colorFondoPorTipoFila(tipoFila) {
         return '#e0f2fe';
     }
     if (tipo === 'SEPARADOR_FECHA') {
-        return '#bfdbfe';
+        return '#dbeafe';
     }
     if (tipo === 'SEPARADOR_AJUSTES') {
         return '#fef3c7';
@@ -404,6 +440,20 @@ function construirSvgPaginaPdf({
         const pesoTexto = tipoFila === 'MOVIMIENTO_ADMIN' ? '500' : '700';
 
         partes.push(`<rect x="${margen}" y="${yFila}" width="${anchoContenido}" height="${altoFila}" fill="${fondoFila}" />`);
+
+        const claseEspecial = claseCeldaConceptoAdelante(fila);
+        if (claseEspecial) {
+            let colorEspecial = '';
+            if (claseEspecial.includes('bg-green-100')) colorEspecial = '#dcfce7';
+            if (claseEspecial.includes('bg-pink-100')) colorEspecial = '#fce7f3';
+            if (claseEspecial.includes('bg-orange-100')) colorEspecial = '#ffedd5';
+            
+            if (colorEspecial) {
+                const anchoFecha = anchosColumnas[0];
+                const anchoRestante = anchoContenido - anchoFecha;
+                partes.push(`<rect x="${margen + anchoFecha}" y="${yFila}" width="${anchoRestante}" height="${altoFila}" fill="${colorEspecial}" />`);
+            }
+        }
 
         const valores = [
             truncarTexto(formatearFechaFila(fila?.fecha) || '-', 14),
@@ -501,7 +551,7 @@ async function exportarPdfSvgLibro() {
         const inicioTablaY = margen + 106;
         const altoDisponibleTabla = altoPagina - margen - inicioTablaY;
         const filasPorPagina = Math.max(1, Math.floor((altoDisponibleTabla - altoEncabezadoTabla) / altoFila));
-        const totalPaginas = Math.max(1, Math.ceil(filasLibro.value.length / filasPorPagina));
+        const totalPaginas = Math.max(1, Math.ceil(filasLibroPrincipal.value.length / filasPorPagina));
         const fechaExportacion = formatearFecha(convertirFechaAISO(new Date()));
         const periodo = obtenerPeriodoTextoExportacion();
         const casino = textoCasinoEnCurso.value;
@@ -513,7 +563,7 @@ async function exportarPdfSvgLibro() {
 
             const inicio = indicePagina * filasPorPagina;
             const fin = inicio + filasPorPagina;
-            const filasPagina = filasLibro.value.slice(inicio, fin);
+            const filasPagina = filasLibroPrincipal.value.slice(inicio, fin);
 
             const textoSvg = construirSvgPaginaPdf({
                 filasPagina,
@@ -761,7 +811,7 @@ onMounted(async () => {
 
         <div class="card">
             <DataTable
-                :value="filasLibro"
+                :value="filasLibroPrincipal"
                 :loading="cargando"
                 responsiveLayout="scroll"
                 :rowClass="claseFilaLibro"
@@ -771,8 +821,8 @@ onMounted(async () => {
                         <span class="font-semibold">{{ formatearFechaFila(slotProps.data?.fecha) }}</span>
                     </template>
                 </Column>
-                <Column field="concepto" header="Concepto" style="min-width: 16rem" />
-                <Column field="ingreso" header="Ingreso" style="min-width: 10rem">
+                <Column field="concepto" header="Concepto" style="min-width: 16rem" :bodyClass="claseCeldaConceptoAdelante" />
+                <Column field="ingreso" header="Ingreso" style="min-width: 10rem" :bodyClass="claseCeldaConceptoAdelante">
                     <template #body="slotProps">
                         <div v-if="celdaTieneMonto(slotProps.data.ingreso)">
                             <MontoMonedaColoreado :monto="slotProps.data.ingreso" />
@@ -780,7 +830,7 @@ onMounted(async () => {
                         <span v-else class="text-surface-500">-</span>
                     </template>
                 </Column>
-                <Column field="egreso" header="Egreso" style="min-width: 10rem">
+                <Column field="egreso" header="Egreso" style="min-width: 10rem" :bodyClass="claseCeldaConceptoAdelante">
                     <template #body="slotProps">
                         <div v-if="celdaTieneMonto(slotProps.data.egreso)">
                             <MontoMonedaColoreado :monto="slotProps.data.egreso" />
@@ -788,9 +838,33 @@ onMounted(async () => {
                         <span v-else class="text-surface-500">-</span>
                     </template>
                 </Column>
-                <Column field="saldo" header="Saldo" style="min-width: 12rem">
+                <Column field="saldo" header="Saldo" style="min-width: 12rem" :bodyClass="claseCeldaConceptoAdelante">
                     <template #body="slotProps">
                         <MontoMonedaColoreado :monto="slotProps.data.saldo || 0" />
+                    </template>
+                </Column>
+            </DataTable>
+        </div>
+
+        <div v-if="filasBancosInformativos.length > 0" class="card mt-4">
+            <h2 class="text-xl font-semibold mb-3 text-surface-600">Bancos (Informativo)</h2>
+            <DataTable
+                :value="filasBancosInformativos"
+                responsiveLayout="scroll"
+                class="p-datatable-sm"
+            >
+                <Column field="fecha" header="Fecha" style="min-width: 9rem">
+                    <template #body="slotProps">
+                        <span class="font-semibold">{{ formatearFechaFila(slotProps.data?.fecha) }}</span>
+                    </template>
+                </Column>
+                <Column field="concepto" header="Concepto" style="min-width: 16rem" />
+                <Column field="ingreso" header="Actual" style="min-width: 10rem">
+                    <template #body="slotProps">
+                        <div v-if="celdaTieneMonto(slotProps.data.ingreso)">
+                            <MontoMonedaColoreado :monto="slotProps.data.ingreso" />
+                        </div>
+                        <span v-else class="text-surface-500">-</span>
                     </template>
                 </Column>
             </DataTable>
@@ -798,3 +872,46 @@ onMounted(async () => {
     </section>
 </template>
 
+<style scoped>
+/* Fila completa (sobrescribiendo fondo del td interno) */
+:deep(.p-datatable-tbody > tr.fila-saldo-inicial > td) {
+    background-color: #f0f9ff !important; /* sky-50 */
+    font-weight: 600 !important;
+}
+:deep(.p-datatable-tbody > tr.fila-separador-fecha > td) {
+    background-color: #dbeafe !important; /* blue-100 */
+    color: #1e3a8a !important; /* blue-900 */
+    font-weight: 600 !important;
+}
+:deep(.p-datatable-tbody > tr.fila-separador-ajustes > td) {
+    background-color: #fde68a !important; /* amber-200 */
+    color: #451a03 !important; /* amber-950 */
+    font-weight: 600 !important;
+}
+:deep(.p-datatable-tbody > tr.fila-ajuste-contable > td) {
+    background-color: #f5f5f4 !important; /* stone-100 */
+    color: #1c1917 !important; /* stone-900 */
+    font-weight: 600 !important;
+}
+:deep(.p-datatable-tbody > tr.fila-total-periodo > td) {
+    background-color: #fef3c7 !important; /* amber-100 */
+    color: #451a03 !important; /* amber-950 */
+    font-weight: 600 !important;
+}
+:deep(.p-datatable-tbody > tr.fila-efectivo-fisico > td) {
+    background-color: #fee2e2 !important; /* red-100 */
+    color: #7f1d1d !important; /* red-900 */
+    font-weight: 600 !important;
+}
+
+/* Celdas específicas (del concepto en adelante) */
+:deep(.p-datatable-tbody > tr > td.celda-faltante) {
+    background-color: #dcfce7 !important; /* green-100 */
+}
+:deep(.p-datatable-tbody > tr > td.celda-dolar) {
+    background-color: #fce7f3 !important; /* pink-100 */
+}
+:deep(.p-datatable-tbody > tr > td.celda-fondo-fijo) {
+    background-color: #ffedd5 !important; /* orange-100 */
+}
+</style>
