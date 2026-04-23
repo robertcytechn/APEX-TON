@@ -304,30 +304,18 @@ def _resolver_destinatarios_correos_ejecutivos(sucursal):
 # 3) Qué hace: evita excepciones no controladas cuando el broker no está disponible.
 # 4) Cómo editarla: agrega nuevos campos de contexto si se requieren más métricas operativas.
 def _encolar_envio_correo_cierre(reporte_id, origen='desconocido'):
-    try:
-        tarea_programada = enviar_correo_cierre_reporte.delay(reporte_id)
-        task_id = getattr(tarea_programada, 'id', None)
-        logger.info(
-            '[CIERRE EMAIL][DISPATCH] Programado envio de correo. '
-            f'reporte_id={reporte_id} origen={origen} task_id={task_id}'
-        )
-        return {
-            'status': 'programado',
-            'reporte_id': reporte_id,
-            'origen': origen,
-            'task_id': task_id,
-        }
-    except Exception as exc:
-        logger.exception(
-            '[CIERRE EMAIL][DISPATCH] Error programando envio de correo. '
-            f'reporte_id={reporte_id} origen={origen} error={exc}'
-        )
-        return {
-            'status': 'error',
-            'reporte_id': reporte_id,
-            'origen': origen,
-            'error': str(exc),
-        }
+    tarea_programada = enviar_correo_cierre_reporte.delay(reporte_id)
+    task_id = getattr(tarea_programada, 'id', None)
+    logger.info(
+        '[CIERRE EMAIL][DISPATCH] Programado envio de correo. '
+        f'reporte_id={reporte_id} origen={origen} task_id={task_id}'
+    )
+    return {
+        'status': 'programado',
+        'reporte_id': reporte_id,
+        'origen': origen,
+        'task_id': task_id,
+    }
 
 
 # 1) Para qué sirve: enviar correo de notificación cuando se cierra un reporte diario.
@@ -542,6 +530,7 @@ def auto_cerrar_dias_con_gracia(self):
                         logger.warning(f"[CIERRE AUTOMÁTICO CON GRACIA] No se pudo leer tipo de cambio: {exc}")
                     
                     # Calcular totales
+                    tiene_movimientos = reporte_lock.movimientos.filter(eliminado_en__isnull=True, monto__gt=0).exists()
                     movimientos = reporte_lock.movimientos.filter(eliminado_en__isnull=True)
                     cantidad_movimientos = movimientos.count()
                     ingresos = movimientos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'] or 0
@@ -557,10 +546,10 @@ def auto_cerrar_dias_con_gracia(self):
                         f'total_movimientos={total_movimientos} neto={neto}'
                     )
 
-                    if cantidad_movimientos <= 0:
+                    if not tiene_movimientos:
                         reportes_omitidos_sin_movimientos += 1
                         logger.warning(
-                            '[CIERRE AUTOMÁTICO CON GRACIA] Omitido: reporte sin movimientos. '
+                            '[CIERRE AUTOMÁTICO CON GRACIA] Omitido: reporte sin movimientos reales. '
                             f'reporte_id={reporte_lock.id} sucursal={reporte_lock.sucursal.nombre} '
                             f'fecha_contable={reporte_lock.fecha_contable}'
                         )

@@ -654,7 +654,6 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
             ejecutar_backup_bd,
             enviar_cierre_mensual_ejecutivo,
             enviar_resumen_diario_ejecutivo,
-            sincronizar_horario_correo_diario,
         )
 
         if clave_tarea == 'cerrar_dia_contable':
@@ -697,9 +696,6 @@ class CentroControlAdminViewSet(BaseCabinaAdminViewSet):
                 kwargs['sucursal_id'] = sucursal_id_int
 
             return enviar_cierre_mensual_ejecutivo.delay(**kwargs), parametros
-
-        if clave_tarea == 'sincronizar_horario_correo_diario':
-            return sincronizar_horario_correo_diario.delay(), {}
 
         if clave_tarea == 'ejecutar_backup_bd':
             return ejecutar_backup_bd.delay(), {}

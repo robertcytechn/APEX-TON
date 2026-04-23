@@ -729,15 +729,9 @@ def _cerrar_reporte_diario(reporte, usuario):
 # 4) Cómo editarla: cambia el valor de origen para distinguir nuevos flujos de cierre.
 def _programar_envio_correo_cierre_post_commit(reporte_id, origen):
     def _callback_envio_correo():
-        try:
-            from reportes_diarios.tareas import _encolar_envio_correo_cierre
+        from reportes_diarios.tareas import _encolar_envio_correo_cierre
 
-            _encolar_envio_correo_cierre(reporte_id=reporte_id, origen=origen)
-        except Exception as exc:
-            logger.exception(
-                '[CIERRE MANUAL][EMAIL] Error al encolar correo post-commit. '
-                f'reporte_id={reporte_id} origen={origen} error={exc}'
-            )
+        _encolar_envio_correo_cierre(reporte_id=reporte_id, origen=origen)
 
     transaction.on_commit(_callback_envio_correo)
     logger.info(
