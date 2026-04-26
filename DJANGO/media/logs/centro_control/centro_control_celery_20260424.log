@@ -1,0 +1,12 @@
+2026-04-24 10:46:02 | INFO | SOLICITUD_EJECUCION_TAREA
+Contexto: {"celery": {"broker_alcanzable": false, "broker_host": "127.0.0.1", "broker_puerto": 5672, "broker_url": "amqp://guest:***@127.0.0.1:5672//", "mensaje": "Broker Celery no disponible en 127.0.0.1:5672. Detalle: timed out", "ok": false, "workers": [], "workers_detectados": 0}, "parametros": {"tarea": "cerrar_dia_contable"}, "tarea": "cerrar_dia_contable", "usuario": "admin"}
+------------------------------------------------------------------------------------------------------------------------
+2026-04-24 10:46:09 | ERROR | ERROR_ENCOLAR_TAREA
+Contexto: {"celery": {"broker_alcanzable": false, "broker_host": "127.0.0.1", "broker_puerto": 5672, "broker_url": "amqp://guest:***@127.0.0.1:5672//", "mensaje": "Broker Celery no disponible en 127.0.0.1:5672. Detalle: timed out", "ok": false, "workers": [], "workers_detectados": 0}, "error": "[WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión", "tarea": "cerrar_dia_contable", "usuario": "admin"}
+------------------------------------------------------------------------------------------------------------------------
+2026-04-24 10:46:20 | INFO | SOLICITUD_EJECUCION_TAREA
+Contexto: {"celery": {"broker_alcanzable": false, "broker_host": "127.0.0.1", "broker_puerto": 5672, "broker_url": "amqp://guest:***@127.0.0.1:5672//", "mensaje": "Broker Celery no disponible en 127.0.0.1:5672. Detalle: timed out", "ok": false, "workers": [], "workers_detectados": 0}, "parametros": {"tarea": "cerrar_dia_contable"}, "tarea": "cerrar_dia_contable", "usuario": "admin"}
+------------------------------------------------------------------------------------------------------------------------
+2026-04-24 10:46:26 | ERROR | ERROR_ENCOLAR_TAREA
+Contexto: {"celery": {"broker_alcanzable": false, "broker_host": "127.0.0.1", "broker_puerto": 5672, "broker_url": "amqp://guest:***@127.0.0.1:5672//", "mensaje": "Broker Celery no disponible en 127.0.0.1:5672. Detalle: timed out", "ok": false, "workers": [], "workers_detectados": 0}, "error": "[WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión", "tarea": "cerrar_dia_contable", "usuario": "admin"}
+------------------------------------------------------------------------------------------------------------------------
