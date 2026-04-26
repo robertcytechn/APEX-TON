@@ -282,6 +282,25 @@ def _obtener_total_fondos_fijos_sucursal(sucursal_id):
     return _a_decimal(total)
 
 
+# 1) Para qué sirve: obtener el saldo inicial mensual de una categoría operativa.
+# 2) Cómo funciona: consulta SaldoInicialCategoriaMensual por sucursal/categoría/año/mes.
+# 3) Qué hace: retorna el saldo de arrastre con el que inicia la categoría en el mes.
+# 4) Cómo editarla: ajusta filtros si se agregan nuevos campos de control.
+def _obtener_saldo_inicial_categoria_mes(sucursal_id, categoria_id, anio, mes):
+    if not categoria_id or not anio or not mes:
+        return Decimal('0')
+    try:
+        saldo = SaldoInicialCategoriaMensual.objects.get(
+            sucursal_id=sucursal_id,
+            categoria_id=categoria_id,
+            anio=anio,
+            mes=mes,
+        )
+        return _a_decimal(saldo.saldo_inicial)
+    except SaldoInicialCategoriaMensual.DoesNotExist:
+        return Decimal('0')
+
+
 # 1) Para qué sirve: obtener ingresos/egresos/neto de una categoría en un rango de fechas.
 # 2) Cómo funciona: filtra movimientos por sucursal, categoría y fechas de reporte.
 # 3) Qué hace: soporta cálculo de saldo inicial diario basado en acumulados del mes.
@@ -380,14 +399,56 @@ def _calcular_componentes_saldo_inicial_administracion(
             fecha_fin=fecha_fin,
         ) if dolares_id else (Decimal('0'), Decimal('0'), Decimal('0'))
 
+    # Obtener saldos iniciales mensuales de las categorías (cuando se consulta por año/mes)
+    saldo_inicial_sobrantes = Decimal('0')
+    saldo_inicial_perdidas = Decimal('0')
+    saldo_inicial_por_comprobar = Decimal('0')
+    saldo_inicial_dolares = Decimal('0')
+
+    if anio and mes:
+        saldo_inicial_sobrantes = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=sobrantes_id,
+            anio=anio,
+            mes=mes,
+        ) if sobrantes_id else Decimal('0')
+
+        saldo_inicial_perdidas = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=perdidas_id,
+            anio=anio,
+            mes=mes,
+        ) if perdidas_id else Decimal('0')
+
+        saldo_inicial_por_comprobar = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=por_comprobar_id,
+            anio=anio,
+            mes=mes,
+        ) if por_comprobar_id else Decimal('0')
+
+        saldo_inicial_dolares = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=sucursal_id,
+            categoria_id=dolares_id,
+            anio=anio,
+            mes=mes,
+        ) if dolares_id else Decimal('0')
+
+    # Calcular totales acumulados: saldo inicial + movimientos del período
     resultado_perdidas = egresos_perdidas - ingresos_perdidas
+    total_acumulado_sobrantes = saldo_inicial_sobrantes + resultado_sobrantes
+    total_acumulado_perdidas = saldo_inicial_perdidas + resultado_perdidas
+    total_acumulado_por_comprobar = saldo_inicial_por_comprobar + egresos_por_comprobar
+    total_acumulado_dolares = saldo_inicial_dolares + resultado_dolares
+
+    # Fórmula del saldo inicial de administración usando totales acumulados
     saldo_inicial_administracion = (
         _a_decimal(saldo_inicial_base)
         - fondos_fijos_sucursal
-        - resultado_dolares
-        - egresos_por_comprobar
-        - resultado_perdidas
-        + resultado_sobrantes
+        - total_acumulado_dolares
+        - total_acumulado_por_comprobar
+        - total_acumulado_perdidas
+        + total_acumulado_sobrantes
     )
 
     return {
@@ -397,6 +458,11 @@ def _calcular_componentes_saldo_inicial_administracion(
         'egresos_por_comprobar': _a_flotante(egresos_por_comprobar),
         'resultado_dolares': _a_flotante(resultado_dolares),
         'saldo_inicial_administracion': _a_flotante(saldo_inicial_administracion),
+        # Nuevos campos: totales acumulados (saldo inicial + movimientos)
+        'total_acumulado_sobrantes': _a_flotante(total_acumulado_sobrantes),
+        'total_acumulado_perdidas': _a_flotante(total_acumulado_perdidas),
+        'total_acumulado_por_comprobar': _a_flotante(total_acumulado_por_comprobar),
+        'total_acumulado_dolares': _a_flotante(total_acumulado_dolares),
     }
 
 
@@ -1099,6 +1165,7 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         categoria_banorte_bahia_id = categorias_especiales.get('banorte_bahia_id')
         categoria_bbva_bahia_id = categorias_especiales.get('bbva_bahia_id')
 
+        # Calcular totales del período para cada categoría
         _, _, resultado_sobrantes = _calcular_totales_categoria_rango(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_sobrantes_id,
@@ -1126,6 +1193,44 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             fecha_inicio=fecha_inicio,
             fecha_fin=fecha_fin,
         ) if categoria_dolares_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+        # Obtener saldos iniciales mensuales de cada categoría (para el mes de fecha_fin)
+        anio_consulta = fecha_fin.year
+        mes_consulta = fecha_fin.month
+
+        saldo_inicial_sobrantes = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_sobrantes_id,
+            anio=anio_consulta,
+            mes=mes_consulta,
+        ) if categoria_sobrantes_id else Decimal('0')
+
+        saldo_inicial_perdidas = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_perdidas_id,
+            anio=anio_consulta,
+            mes=mes_consulta,
+        ) if categoria_perdidas_id else Decimal('0')
+
+        saldo_inicial_por_comprobar = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_por_comprobar_id,
+            anio=anio_consulta,
+            mes=mes_consulta,
+        ) if categoria_por_comprobar_id else Decimal('0')
+
+        saldo_inicial_dolares = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=filtros['sucursal_id'],
+            categoria_id=categoria_dolares_id,
+            anio=anio_consulta,
+            mes=mes_consulta,
+        ) if categoria_dolares_id else Decimal('0')
+
+        # Calcular totales acumulados (saldo inicial + movimientos del período)
+        total_acumulado_sobrantes = saldo_inicial_sobrantes + resultado_sobrantes
+        total_acumulado_perdidas = saldo_inicial_perdidas + (egresos_perdidas - ingresos_perdidas)
+        total_acumulado_por_comprobar = saldo_inicial_por_comprobar + egresos_por_comprobar
+        total_acumulado_dolares = saldo_inicial_dolares + resultado_dolares
 
         _, _, resultado_banorte_ahis = _calcular_totales_categoria_rango(
             sucursal_id=filtros['sucursal_id'],
@@ -1239,18 +1344,19 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             'tipo_fila': 'SEPARADOR_AJUSTES',
         })
 
+        # Ajustes contables usando totales acumulados (saldo inicial + movimientos del período)
         ajustes_contables = [
-            ('FONDOS FIJOS', fondos_fijos_sucursal, 'EGRESO'),
-            ('FALTANTES', resultado_perdidas, 'EGRESO'),
-            ('SOBRANTES', resultado_sobrantes, 'INGRESO'),
-            ('POR COMPROBAR', egresos_por_comprobar, 'EGRESO'),
-            ('DOLARES', resultado_dolares, 'EGRESO'),
+            ('FONDOS FIJOS', fondos_fijos_sucursal, Decimal('0'), 'EGRESO'),
+            ('FALTANTES', total_acumulado_perdidas, saldo_inicial_perdidas, 'EGRESO'),
+            ('SOBRANTES', total_acumulado_sobrantes, saldo_inicial_sobrantes, 'INGRESO'),
+            ('POR COMPROBAR', total_acumulado_por_comprobar, saldo_inicial_por_comprobar, 'EGRESO'),
+            ('DOLARES', total_acumulado_dolares, saldo_inicial_dolares, 'EGRESO'),
         ]
 
-        for concepto_ajuste, monto_ajuste, naturaleza_ajuste in ajustes_contables:
+        for concepto_ajuste, monto_total_acumulado, saldo_inicial_cat, naturaleza_ajuste in ajustes_contables:
             _agregar_fila_operacion(
                 concepto=concepto_ajuste,
-                monto=monto_ajuste,
+                monto=monto_total_acumulado,
                 naturaleza=naturaleza_ajuste,
                 tipo_fila='AJUSTE_CONTABLE',
             )

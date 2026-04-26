@@ -1,5 +1,4 @@
 <script setup>
-import MontoMonedaColoreado from '@/components/MontoMonedaColoreado.vue';
 import { listarSucursalesReporte } from '@/service/estadoResultadosServicio';
 import { obtenerLibroOperativoDiario } from '@/service/reporteDiarioServicio';
 import { useSesionStore } from '@/stores/sesion';
@@ -15,11 +14,14 @@ const sucursales = ref([]);
 const filasLibro = ref([]);
 
 const nombresBancosInformativos = ['BANORTE AHIS', 'BANORTE BAHIA', 'BBVA BAHIA'];
+const conceptosAcumulados = ['FALTANTES', 'SOBRANTES', 'POR COMPROBAR', 'DOLARES'];
 
 const filasLibroPrincipal = computed(() => {
     return filasLibro.value.filter(fila => {
         const concepto = String(fila?.concepto || '').trim().toUpperCase();
-        return !nombresBancosInformativos.includes(concepto);
+        const tipoFila = String(fila?.tipo_fila || '');
+        // Excluir bancos informativos y el separador de ajustes
+        return !nombresBancosInformativos.includes(concepto) && tipoFila !== 'SEPARADOR_AJUSTES';
     });
 });
 
@@ -162,13 +164,13 @@ function claseFilaLibro(fila) {
     return '';
 }
 
-// 1) Para qué sirve: colorear celdas específicas de ciertas filas (de concepto en adelante).
+// 1) Para qué sirve: colorear celdas específicas de ciertas filas (solo para columna concepto y exportación).
 // 2) Cómo funciona: evalúa el concepto y retorna una clase de fondo de Tailwind.
 // 3) Qué hace: resalta visualmente filas importantes sin afectar la columna fecha.
 // 4) Cómo editarla: ajusta palabras clave o colores según requerimientos.
 function claseCeldaConceptoAdelante(data) {
     const concepto = String(data?.concepto || '').toLowerCase();
-    
+
     if (concepto.includes('faltante') || concepto.includes('sobrante') || concepto.includes('por comprobar')) {
         return 'celda-faltante';
     }
@@ -179,6 +181,26 @@ function claseCeldaConceptoAdelante(data) {
         return 'celda-fondo-fijo';
     }
     return '';
+}
+
+// 1) Para qué sirve: formatear montos simples sin colores (solo para la tabla principal).
+// 2) Cómo funciona: usa Intl.NumberFormat con 2 decimales.
+// 3) Qué hace: devuelve string formateado para mostrar en celdas.
+// 4) Cómo editarla: ajusta locale o decimales si se requiere.
+function formatearMontoSimple(valor) {
+    return new Intl.NumberFormat('es-MX', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(Number(valor || 0));
+}
+
+// 1) Para qué sirve: verificar si una fila debe mostrar el saldo acumulado en vez del monto del día.
+// 2) Cómo funciona: evalúa el concepto contra la lista de conceptos acumulados.
+// 3) Qué hace: identifica filas de faltantes, sobrantes, por comprobar, dólares.
+// 4) Cómo editarla: agrega/quita conceptos de la lista conceptosAcumulados.
+function esFilaAcumulada(data) {
+    const concepto = String(data?.concepto || '').trim().toUpperCase();
+    return conceptosAcumulados.includes(concepto);
 }
 
 // 1) Para qué sirve: decidir si una celda monetaria debe renderizar monto o guion.
@@ -789,19 +811,19 @@ onMounted(async () => {
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3">
             <div class="card space-y-1">
                 <small class="text-surface-500">Saldo inicial del rango</small>
-                <MontoMonedaColoreado :monto="resumenLibro.saldo_inicial" />
+                <p class="font-semibold text-lg text-blue-600">$ {{ formatearMontoSimple(resumenLibro.saldo_inicial) }}</p>
             </div>
             <div class="card space-y-1">
                 <small class="text-surface-500">Total ingresos</small>
-                <MontoMonedaColoreado :monto="resumenLibro.total_ingresos" />
+                <p class="font-semibold text-lg text-gray-900">$ {{ formatearMontoSimple(resumenLibro.total_ingresos) }}</p>
             </div>
             <div class="card space-y-1">
                 <small class="text-surface-500">Total egresos</small>
-                <MontoMonedaColoreado :monto="resumenLibro.total_egresos" />
+                <p class="font-semibold text-lg text-red-600">$ {{ formatearMontoSimple(resumenLibro.total_egresos) }}</p>
             </div>
             <div class="card space-y-1">
                 <small class="text-surface-500">Saldo final</small>
-                <MontoMonedaColoreado :monto="resumenLibro.saldo_final" />
+                <p class="font-semibold text-lg text-blue-600">$ {{ formatearMontoSimple(resumenLibro.saldo_final) }}</p>
             </div>
             <div class="card space-y-1">
                 <small class="text-surface-500">Días consultados / con reporte</small>
@@ -822,25 +844,39 @@ onMounted(async () => {
                     </template>
                 </Column>
                 <Column field="concepto" header="Concepto" style="min-width: 16rem" :bodyClass="claseCeldaConceptoAdelante" />
-                <Column field="ingreso" header="Ingreso" style="min-width: 10rem" :bodyClass="claseCeldaConceptoAdelante">
+                <Column field="ingreso" header="Ingreso" style="min-width: 10rem">
                     <template #body="slotProps">
-                        <div v-if="celdaTieneMonto(slotProps.data.ingreso)">
-                            <MontoMonedaColoreado :monto="slotProps.data.ingreso" />
+                        <div v-if="esFilaAcumulada(slotProps.data)">
+                            <!-- Filas acumuladas: backend envía total acumulado (saldo inicial + movimientos) -->
+                            <span v-if="slotProps.data.ingreso !== null" class="font-semibold text-gray-900">
+                                $ {{ formatearMontoSimple(slotProps.data.ingreso) }}
+                            </span>
+                            <span v-else class="text-surface-500">-</span>
+                        </div>
+                        <div v-else-if="celdaTieneMonto(slotProps.data.ingreso)">
+                            <span class="font-semibold text-gray-900">$ {{ formatearMontoSimple(slotProps.data.ingreso) }}</span>
                         </div>
                         <span v-else class="text-surface-500">-</span>
                     </template>
                 </Column>
-                <Column field="egreso" header="Egreso" style="min-width: 10rem" :bodyClass="claseCeldaConceptoAdelante">
+                <Column field="egreso" header="Egreso" style="min-width: 10rem">
                     <template #body="slotProps">
-                        <div v-if="celdaTieneMonto(slotProps.data.egreso)">
-                            <MontoMonedaColoreado :monto="slotProps.data.egreso" />
+                        <div v-if="esFilaAcumulada(slotProps.data)">
+                            <!-- Filas acumuladas: backend envía total acumulado (saldo inicial + movimientos) -->
+                            <span v-if="slotProps.data.egreso !== null" class="font-semibold text-red-600">
+                                $ {{ formatearMontoSimple(slotProps.data.egreso) }}
+                            </span>
+                            <span v-else class="text-surface-500">-</span>
+                        </div>
+                        <div v-else-if="celdaTieneMonto(slotProps.data.egreso)">
+                            <span class="font-semibold text-red-600">$ {{ formatearMontoSimple(slotProps.data.egreso) }}</span>
                         </div>
                         <span v-else class="text-surface-500">-</span>
                     </template>
                 </Column>
-                <Column field="saldo" header="Saldo" style="min-width: 12rem" :bodyClass="claseCeldaConceptoAdelante">
+                <Column field="saldo" header="Saldo" style="min-width: 12rem">
                     <template #body="slotProps">
-                        <MontoMonedaColoreado :monto="slotProps.data.saldo || 0" />
+                        <span class="font-semibold text-blue-600">$ {{ formatearMontoSimple(slotProps.data.saldo) }}</span>
                     </template>
                 </Column>
             </DataTable>
@@ -853,16 +889,11 @@ onMounted(async () => {
                 responsiveLayout="scroll"
                 class="p-datatable-sm"
             >
-                <Column field="fecha" header="Fecha" style="min-width: 9rem">
-                    <template #body="slotProps">
-                        <span class="font-semibold">{{ formatearFechaFila(slotProps.data?.fecha) }}</span>
-                    </template>
-                </Column>
                 <Column field="concepto" header="Concepto" style="min-width: 16rem" />
                 <Column field="ingreso" header="Actual" style="min-width: 10rem">
                     <template #body="slotProps">
                         <div v-if="celdaTieneMonto(slotProps.data.ingreso)">
-                            <MontoMonedaColoreado :monto="slotProps.data.ingreso" />
+                            <span class="font-semibold text-gray-900">$ {{ formatearMontoSimple(slotProps.data.ingreso) }}</span>
                         </div>
                         <span v-else class="text-surface-500">-</span>
                     </template>
