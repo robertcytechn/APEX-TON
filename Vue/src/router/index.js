@@ -175,6 +175,12 @@ const router = createRouter({
                     component: () => import('@/views/admin/CentroControlAdmin.vue')
                 },
                 {
+                    path: 'admin/auditoria-movimientos',
+                    name: 'admin-auditoria-movimientos',
+                    meta: { requiereSesion: true, requiereRoles: ['DIRECTOR', 'ADMINISTRADOR', 'SUPERUSUARIO'] },
+                    component: () => import('@/views/admin/AuditoriaMovimientos.vue')
+                },
+                {
                     path: 'admin/soporte-tecnico',
                     name: 'admin-soporte-tecnico',
                     meta: { requiereSesion: true, requiereAdmin: true },

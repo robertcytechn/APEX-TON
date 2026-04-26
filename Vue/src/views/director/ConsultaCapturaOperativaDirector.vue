@@ -1,6 +1,6 @@
 <script setup>
 import MontoMonedaColoreado from '@/components/MontoMonedaColoreado.vue';
-import { listarCategoriasOperativas, listarMovimientosDiarios } from '@/service/capturaOperativaServicio';
+import { listarCategoriasOperativas, listarMovimientosDiarios, obtenerSaldoInicialCategoriaMensual } from '@/service/capturaOperativaServicio';
 import { listarSucursalesReporte } from '@/service/estadoResultadosServicio';
 import { listarReportesDiarios } from '@/service/reporteDiarioServicio';
 import { useSesionStore } from '@/stores/sesion';
@@ -47,6 +47,37 @@ const totalEgresos = computed(() => {
 });
 
 const totalNeto = computed(() => Number(totalIngresos.value || 0) - Number(totalEgresos.value || 0));
+
+const saldoInicialCategoria = ref(null);
+
+const categoriaUsaSaldoInicial = computed(() => {
+    return Boolean(saldoInicialCategoria.value?.categoria_usa_saldo_inicial);
+});
+
+const saldoFinalAcumulado = computed(() => {
+    if (!categoriaUsaSaldoInicial.value || !saldoInicialCategoria.value) {
+        return null;
+    }
+    return Number(saldoInicialCategoria.value.saldo_final_acumulado || 0);
+});
+
+const saldoInicialMes = computed(() => {
+    if (!categoriaUsaSaldoInicial.value || !saldoInicialCategoria.value) {
+        return null;
+    }
+    return Number(saldoInicialCategoria.value.saldo_inicial || 0);
+});
+
+// 1) Para qué sirve: formatear montos numéricos para mostrar en tarjetas de resumen.
+// 2) Cómo funciona: usa Intl.NumberFormat con 2 decimales en locale es-MX.
+// 3) Qué hace: devuelve string formateado para mostrar en celdas.
+// 4) Cómo editarla: ajusta locale o decimales si se requiere.
+function formatearMonto(valor) {
+    return new Intl.NumberFormat('es-MX', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(Number(valor || 0));
+}
 
 // 1) Para qué sirve: convertir Date local a formato ISO YYYY-MM-DD para filtros API.
 // 2) Cómo funciona: serializa año, mes y día con padding.
@@ -238,6 +269,21 @@ async function consultarMovimientos() {
         if (!movimientos.value.length) {
             mensaje.value = 'No hay movimientos capturados para los filtros seleccionados.';
         }
+
+        // Consultar saldo inicial de la categoría seleccionada si aplica
+        saldoInicialCategoria.value = null;
+        if (filtroCategoriaId.value && filtroSucursalId.value && fechaIso) {
+            try {
+                const { data: respuestaSaldo } = await obtenerSaldoInicialCategoriaMensual(
+                    filtroSucursalId.value,
+                    filtroCategoriaId.value,
+                    fechaIso
+                );
+                saldoInicialCategoria.value = respuestaSaldo?.data || null;
+            } catch {
+                saldoInicialCategoria.value = null;
+            }
+        }
     } catch (error) {
         mensaje.value = error?.response?.data?.message || 'No fue posible consultar movimientos capturados.';
     } finally {
@@ -341,20 +387,38 @@ onMounted(async () => {
 
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <div class="card space-y-1">
-                <small class="text-surface-500">Movimientos</small>
+                <small class="text-surface-500">Movimientos del día</small>
                 <p class="text-2xl font-semibold">{{ totalMovimientos }}</p>
             </div>
             <div class="card space-y-1">
-                <small class="text-surface-500">Ingresos</small>
-                <MontoMonedaColoreado :monto="totalIngresos" />
+                <small class="text-surface-500">Ingresos del día</small>
+                <p class="font-semibold text-lg text-gray-900">$ {{ formatearMonto(totalIngresos) }}</p>
             </div>
             <div class="card space-y-1">
-                <small class="text-surface-500">Egresos</small>
-                <MontoMonedaColoreado :monto="totalEgresos" />
+                <small class="text-surface-500">Egresos del día</small>
+                <p class="font-semibold text-lg text-red-600">$ {{ formatearMonto(totalEgresos) }}</p>
             </div>
             <div class="card space-y-1">
-                <small class="text-surface-500">Neto</small>
-                <MontoMonedaColoreado :monto="totalNeto" />
+                <small class="text-surface-500">Neto del día</small>
+                <p class="font-semibold text-lg" :class="totalNeto >= 0 ? 'text-blue-600' : 'text-red-600'">$ {{ formatearMonto(totalNeto) }}</p>
+            </div>
+        </div>
+
+        <!-- Tarjetas de saldo acumulado (solo cuando hay categoría con saldo inicial) -->
+        <div v-if="categoriaUsaSaldoInicial && saldoInicialCategoria" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div class="card space-y-1 border-l-4 border-blue-400">
+                <small class="text-surface-500">Saldo inicial del mes</small>
+                <p class="font-semibold text-lg text-blue-600">$ {{ formatearMonto(saldoInicialMes) }}</p>
+                <small class="text-xs text-surface-400">{{ saldoInicialCategoria?.categoria_nombre }} — inicio del mes</small>
+            </div>
+            <div class="card space-y-1 border-l-4 border-emerald-400">
+                <small class="text-surface-500">Ingresos acumulados del mes</small>
+                <p class="font-semibold text-lg text-gray-900">$ {{ formatearMonto(saldoInicialCategoria?.ingresos_acumulados_mes) }}</p>
+            </div>
+            <div class="card space-y-1 border-l-4 border-violet-400">
+                <small class="text-surface-500">Saldo acumulado al día</small>
+                <p class="font-semibold text-xl" :class="saldoFinalAcumulado >= 0 ? 'text-blue-700' : 'text-red-600'">$ {{ formatearMonto(saldoFinalAcumulado) }}</p>
+                <small class="text-xs text-surface-400">Saldo inicial + acumulado mes hasta {{ saldoInicialCategoria?.fecha_contable_consulta }}</small>
             </div>
         </div>
 

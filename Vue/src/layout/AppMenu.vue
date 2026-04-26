@@ -71,8 +71,29 @@ const model = computed(() => {
         }
     ];
 
+    if (sesionStore.cumpleAlgunoRoles(['ADMINISTRADOR', 'DIRECTOR'])) {
+        const itemsAuditoria = [];
+
+        if (sesionStore.cumpleAlgunoRoles(['DIRECTOR', 'ADMINISTRADOR'])) {
+            itemsAuditoria.push({
+                label: 'Auditoría de movimientos',
+                icon: 'pi pi-fw pi-history',
+                to: '/admin/auditoria-movimientos'
+            });
+        }
+
+        if (itemsAuditoria.length > 0) {
+            menuBase.splice(1, 0, {
+                label: 'Auditoría y Control',
+                path: '/admin',
+                visiblePara: ['DIRECTOR', 'ADMINISTRADOR'],
+                items: itemsAuditoria
+            });
+        }
+    }
+
     if (sesionStore.cumpleAlgunoRoles(['ADMINISTRADOR'])) {
-        menuBase.splice(1, 0, {
+        menuBase.splice(2, 0, {
             label: 'Administración del sistema',
             path: '/admin',
             visiblePara: ['ADMINISTRADOR'],

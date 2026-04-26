@@ -113,3 +113,11 @@ export function guardarCapturaRapida(payload) {
 export function eliminarMovimientoDiario(idMovimiento) {
     return api.delete(`/movimientos-diarios/${idMovimiento}/`);
 }
+
+// 1) Para qué sirve: consultar historial de auditoría de movimientos (solo DIRECTOR/ADMINISTRADOR).
+// 2) Cómo funciona: consume endpoint historial con filtros de query params.
+// 3) Qué hace: retorna registros históricos con diff, usuario y contexto completo.
+// 4) Cómo editarla: extiende params si backend agrega nuevos filtros de auditoría.
+export function obtenerHistorialAuditoriaMovimientos(params = {}) {
+    return api.get('/movimientos-diarios/historial/', { params });
+}

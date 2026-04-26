@@ -6,6 +6,128 @@ from configuraciones_globales.models import ConfiguracionGlobal
 from .models import ReporteDiario, MovimientoDiario
 
 
+# 1) Para qué sirve: serializar registros del historial de movimientos con contexto completo.
+# 2) Cómo funciona: expone campos del historial y enriquece con datos relacionados (usuario, concepto, sucursal).
+# 3) Qué hace: permite auditar cambios con diff visual y filtros por entidades relacionadas.
+# 4) Cómo editarla: agrega campos adicionales de history_user o metadatos si evoluciona la auditoría.
+class MovimientoDiarioHistorialSerializer(serializers.Serializer):
+    """
+    Serializador para registros de historial (django-simple-history) de MovimientoDiario.
+    Proporciona contexto completo para auditoría: quién, cuándo, qué cambió.
+    """
+    history_id = serializers.IntegerField(source='id', read_only=True)
+    history_date = serializers.DateTimeField(read_only=True)
+    history_type = serializers.CharField(read_only=True)
+    history_type_display = serializers.SerializerMethodField()
+    history_change_reason = serializers.CharField(read_only=True, allow_null=True)
+
+    # Datos del movimiento en este punto histórico
+    movimiento_id = serializers.IntegerField(source='id', read_only=True)
+    monto = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True)
+    monto_divisa = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True, allow_null=True)
+    tipo_divisa = serializers.CharField(read_only=True, allow_null=True)
+    detalles_snapshot = serializers.JSONField(read_only=True)
+    notas = serializers.CharField(read_only=True, allow_null=True)
+
+    # Metadatos temporales del registro histórico
+    creado_en = serializers.DateTimeField(read_only=True)
+    actualizado_en = serializers.DateTimeField(read_only=True)
+    eliminado_en = serializers.DateTimeField(read_only=True, allow_null=True)
+
+    # Relaciones
+    reporte_id = serializers.IntegerField(source='reporte_id', read_only=True)
+    fecha_contable = serializers.DateField(source='reporte.fecha_contable', read_only=True, allow_null=True)
+    sucursal_id = serializers.IntegerField(source='reporte.sucursal_id', read_only=True, allow_null=True)
+    sucursal_nombre = serializers.CharField(source='reporte.sucursal.nombre', read_only=True, allow_null=True)
+
+    concepto_id = serializers.IntegerField(source='concepto_id', read_only=True)
+    concepto_nombre = serializers.CharField(source='concepto.nombre', read_only=True, allow_null=True)
+    concepto_clave = serializers.CharField(source='concepto.clave', read_only=True, allow_null=True)
+    categoria_nombre = serializers.CharField(source='concepto.categoria.nombre', read_only=True, allow_null=True)
+    categoria_id = serializers.IntegerField(source='concepto.categoria_id', read_only=True, allow_null=True)
+
+    # Usuario que realizó el cambio
+    usuario_id = serializers.IntegerField(source='history_user_id', read_only=True, allow_null=True)
+    usuario_nombre = serializers.SerializerMethodField()
+    usuario_email = serializers.SerializerMethodField()
+
+    # Diff con versión anterior
+    diff = serializers.SerializerMethodField()
+
+    def get_history_type_display(self, obj):
+        tipos = {
+            '+': 'Creación',
+            '~': 'Modificación',
+            '-': 'Eliminación'
+        }
+        return tipos.get(obj.history_type, obj.history_type)
+
+    def get_usuario_nombre(self, obj):
+        if obj.history_user:
+            return obj.history_user.get_full_name() or obj.history_user.username
+        return 'Sistema'
+
+    def get_usuario_email(self, obj):
+        if obj.history_user:
+            return obj.history_user.email
+        return None
+
+    def get_diff(self, obj):
+        """
+        Calcula diferencias entre esta versión y la anterior.
+        Retorna un dict con campos cambiados, valores anterior y nuevo.
+        """
+        if obj.history_type == '+':
+            return {'tipo': 'creacion', 'cambios': None}
+
+        if obj.history_type == '-':
+            return {'tipo': 'eliminacion', 'cambios': None}
+
+        # Buscar versión anterior
+        version_anterior = obj.prev_record
+        if not version_anterior:
+            return {'tipo': 'modificacion', 'cambios': None, 'nota': 'Versión anterior no disponible'}
+
+        campos_a_comparar = [
+            'monto', 'monto_divisa', 'tipo_divisa', 'detalles_snapshot', 'notas'
+        ]
+
+        cambios = []
+        for campo in campos_a_comparar:
+            valor_anterior = getattr(version_anterior, campo, None)
+            valor_nuevo = getattr(obj, campo, None)
+
+            # Normalizar para comparación
+            if valor_anterior == '' or valor_anterior == {}:
+                valor_anterior = None
+            if valor_nuevo == '' or valor_nuevo == {}:
+                valor_nuevo = None
+
+            if valor_anterior != valor_nuevo:
+                cambios.append({
+                    'campo': campo,
+                    'valor_anterior': valor_anterior,
+                    'valor_nuevo': valor_nuevo,
+                    'etiqueta': self._etiqueta_campo(campo)
+                })
+
+        return {
+            'tipo': 'modificacion',
+            'cambios': cambios,
+            'cantidad_cambios': len(cambios)
+        }
+
+    def _etiqueta_campo(self, campo):
+        etiquetas = {
+            'monto': 'Monto (MXN)',
+            'monto_divisa': 'Monto en Divisa',
+            'tipo_divisa': 'Tipo de Divisa',
+            'detalles_snapshot': 'Detalles Parametrizados',
+            'notas': 'Notas'
+        }
+        return etiquetas.get(campo, campo.replace('_', ' ').title())
+
+
 # 1) Para qué sirve: detectar si un concepto pertenece a la categoría operativa DOLARES.
 # 2) Cómo funciona: evalúa clave/nombre de categoría en mayúsculas para tolerar variantes.
 # 3) Qué hace: habilita lógica de conversión automática USD->MXN en validación del serializer.

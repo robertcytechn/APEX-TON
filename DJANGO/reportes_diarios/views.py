@@ -16,12 +16,13 @@ from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
 
 from categoria_operativa.models import Concepto, CategoriaOperativa, SaldoInicialCategoriaMensual
-from core.permisos import VentanaHorariaPermiso, EsAdministrador
+from core.permisos import VentanaHorariaPermiso, EsAdministrador, EsDirectorOAdministrador
 from fondos_fijos.models import SucursalFondoFijo
 from .models import ReporteDiario, MovimientoDiario
 from .serializers import (
     ReporteDiarioSerializer, ReporteDiarioListSerializer,
     MovimientoDiarioSerializer, MovimientoDiarioListSerializer,
+    MovimientoDiarioHistorialSerializer,
 )
 from sucursales.models import Sucursal
 
@@ -1538,6 +1539,21 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             data.update(componentes_administracion)
             data['saldo_inicial'] = componentes_administracion.get('saldo_inicial_administracion', 0.0)
 
+        # Calcular ingresos/egresos acumulados desde inicio de mes hasta fecha_objetivo
+        # Esto permite calcular el saldo final acumulado al día consultado (saldo_inicial + acumulados del mes)
+        fecha_inicio_mes = datetime(anio, mes, 1).date()
+        ingresos_acum_mes, egresos_acum_mes, _ = _calcular_totales_categoria_rango(
+            sucursal_id=sucursal_id,
+            categoria_id=categoria_id,
+            fecha_inicio=fecha_inicio_mes,
+            fecha_fin=fecha_objetivo,
+        )
+        saldo_inicial_val = _a_decimal(data.get('saldo_inicial', 0))
+        data['ingresos_acumulados_mes'] = _a_flotante(ingresos_acum_mes)
+        data['egresos_acumulados_mes'] = _a_flotante(egresos_acum_mes)
+        data['saldo_final_acumulado'] = _a_flotante(saldo_inicial_val + ingresos_acum_mes - egresos_acum_mes)
+        data['fecha_contable_consulta'] = fecha_objetivo.isoformat()
+
         mensaje = 'Saldo inicial mensual de categoría obtenido.'
         if estado_generacion == 'GENERADO_AUTOMATICO':
             mensaje = 'Saldo inicial mensual generado automáticamente con arrastre del mes anterior.'
@@ -2324,5 +2340,111 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
             )
         mov.eliminar_logico(usuario=request.user)
         return respuesta_estandar(mensaje="Movimiento eliminado (baja lógica).")
+
+    # 1) Para qué sirve: auditar cambios históricos de movimientos con filtros avanzados.
+    # 2) Cómo funciona: consulta django-simple-history con joins select_related y aplica filtros opcionales.
+    # 3) Qué hace: retorna versión histórica con diff, usuario y contexto completo para auditoría.
+    # 4) Cómo editarla: agrega filtros de query params manteniendo el contrato de respuesta estándar.
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated, EsDirectorOAdministrador], url_path='historial')
+    def historial(self, request):
+        """
+        Endpoint para consultar el historial de cambios de movimientos.
+        Solo accesible por DIRECTOR y ADMINISTRADOR.
+
+        Filtros disponibles (query params):
+        - usuario_id: filtrar por usuario que realizó el cambio
+        - sucursal_id: filtrar por sucursal
+        - categoria_id: filtrar por categoría operativa
+        - fecha_contable: filtrar por fecha específica (YYYY-MM-DD)
+        - fecha_desde: filtrar desde fecha (YYYY-MM-DD)
+        - fecha_hasta: filtrar hasta fecha (YYYY-MM-DD)
+        - tipo_cambio: '+' (creación), '~' (modificación), '-' (eliminación)
+        - concepto_id: filtrar por concepto específico
+        - page: número de página para paginación
+        - page_size: tamaño de página (default 50, max 100)
+        """
+        qs = MovimientoDiario.historial.all().select_related(
+            'history_user',
+            'reporte__sucursal',
+            'concepto__categoria'
+        ).order_by('-history_date')
+
+        # Aplicar filtros
+        usuario_id = request.query_params.get('usuario_id')
+        if usuario_id:
+            qs = qs.filter(history_user_id=usuario_id)
+
+        sucursal_id = request.query_params.get('sucursal_id')
+        if sucursal_id:
+            qs = qs.filter(reporte__sucursal_id=sucursal_id)
+
+        categoria_id = request.query_params.get('categoria_id')
+        if categoria_id:
+            qs = qs.filter(concepto__categoria_id=categoria_id)
+
+        concepto_id = request.query_params.get('concepto_id')
+        if concepto_id:
+            qs = qs.filter(concepto_id=concepto_id)
+
+        fecha_contable = request.query_params.get('fecha_contable')
+        if fecha_contable:
+            qs = qs.filter(reporte__fecha_contable=fecha_contable)
+
+        fecha_desde = request.query_params.get('fecha_desde')
+        if fecha_desde:
+            qs = qs.filter(reporte__fecha_contable__gte=fecha_desde)
+
+        fecha_hasta = request.query_params.get('fecha_hasta')
+        if fecha_hasta:
+            qs = qs.filter(reporte__fecha_contable__lte=fecha_hasta)
+
+        tipo_cambio = request.query_params.get('tipo_cambio')
+        if tipo_cambio in ('+', '~', '-'):
+            qs = qs.filter(history_type=tipo_cambio)
+
+        # Paginación
+        try:
+            page_size = int(request.query_params.get('page_size', 50))
+            page_size = min(page_size, 100)  # máximo 100
+        except ValueError:
+            page_size = 50
+
+        try:
+            page = int(request.query_params.get('page', 1))
+            page = max(page, 1)
+        except ValueError:
+            page = 1
+
+        total_registros = qs.count()
+        start = (page - 1) * page_size
+        end = start + page_size
+        registros = qs[start:end]
+
+        serializer = MovimientoDiarioHistorialSerializer(registros, many=True)
+
+        return respuesta_estandar(
+            data={
+                'resultados': serializer.data,
+                'paginacion': {
+                    'page': page,
+                    'page_size': page_size,
+                    'total_registros': total_registros,
+                    'total_pages': (total_registros + page_size - 1) // page_size if total_registros > 0 else 1,
+                    'has_next': end < total_registros,
+                    'has_prev': page > 1
+                },
+                'filtros_aplicados': {
+                    'usuario_id': usuario_id,
+                    'sucursal_id': sucursal_id,
+                    'categoria_id': categoria_id,
+                    'concepto_id': concepto_id,
+                    'fecha_contable': fecha_contable,
+                    'fecha_desde': fecha_desde,
+                    'fecha_hasta': fecha_hasta,
+                    'tipo_cambio': tipo_cambio
+                }
+            },
+            mensaje=f"Historial consultado: {len(serializer.data)} registros de {total_registros}"
+        )
 
 
