@@ -2,7 +2,6 @@
 import MontoMonedaColoreado from '@/components/MontoMonedaColoreado.vue';
 import { listarCategoriasOperativas, listarMovimientosDiarios, obtenerSaldoInicialCategoriaMensual } from '@/service/capturaOperativaServicio';
 import { listarSucursalesReporte } from '@/service/estadoResultadosServicio';
-import { listarReportesDiarios } from '@/service/reporteDiarioServicio';
 import { useSesionStore } from '@/stores/sesion';
 import { computed, onMounted, ref } from 'vue';
 
@@ -15,13 +14,13 @@ const mensaje = ref('');
 const sucursales = ref([]);
 const categorias = ref([]);
 const movimientos = ref([]);
-const reporteSeleccionado = ref(null);
 
 const hoy = new Date();
 const diaContableBase = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1);
 
 const filtroSucursalId = ref(null);
-const filtroFecha = ref(new Date(diaContableBase));
+const filtroFechaInicio = ref(new Date(diaContableBase));
+const filtroFechaFin = ref(new Date(diaContableBase));
 const filtroCategoriaId = ref(null);
 
 const categoriaSeleccionada = computed(() => {
@@ -206,8 +205,11 @@ async function cargarCatalogos() {
             filtroSucursalId.value = sucursales.value[0].id;
         }
 
-        if (!(filtroFecha.value instanceof Date) || Number.isNaN(filtroFecha.value.getTime())) {
-            filtroFecha.value = new Date(diaContableBase);
+        if (!(filtroFechaInicio.value instanceof Date) || Number.isNaN(filtroFechaInicio.value.getTime())) {
+            filtroFechaInicio.value = new Date(diaContableBase);
+        }
+        if (!(filtroFechaFin.value instanceof Date) || Number.isNaN(filtroFechaFin.value.getTime())) {
+            filtroFechaFin.value = new Date(diaContableBase);
         }
     } catch (error) {
         mensaje.value = error?.response?.data?.message || 'No fue posible cargar catálogos para filtros de consulta.';
@@ -216,46 +218,39 @@ async function cargarCatalogos() {
     }
 }
 
-// 1) Para qué sirve: consultar movimientos capturados en un día y categoría de una sucursal.
-// 2) Cómo funciona: resuelve reporte por fecha y luego lista movimientos filtrados.
+// 1) Para qué sirve: consultar movimientos capturados en un rango de fechas y categoría de una sucursal.
+// 2) Cómo funciona: lista movimientos filtrados directamente por sucursal y rango de fechas.
 // 3) Qué hace: arma la tabla detallada de lectura para director/administrador.
 // 4) Cómo editarla: agrega paginación o segmentaciones adicionales en params de consulta.
 async function consultarMovimientos() {
     mensaje.value = '';
     movimientos.value = [];
-    reporteSeleccionado.value = null;
 
-    const fechaIso = convertirFechaAISO(filtroFecha.value);
+    const fechaInicioIso = convertirFechaAISO(filtroFechaInicio.value);
+    const fechaFinIso = convertirFechaAISO(filtroFechaFin.value);
+
     if (!filtroSucursalId.value) {
         mensaje.value = 'Selecciona un casino para consultar la captura operativa.';
         return;
     }
 
-    if (!fechaIso) {
-        mensaje.value = 'Selecciona una fecha contable válida.';
+    if (!fechaInicioIso || !fechaFinIso) {
+        mensaje.value = 'Selecciona fechas contables válidas.';
+        return;
+    }
+
+    if (fechaInicioIso > fechaFinIso) {
+        mensaje.value = 'La fecha de inicio no puede ser mayor que la fecha de fin.';
         return;
     }
 
     cargandoConsulta.value = true;
     try {
-        const { data: respuestaReportes } = await listarReportesDiarios({
-            sucursal_id: filtroSucursalId.value,
-            fecha_inicio: fechaIso,
-            fecha_fin: fechaIso
-        });
-
-        const reportes = Array.isArray(respuestaReportes?.data) ? respuestaReportes.data : [];
-        const reporteDia = reportes.find((reporte) => String(reporte?.fecha_contable || '') === fechaIso) || null;
-
-        if (!reporteDia) {
-            mensaje.value = 'No existe reporte diario para el casino y fecha seleccionados.';
-            return;
-        }
-
-        reporteSeleccionado.value = reporteDia;
-
+        // Consultar movimientos directamente por rango de fechas
         const parametrosMovimientos = {
-            reporte_id: reporteDia.id
+            sucursal_id: filtroSucursalId.value,
+            fecha_inicio: fechaInicioIso,
+            fecha_fin: fechaFinIso
         };
 
         if (filtroCategoriaId.value) {
@@ -270,14 +265,14 @@ async function consultarMovimientos() {
             mensaje.value = 'No hay movimientos capturados para los filtros seleccionados.';
         }
 
-        // Consultar saldo inicial de la categoría seleccionada si aplica
+        // Consultar saldo inicial de la categoría seleccionada si aplica (usa fecha fin como referencia)
         saldoInicialCategoria.value = null;
-        if (filtroCategoriaId.value && filtroSucursalId.value && fechaIso) {
+        if (filtroCategoriaId.value && filtroSucursalId.value && fechaFinIso) {
             try {
                 const { data: respuestaSaldo } = await obtenerSaldoInicialCategoriaMensual(
                     filtroSucursalId.value,
                     filtroCategoriaId.value,
-                    fechaIso
+                    fechaFinIso
                 );
                 saldoInicialCategoria.value = respuestaSaldo?.data || null;
             } catch {
@@ -304,7 +299,7 @@ onMounted(async () => {
                 <div>
                     <h1 class="text-2xl font-semibold">Consulta de captura operativa por categoría</h1>
                     <p class="text-surface-500 mt-1">
-                        Vista de solo lectura para revisar a detalle lo capturado por Contador o Gerente en un día contable.
+                        Vista de solo lectura para revisar a detalle lo capturado por Contador o Gerente en un rango de fechas contables.
                     </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -330,13 +325,23 @@ onMounted(async () => {
                 </div>
 
                 <div>
-                    <label class="block text-sm mb-2">Día contable <span class="text-red-500">*</span></label>
-                    <DatePicker
-                        v-model="filtroFecha"
-                        dateFormat="yy-mm-dd"
-                        :manualInput="false"
-                        class="w-full"
-                    />
+                    <label class="block text-sm mb-2">Período contable <span class="text-red-500">*</span></label>
+                    <div class="flex gap-2">
+                        <DatePicker
+                            v-model="filtroFechaInicio"
+                            dateFormat="yy-mm-dd"
+                            :manualInput="false"
+                            class="w-full"
+                            placeholder="Desde"
+                        />
+                        <DatePicker
+                            v-model="filtroFechaFin"
+                            dateFormat="yy-mm-dd"
+                            :manualInput="false"
+                            class="w-full"
+                            placeholder="Hasta"
+                        />
+                    </div>
                 </div>
 
                 <div>
@@ -369,16 +374,20 @@ onMounted(async () => {
 
             <div class="flex flex-wrap items-center gap-2">
                 <Tag v-if="sucursalSeleccionada" severity="info" :value="`Casino: ${sucursalSeleccionada.nombre}`" />
-                <Tag v-if="reporteSeleccionado" severity="contrast" :value="`Reporte: ${reporteSeleccionado.fecha_contable}`" />
                 <Tag
-                    v-if="reporteSeleccionado"
-                    :severity="String(reporteSeleccionado.estado_reporte || '').toUpperCase() === 'CERRADO' ? 'danger' : 'success'"
-                    :value="`Estado: ${reporteSeleccionado.estado_reporte}`"
+                    v-if="filtroFechaInicio && filtroFechaFin"
+                    severity="contrast"
+                    :value="`Período: ${convertirFechaAISO(filtroFechaInicio)} a ${convertirFechaAISO(filtroFechaFin)}`"
                 />
                 <Tag
                     v-if="categoriaSeleccionada"
                     severity="secondary"
                     :value="`Categoría filtrada: ${categoriaSeleccionada.nombre}`"
+                />
+                <Tag
+                    v-if="movimientos.length > 0"
+                    severity="success"
+                    :value="`${movimientos.length} movimientos encontrados`"
                 />
             </div>
         </div>
@@ -387,19 +396,19 @@ onMounted(async () => {
 
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <div class="card space-y-1">
-                <small class="text-surface-500">Movimientos del día</small>
+                <small class="text-surface-500">Total movimientos</small>
                 <p class="text-2xl font-semibold">{{ totalMovimientos }}</p>
             </div>
             <div class="card space-y-1">
-                <small class="text-surface-500">Ingresos del día</small>
+                <small class="text-surface-500">Ingresos totales</small>
                 <p class="font-semibold text-lg text-gray-900">$ {{ formatearMonto(totalIngresos) }}</p>
             </div>
             <div class="card space-y-1">
-                <small class="text-surface-500">Egresos del día</small>
+                <small class="text-surface-500">Egresos totales</small>
                 <p class="font-semibold text-lg text-red-600">$ {{ formatearMonto(totalEgresos) }}</p>
             </div>
             <div class="card space-y-1">
-                <small class="text-surface-500">Neto del día</small>
+                <small class="text-surface-500">Neto total</small>
                 <p class="font-semibold text-lg" :class="totalNeto >= 0 ? 'text-blue-600' : 'text-red-600'">$ {{ formatearMonto(totalNeto) }}</p>
             </div>
         </div>

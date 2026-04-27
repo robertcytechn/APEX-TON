@@ -2117,6 +2117,35 @@ class MovimientoDiarioViewSet(viewsets.ViewSet):
             qs = qs.filter(reporte_id=reporte_id)
         if categoria_id := request.query_params.get('categoria_id'):
             qs = qs.filter(concepto__categoria_id=categoria_id)
+
+        # Filtro por rango de fechas (requiere sucursal_id)
+        sucursal_id = request.query_params.get('sucursal_id')
+        fecha_inicio_txt = request.query_params.get('fecha_inicio')
+        fecha_fin_txt = request.query_params.get('fecha_fin')
+
+        if sucursal_id and (fecha_inicio_txt or fecha_fin_txt):
+            try:
+                fecha_inicio = _parsear_fecha_contable(fecha_inicio_txt) if fecha_inicio_txt else None
+                fecha_fin = _parsear_fecha_contable(fecha_fin_txt) if fecha_fin_txt else None
+
+                if fecha_inicio and fecha_fin:
+                    qs = qs.filter(
+                        reporte__sucursal_id=sucursal_id,
+                        reporte__fecha_contable__range=(fecha_inicio, fecha_fin)
+                    )
+                elif fecha_inicio:
+                    qs = qs.filter(
+                        reporte__sucursal_id=sucursal_id,
+                        reporte__fecha_contable__gte=fecha_inicio
+                    )
+                elif fecha_fin:
+                    qs = qs.filter(
+                        reporte__sucursal_id=sucursal_id,
+                        reporte__fecha_contable__lte=fecha_fin
+                    )
+            except ValueError:
+                pass
+
         return respuesta_estandar(data=MovimientoDiarioListSerializer(qs, many=True, context={'request': request}).data, mensaje="Movimientos obtenidos.")
 
     def create(self, request):
