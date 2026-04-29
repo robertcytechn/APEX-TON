@@ -491,12 +491,12 @@ def _calcular_saldo_arrastre_desde_reporte_previo(sucursal_id, fecha_inicio):
 
 
 # 1) Para qué sirve: calcular saldo inicial de libro diario con regla especial de Administración.
-# 2) Cómo funciona: usa saldo base mensual de Administración y acumulados hasta el día previo.
-# 3) Qué hace: alinea el saldo inicial de reporte diario con la lógica de captura operativa.
-# 4) Cómo editarla: modifica ventana de acumulación si negocio redefine el corte diario.
+# 2) Cómo funciona: usa el saldo base mensual de Administración registrado en catálogo.
+# 3) Qué hace: devuelve el saldo bruto inicial del mes para mostrar como "SALDO INICIAL"
+#    en el libro operativo. Los ajustes contables se aplican luego como filas para preservar
+#    la narrativa visual de cómo cada concepto incrementa o reduce el saldo acumulado.
+# 4) Cómo editarla: ajusta el fallback si negocio redefine la fuente del saldo base.
 def _calcular_saldo_inicial_libro_operativo(sucursal_id, fecha_inicio):
-    # Traer el saldo inicial directamente de la base de datos (del catálogo de saldos mensuales)
-    # sin aplicar fórmulas adicionales, tal como solicitó el usuario.
     categorias_especiales = _resolver_categorias_especiales_saldo_administracion()
     categoria_administracion_id = categorias_especiales.get('administracion_id')
 
@@ -513,7 +513,7 @@ def _calcular_saldo_inicial_libro_operativo(sucursal_id, fecha_inicio):
 
     if registro_administracion is not None and registro_administracion.saldo_inicial is not None:
         return _a_decimal(registro_administracion.saldo_inicial)
-        
+
     return _calcular_saldo_arrastre_desde_reporte_previo(sucursal_id=sucursal_id, fecha_inicio=fecha_inicio)
 
 
@@ -1166,72 +1166,95 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         categoria_banorte_bahia_id = categorias_especiales.get('banorte_bahia_id')
         categoria_bbva_bahia_id = categorias_especiales.get('bbva_bahia_id')
 
-        # Calcular totales del período para cada categoría
+        # Los ajustes contables (sobrantes, pérdidas, por comprobar, dólares) deben reflejar
+        # el acumulado desde el día 1 del mes hasta fecha_fin para alinearse con la fórmula
+        # de Captura Operativa Detallada. Esto evita que cuando el rango consultado no inicie
+        # en el día 1 del mes se "pierdan" los ajustes ocurridos antes de fecha_inicio.
+        anio_fin = fecha_fin.year
+        mes_fin = fecha_fin.month
+        fecha_inicio_mes = datetime(anio_fin, mes_fin, 1).date()
+
         _, _, resultado_sobrantes = _calcular_totales_categoria_rango(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_sobrantes_id,
-            fecha_inicio=fecha_inicio,
+            fecha_inicio=fecha_inicio_mes,
             fecha_fin=fecha_fin,
         ) if categoria_sobrantes_id else (Decimal('0'), Decimal('0'), Decimal('0'))
 
         ingresos_perdidas, egresos_perdidas, _ = _calcular_totales_categoria_rango(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_perdidas_id,
-            fecha_inicio=fecha_inicio,
+            fecha_inicio=fecha_inicio_mes,
             fecha_fin=fecha_fin,
         ) if categoria_perdidas_id else (Decimal('0'), Decimal('0'), Decimal('0'))
 
         _, egresos_por_comprobar, _ = _calcular_totales_categoria_rango(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_por_comprobar_id,
-            fecha_inicio=fecha_inicio,
+            fecha_inicio=fecha_inicio_mes,
             fecha_fin=fecha_fin,
         ) if categoria_por_comprobar_id else (Decimal('0'), Decimal('0'), Decimal('0'))
 
         _, _, resultado_dolares = _calcular_totales_categoria_rango(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_dolares_id,
-            fecha_inicio=fecha_inicio,
+            fecha_inicio=fecha_inicio_mes,
             fecha_fin=fecha_fin,
         ) if categoria_dolares_id else (Decimal('0'), Decimal('0'), Decimal('0'))
 
-        # Obtener saldos iniciales mensuales de cada categoría (para el mes de fecha_fin)
-        anio_consulta = fecha_fin.year
-        mes_consulta = fecha_fin.month
-
+        # Saldos iniciales mensuales de las categorías especiales (mes de fecha_fin).
         saldo_inicial_sobrantes = _obtener_saldo_inicial_categoria_mes(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_sobrantes_id,
-            anio=anio_consulta,
-            mes=mes_consulta,
+            anio=anio_fin,
+            mes=mes_fin,
         ) if categoria_sobrantes_id else Decimal('0')
 
         saldo_inicial_perdidas = _obtener_saldo_inicial_categoria_mes(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_perdidas_id,
-            anio=anio_consulta,
-            mes=mes_consulta,
+            anio=anio_fin,
+            mes=mes_fin,
         ) if categoria_perdidas_id else Decimal('0')
 
         saldo_inicial_por_comprobar = _obtener_saldo_inicial_categoria_mes(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_por_comprobar_id,
-            anio=anio_consulta,
-            mes=mes_consulta,
+            anio=anio_fin,
+            mes=mes_fin,
         ) if categoria_por_comprobar_id else Decimal('0')
 
         saldo_inicial_dolares = _obtener_saldo_inicial_categoria_mes(
             sucursal_id=filtros['sucursal_id'],
             categoria_id=categoria_dolares_id,
-            anio=anio_consulta,
-            mes=mes_consulta,
+            anio=anio_fin,
+            mes=mes_fin,
         ) if categoria_dolares_id else Decimal('0')
 
-        # Calcular totales acumulados (saldo inicial + movimientos del período)
+        # Total acumulado mensual hasta fecha_fin = saldo inicial del mes + movimientos del mes
+        # hasta fecha_fin. Es la cifra que cada fila de ajuste muestra y aplica al saldo.
         total_acumulado_sobrantes = saldo_inicial_sobrantes + resultado_sobrantes
         total_acumulado_perdidas = saldo_inicial_perdidas + (egresos_perdidas - ingresos_perdidas)
         total_acumulado_por_comprobar = saldo_inicial_por_comprobar + egresos_por_comprobar
         total_acumulado_dolares = saldo_inicial_dolares + resultado_dolares
+
+        # Movimientos de la categoría Administración ocurridos antes del rango (día 1 del mes
+        # del rango → fecha_inicio − 1). Se mostrarán como una fila previa que ajusta el saldo
+        # antes de las filas del rango, manteniendo la narrativa visual.
+        anio_inicio = fecha_inicio.year
+        mes_inicio = fecha_inicio.month
+        fecha_inicio_mes_rango = datetime(anio_inicio, mes_inicio, 1).date()
+        if fecha_inicio > fecha_inicio_mes_rango:
+            ingresos_admin_previos, egresos_admin_previos, _ = _calcular_totales_categoria_rango(
+                sucursal_id=filtros['sucursal_id'],
+                categoria_id=categoria_administracion_id,
+                fecha_inicio=fecha_inicio_mes_rango,
+                fecha_fin=fecha_inicio - timedelta(days=1),
+            ) if categoria_administracion_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+        else:
+            ingresos_admin_previos = Decimal('0')
+            egresos_admin_previos = Decimal('0')
+        neto_admin_previo = ingresos_admin_previos - egresos_admin_previos
 
         _, _, resultado_banorte_ahis = _calcular_totales_categoria_rango(
             sucursal_id=filtros['sucursal_id'],
@@ -1269,6 +1292,21 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             'saldo': _a_flotante(saldo_acumulado),
             'tipo_fila': 'SALDO_INICIAL',
         })
+
+        # Fila opcional: aplica al saldo los movimientos de Administración que ocurrieron entre
+        # el día 1 del mes y fecha_inicio - 1. Mantiene la narrativa visual cuando el rango no
+        # arranca el día 1 del mes y evita perder ese acumulado al pasar al rango consultado.
+        # No se incluye en total_ingresos_rango / total_egresos_rango porque no es del rango.
+        if neto_admin_previo != 0:
+            saldo_acumulado += neto_admin_previo
+            filas.append({
+                'fecha': None,
+                'concepto': 'ARRASTRE DE MOVIMIENTOS PREVIOS',
+                'ingreso': _a_flotante(neto_admin_previo) if neto_admin_previo > 0 else None,
+                'egreso': _a_flotante(abs(neto_admin_previo)) if neto_admin_previo < 0 else None,
+                'saldo': _a_flotante(saldo_acumulado),
+                'tipo_fila': 'AJUSTE_CONTABLE',
+            })
 
         def _agregar_fila_operacion(concepto, monto, naturaleza='INGRESO', tipo_fila='MOVIMIENTO_ADMIN', fecha=None):
             nonlocal saldo_acumulado, total_ingresos_rango, total_egresos_rango
@@ -1345,22 +1383,60 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
             'tipo_fila': 'SEPARADOR_AJUSTES',
         })
 
-        # Ajustes contables usando totales acumulados (saldo inicial + movimientos del período)
+        # Ajustes contables aplicados al saldo. Los montos representan el ACUMULADO MENSUAL
+        # hasta fecha_fin (saldo inicial del mes + movimientos del mes hasta fecha_fin), por lo
+        # que conservan la narrativa "FONDOS FIJOS reduce el saldo, SOBRANTES lo aumenta, etc."
+        # y al mismo tiempo coinciden con el saldo final mostrado en Captura Operativa Detallada.
+        # No se suman a total_ingresos_rango / total_egresos_rango porque no son movimientos
+        # del rango consultado, sino agregados de control mensual.
         ajustes_contables = [
-            ('FONDOS FIJOS', fondos_fijos_sucursal, Decimal('0'), 'EGRESO'),
-            ('FALTANTES', total_acumulado_perdidas, saldo_inicial_perdidas, 'EGRESO'),
-            ('SOBRANTES', total_acumulado_sobrantes, saldo_inicial_sobrantes, 'INGRESO'),
-            ('POR COMPROBAR', total_acumulado_por_comprobar, saldo_inicial_por_comprobar, 'EGRESO'),
-            ('DOLARES', total_acumulado_dolares, saldo_inicial_dolares, 'EGRESO'),
+            ('FONDOS FIJOS', fondos_fijos_sucursal, 'EGRESO'),
+            ('FALTANTES', total_acumulado_perdidas, 'EGRESO'),
+            ('SOBRANTES', total_acumulado_sobrantes, 'INGRESO'),
+            ('POR COMPROBAR', total_acumulado_por_comprobar, 'EGRESO'),
+            ('DOLARES', total_acumulado_dolares, 'EGRESO'),
         ]
 
-        for concepto_ajuste, monto_total_acumulado, saldo_inicial_cat, naturaleza_ajuste in ajustes_contables:
-            _agregar_fila_operacion(
-                concepto=concepto_ajuste,
-                monto=monto_total_acumulado,
-                naturaleza=naturaleza_ajuste,
-                tipo_fila='AJUSTE_CONTABLE',
-            )
+        for concepto_ajuste, monto_ajuste, naturaleza_ajuste in ajustes_contables:
+            monto_decimal = _a_decimal(monto_ajuste)
+            ingreso_ajuste = None
+            egreso_ajuste = None
+            naturaleza_normalizada = str(naturaleza_ajuste or 'INGRESO').upper()
+
+            if monto_decimal == 0:
+                filas.append({
+                    'fecha': None,
+                    'concepto': concepto_ajuste,
+                    'ingreso': None,
+                    'egreso': None,
+                    'saldo': _a_flotante(saldo_acumulado),
+                    'tipo_fila': 'AJUSTE_CONTABLE',
+                })
+                continue
+
+            if naturaleza_normalizada == 'EGRESO':
+                if monto_decimal >= 0:
+                    egreso_ajuste = monto_decimal
+                    saldo_acumulado -= monto_decimal
+                else:
+                    ingreso_ajuste = abs(monto_decimal)
+                    saldo_acumulado += abs(monto_decimal)
+            else:
+                if monto_decimal >= 0:
+                    ingreso_ajuste = monto_decimal
+                    saldo_acumulado += monto_decimal
+                else:
+                    egreso_ajuste = abs(monto_decimal)
+                    saldo_acumulado -= abs(monto_decimal)
+
+            filas.append({
+                'fecha': None,
+                'concepto': concepto_ajuste,
+                'ingreso': _a_flotante(ingreso_ajuste) if ingreso_ajuste is not None else None,
+                'egreso': _a_flotante(egreso_ajuste) if egreso_ajuste is not None else None,
+                'saldo': _a_flotante(saldo_acumulado),
+                'tipo_fila': 'AJUSTE_CONTABLE',
+            })
 
         filas.append({
             'fecha': None,

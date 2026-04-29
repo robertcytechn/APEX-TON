@@ -1,4 +1,10 @@
-version_actual: v0.0.11
+version_actual: v0.0.12
+
+## v0.0.12 — 2026-04-28
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se corrigió el descuadre del Saldo final del Reporte Diario respecto a Captura Operativa Detallada cambiando la ventana de los ajustes contables del rango `[fecha_inicio, fecha_fin]` a `[día 1 del mes, fecha_fin]` y agregando una fila "MOVIMIENTOS ADMIN PREVIOS AL RANGO" que ajusta el saldo cuando el rango no inicia el día 1 del mes. Se preserva la narrativa visual original donde cada concepto (FONDOS FIJOS, FALTANTES, SOBRANTES, POR COMPROBAR, DOLARES) descuenta o suma al saldo acumulado.
+**Capa(s):** backend
+**Detalle:** `.agents/memory/fix_20260428_backend_descuadre_saldo_libro_operativo.md`
 
 ## v0.0.11 — 2026-04-21
 **Autor:** Jose Roberto Tamayo Montejano
