@@ -3,13 +3,12 @@ from __future__ import annotations
 from calendar import monthrange
 from collections import defaultdict
 from datetime import date, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from io import BytesIO
 from typing import Iterable
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
-from django.db.models import Sum
 from django.template.loader import render_to_string
 from django.utils import timezone
 from django.utils.text import slugify
@@ -18,7 +17,12 @@ from categoria_operativa.models import CategoriaOperativa
 from configuraciones_globales.models import ConfiguracionGlobal, RubroContable
 from libro_estado_resultados.models import LibroEstadoResultados
 from reportes_diarios.models import MovimientoDiario, ReporteDiario
-from reportes_diarios.views import _dia_contable_actual, _obtener_o_crear_reporte_del_dia
+from reportes_diarios.views import (
+    _construir_datos_libro_operativo_detallado,
+    _construir_detalle_capturas_por_categoria,
+    _dia_contable_actual,
+    _obtener_o_crear_reporte_del_dia,
+)
 from sucursales.models import Sucursal
 
 from openpyxl import Workbook
@@ -26,7 +30,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 NOMBRE_MARCA = 'BinsurMX'
@@ -251,194 +255,40 @@ def _construir_rubros_base_estado_resultados():
 
 
 # 1) Para que sirve: construir los datos del libro operativo para un rango de fechas.
-# 2) Como funciona: replica reglas del endpoint libro-operativo para calculo de saldos.
-# 3) Que hace: provee insumo unico para correo diario y adjuntos Excel/PDF.
-# 4) Como editarla: mantener en sincronia con la logica del endpoint de reportes diarios.
+# 2) Como funciona: delega al helper unificado de views.py que ya replica el endpoint completo.
+# 3) Que hace: garantiza que correo, PDF y Excel reciban exactamente las mismas filas que la UI.
+# 4) Como editarla: cualquier cambio del libro operativo vive en views._construir_datos_libro_operativo_detallado.
 def construir_datos_libro_operativo(sucursal_id, fecha_inicio, fecha_fin, crear_si_falta=True):
-    sucursal = Sucursal.objects.filter(id=sucursal_id).first()
-    if not sucursal:
-        raise ValueError('No existe la sucursal solicitada para generar el resumen diario.')
-
-    reportes_qs = ReporteDiario.objects.filter(
+    return _construir_datos_libro_operativo_detallado(
         sucursal_id=sucursal_id,
-        fecha_contable__range=(fecha_inicio, fecha_fin),
-    ).order_by('fecha_contable')
-
-    if crear_si_falta and fecha_inicio == fecha_fin and not reportes_qs.exists():
-        reporte_hoy, _ = _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_inicio)
-        reportes_qs = ReporteDiario.objects.filter(pk=reporte_hoy.pk)
-
-    reportes = list(reportes_qs)
-    reportes_por_fecha = {reporte.fecha_contable: reporte for reporte in reportes}
-    ids_reportes = [reporte.id for reporte in reportes]
-
-    movimientos = list(
-        MovimientoDiario.objects.filter(
-            reporte_id__in=ids_reportes,
-            eliminado_en__isnull=True,
-        ).select_related('reporte', 'concepto__categoria')
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
+        filtro_forzado=bool(fecha_inicio == fecha_fin),
+        crear_si_falta=crear_si_falta,
     )
 
-    resumen_por_categoria = defaultdict(lambda: {'ingreso': Decimal('0'), 'egreso': Decimal('0')})
-    totales_por_fecha = defaultdict(lambda: {'ingreso': Decimal('0'), 'egreso': Decimal('0')})
 
-    categorias_consulta = list(
-        CategoriaOperativa.objects.filter(eliminado_en__isnull=True)
-        .order_by('orden', 'nombre')
-        .values('id', 'clave', 'nombre', 'orden')
-    )
-    categorias_por_id = {categoria['id']: categoria for categoria in categorias_consulta}
-
-    for movimiento in movimientos:
-        categoria = getattr(getattr(movimiento, 'concepto', None), 'categoria', None)
-        if categoria and categoria.id not in categorias_por_id:
-            registro_categoria = {
-                'id': categoria.id,
-                'clave': categoria.clave,
-                'nombre': categoria.nombre,
-                'orden': categoria.orden,
-            }
-            categorias_consulta.append(registro_categoria)
-            categorias_por_id[categoria.id] = registro_categoria
-
-    categorias_consulta.sort(key=lambda categoria: (categoria.get('orden') or 0, categoria.get('nombre') or ''))
-
-    for movimiento in movimientos:
-        categoria = getattr(getattr(movimiento, 'concepto', None), 'categoria', None)
-        if not categoria:
-            continue
-
-        fecha_movimiento = movimiento.reporte.fecha_contable
-        monto_movimiento = _a_decimal(movimiento.monto)
-        tipo_movimiento = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
-
-        if tipo_movimiento == 'INGRESO':
-            resumen_por_categoria[categoria.id]['ingreso'] += monto_movimiento
-            totales_por_fecha[fecha_movimiento]['ingreso'] += monto_movimiento
-        else:
-            resumen_por_categoria[categoria.id]['egreso'] += monto_movimiento
-            totales_por_fecha[fecha_movimiento]['egreso'] += monto_movimiento
-
-    reporte_previo = ReporteDiario.objects.filter(
+# 1) Para que sirve: construir los datos detallados con bancos y por categoria del libro operativo.
+# 2) Como funciona: combina el detalle del libro principal y el desglose por categoria operativa.
+# 3) Que hace: alimenta correo HTML/TXT y adjuntos Excel/PDF con el reporte diario completo.
+# 4) Como editarla: agrega aqui campos derivados nuevos antes de exponerlos a las plantillas.
+def _construir_paquete_datos_diario_completo(sucursal_id, fecha_inicio, fecha_fin):
+    datos_libro = _construir_datos_libro_operativo_detallado(
         sucursal_id=sucursal_id,
-        fecha_contable__lt=fecha_inicio,
-    ).order_by('-fecha_contable').first()
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
+        filtro_forzado=bool(fecha_inicio == fecha_fin),
+        crear_si_falta=True,
+    )
+    detalle_categorias = _construir_detalle_capturas_por_categoria(
+        sucursal_id=sucursal_id,
+        fecha_inicio=fecha_inicio,
+        fecha_fin=fecha_fin,
+    )
+    datos_libro['detalle_categorias'] = detalle_categorias
+    return datos_libro
 
-    saldo_arrastre_actual = Decimal('0')
-    if reporte_previo:
-        if reporte_previo.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO:
-            movimientos_previos = reporte_previo.movimientos.filter(eliminado_en__isnull=True)
-            ingresos_previos = _a_decimal(movimientos_previos.filter(concepto__tipo='INGRESO').aggregate(t=Sum('monto'))['t'])
-            egresos_previos = _a_decimal(movimientos_previos.filter(concepto__tipo='EGRESO').aggregate(t=Sum('monto'))['t'])
-            saldo_arrastre_actual = _a_decimal(reporte_previo.saldo_arrastre_inicio) + ingresos_previos - egresos_previos
-        else:
-            saldo_arrastre_actual = _a_decimal(reporte_previo.saldo_arrastre_fin)
 
-    saldo_inicial_rango = saldo_arrastre_actual
-    total_ingresos_rango = Decimal('0')
-    total_egresos_rango = Decimal('0')
-    dias_con_reporte = 0
-
-    fecha_cursor = fecha_inicio
-    while fecha_cursor <= fecha_fin:
-        reporte_dia = reportes_por_fecha.get(fecha_cursor)
-        if reporte_dia:
-            dias_con_reporte += 1
-
-        saldo_inicial_dia = saldo_arrastre_actual
-        ingreso_dia = _a_decimal(totales_por_fecha[fecha_cursor]['ingreso'])
-        egreso_dia = _a_decimal(totales_por_fecha[fecha_cursor]['egreso'])
-        neto_dia = ingreso_dia - egreso_dia
-
-        if reporte_dia and reporte_dia.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO:
-            saldo_fin_dia = saldo_inicial_dia + neto_dia
-            requiere_actualizacion = any([
-                _a_decimal(reporte_dia.saldo_arrastre_inicio) != saldo_inicial_dia,
-                _a_decimal(reporte_dia.total_ingresos) != ingreso_dia,
-                _a_decimal(reporte_dia.total_egresos) != egreso_dia,
-                _a_decimal(reporte_dia.resultado_neto) != neto_dia,
-                _a_decimal(reporte_dia.saldo_arrastre_fin) != saldo_fin_dia,
-            ])
-            if requiere_actualizacion:
-                reporte_dia.saldo_arrastre_inicio = saldo_inicial_dia
-                reporte_dia.total_ingresos = ingreso_dia
-                reporte_dia.total_egresos = egreso_dia
-                reporte_dia.resultado_neto = neto_dia
-                reporte_dia.saldo_arrastre_fin = saldo_fin_dia
-                reporte_dia.save()
-
-        total_ingresos_rango += ingreso_dia
-        total_egresos_rango += egreso_dia
-        fecha_cursor += timedelta(days=1)
-
-    filas = []
-    saldo_acumulado = saldo_inicial_rango
-
-    filas.append({
-        'partida': 'SALDO',
-        'concepto': 'SALDO INICIAL',
-        'ingreso': None,
-        'egreso': None,
-        'saldo': _a_flotante(saldo_acumulado),
-        'tipo_fila': 'SALDO_INICIAL',
-    })
-
-    for categoria in categorias_consulta:
-        resumen_categoria = resumen_por_categoria.get(categoria['id']) or {'ingreso': Decimal('0'), 'egreso': Decimal('0')}
-        ingreso_categoria = _a_decimal(resumen_categoria['ingreso'])
-        egreso_categoria = _a_decimal(resumen_categoria['egreso'])
-        saldo_acumulado = saldo_acumulado + ingreso_categoria - egreso_categoria
-
-        filas.append({
-            'partida': categoria.get('clave') or 'CATEGORIA',
-            'concepto': categoria.get('nombre') or 'SIN CATEGORIA',
-            'ingreso': _a_flotante(ingreso_categoria) if ingreso_categoria > 0 else None,
-            'egreso': _a_flotante(egreso_categoria) if egreso_categoria > 0 else None,
-            'saldo': _a_flotante(saldo_acumulado),
-            'tipo_fila': 'CATEGORIA_RESUMEN',
-        })
-
-    filas.append({
-        'partida': 'TOTAL',
-        'concepto': 'TOTAL DEL PERIODO',
-        'ingreso': _a_flotante(total_ingresos_rango),
-        'egreso': _a_flotante(total_egresos_rango),
-        'saldo': _a_flotante(saldo_acumulado),
-        'tipo_fila': 'TOTAL_PERIODO',
-    })
-
-    filas.append({
-        'partida': 'EFECTIVO',
-        'concepto': 'EFECTIVO FISICO ESPERADO EN SALA',
-        'ingreso': None,
-        'egreso': None,
-        'saldo': _a_flotante(saldo_acumulado),
-        'tipo_fila': 'EFECTIVO_FISICO',
-    })
-
-    resumen = {
-        'saldo_inicial': _a_flotante(saldo_inicial_rango),
-        'total_ingresos': _a_flotante(total_ingresos_rango),
-        'total_egresos': _a_flotante(total_egresos_rango),
-        'saldo_final': _a_flotante(saldo_acumulado),
-        'dias_consultados': int((fecha_fin - fecha_inicio).days) + 1,
-        'dias_con_reporte': dias_con_reporte,
-    }
-
-    return {
-        'sucursal': {
-            'id': sucursal.id,
-            'nombre': sucursal.nombre,
-        },
-        'filtro_aplicado': {
-            'sucursal_id': sucursal_id,
-            'fecha_inicio': fecha_inicio.isoformat(),
-            'fecha_fin': fecha_fin.isoformat(),
-            'filtro_forzado': bool(fecha_inicio == fecha_fin),
-        },
-        'resumen': resumen,
-        'filas': filas,
-    }
 
 
 # 1) Para que sirve: obtener categorias destacadas del dia para bloque ejecutivo del correo.
@@ -696,16 +546,133 @@ def _estilizar_encabezado_excel(celda):
     celda.alignment = Alignment(horizontal='center', vertical='center')
 
 
-# 1) Para que sirve: construir adjunto Excel del libro operativo diario completo.
-# 2) Como funciona: crea hojas Resumen y Libro_Operativo con formato monetario.
-# 3) Que hace: entrega archivo compatible con Microsoft Excel para auditoria.
-# 4) Como editarla: agrega columnas nuevas en hoja detalle cuando crezca el reporte.
+PALETA_TIPO_FILA_PDF = {
+    'SALDO_INICIAL': '#E0F2FE',
+    'SEPARADOR_FECHA': '#DBEAFE',
+    'SEPARADOR_AJUSTES': '#FEF3C7',
+    'AJUSTE_CONTABLE': '#F8FAFC',
+    'TOTAL_PERIODO': '#FDE68A',
+    'EFECTIVO_FISICO': '#FECACA',
+}
+
+
+# 1) Para que sirve: formatear fecha ISO de fila a etiqueta corta dd/mm/aa para tablas.
+# 2) Como funciona: parsea ISO y aplica strftime con tolerancia ante valores invalidos.
+# 3) Que hace: alinea las columnas Fecha del PDF/Excel con la vista web.
+# 4) Como editarla: ajusta el formato si cambia la convencion regional.
+def _formatear_fecha_corta(valor):
+    if not valor:
+        return ''
+    try:
+        return date.fromisoformat(str(valor)).strftime('%d/%m/%y')
+    except Exception:
+        return str(valor)
+
+
+# 1) Para que sirve: construir el bloque Tabla del libro operativo para reportlab.
+# 2) Como funciona: arma encabezado, filas y aplica colores por tipo_fila.
+# 3) Que hace: reusa misma estructura para hoja principal y por categoria.
+# 4) Como editarla: cambia anchos de columna o paleta cuando cambie el diseno.
+def _construir_tabla_libro_pdf(filas, ancho_total=540):
+    encabezados = ['Fecha', 'Concepto', 'Ingreso', 'Egreso', 'Saldo']
+    filas_detalle = [encabezados]
+    tipos_fila = []
+
+    for fila in filas:
+        filas_detalle.append([
+            _formatear_fecha_corta(fila.get('fecha')),
+            str(fila.get('concepto') or ''),
+            _formatear_moneda(fila.get('ingreso')) if fila.get('ingreso') is not None else '-',
+            _formatear_moneda(fila.get('egreso')) if fila.get('egreso') is not None else '-',
+            _formatear_moneda(fila.get('saldo')) if fila.get('saldo') is not None else '-',
+        ])
+        tipos_fila.append(str(fila.get('tipo_fila') or ''))
+
+    anchos = [
+        int(ancho_total * 0.11),
+        int(ancho_total * 0.42),
+        int(ancho_total * 0.155),
+        int(ancho_total * 0.155),
+        ancho_total - int(ancho_total * 0.11) - int(ancho_total * 0.42) - int(ancho_total * 0.155) - int(ancho_total * 0.155),
+    ]
+
+    tabla = Table(filas_detalle, colWidths=anchos, repeatRows=1)
+    estilo = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0F172A')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ('ALIGN', (2, 1), (4, -1), 'RIGHT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+    ])
+
+    for indice, tipo_fila in enumerate(tipos_fila, start=1):
+        color_fondo = PALETA_TIPO_FILA_PDF.get(tipo_fila)
+        if color_fondo:
+            estilo.add('BACKGROUND', (0, indice), (-1, indice), colors.HexColor(color_fondo))
+            estilo.add('FONTNAME', (0, indice), (-1, indice), 'Helvetica-Bold')
+        if tipo_fila == 'SEPARADOR_AJUSTES':
+            estilo.add('SPAN', (0, indice), (-1, indice))
+            estilo.add('ALIGN', (0, indice), (-1, indice), 'CENTER')
+
+    tabla.setStyle(estilo)
+    return tabla
+
+
+# 1) Para que sirve: dibujar tarjetas KPI horizontales en PDF (saldo inicial / ingresos / egresos / final).
+# 2) Como funciona: arma una tabla 4 columnas con encabezados de paleta y valores monetarios.
+# 3) Que hace: replica la franja superior del Reporte Diario en pantalla.
+# 4) Como editarla: agrega o quita columnas si cambia el set de KPIs visibles.
+def _construir_tarjetas_kpi_pdf(saldo_inicial, total_ingresos, total_egresos, saldo_final, ancho_total=540):
+    kpis = [
+        ['Saldo inicial', 'Total ingresos', 'Total egresos', 'Saldo final'],
+        [
+            _formatear_moneda(saldo_inicial),
+            _formatear_moneda(total_ingresos),
+            _formatear_moneda(total_egresos),
+            _formatear_moneda(saldo_final),
+        ],
+    ]
+    ancho_columna = int(ancho_total / 4)
+    tabla = Table(kpis, colWidths=[ancho_columna] * 4)
+    tabla.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor('#EFF6FF')),
+        ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#F0FDF4')),
+        ('BACKGROUND', (2, 0), (2, 0), colors.HexColor('#FFF1F2')),
+        ('BACKGROUND', (3, 0), (3, 0), colors.HexColor('#F8FAFC')),
+        ('TEXTCOLOR', (0, 0), (0, 0), colors.HexColor('#1E3A8A')),
+        ('TEXTCOLOR', (1, 0), (1, 0), colors.HexColor('#166534')),
+        ('TEXTCOLOR', (2, 0), (2, 0), colors.HexColor('#9F1239')),
+        ('TEXTCOLOR', (3, 0), (3, 0), colors.HexColor('#334155')),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('FONTNAME', (0, 1), (-1, 1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 1), (-1, 1), 14),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    return tabla
+
+
+# 1) Para que sirve: construir adjunto Excel del reporte diario fiel a la vista web.
+# 2) Como funciona: crea hoja Reporte_Diario con resumen, tabla principal y bancos, y una hoja por cada categoria.
+# 3) Que hace: entrega archivo de auditoria con el mismo desglose que ven los usuarios.
+# 4) Como editarla: ajusta colores, anchos o agrega hojas nuevas conforme evolucione el reporte.
 def generar_excel_libro_operativo(datos_libro):
     libro = Workbook()
-    hoja_resumen = libro.active
-    hoja_resumen.title = 'Resumen'
+    hoja_principal = libro.active
+    hoja_principal.title = 'Reporte_Diario'
 
-    resumen = datos_libro.get('resumen', {})
+    resumen = datos_libro.get('resumen') or {}
     sucursal_nombre = (datos_libro.get('sucursal') or {}).get('nombre') or 'SIN SUCURSAL'
     fecha_exportacion = timezone.localtime(timezone.now())
     filtro = datos_libro.get('filtro_aplicado') or {}
@@ -714,83 +681,212 @@ def generar_excel_libro_operativo(datos_libro):
     if filtro.get('fecha_inicio') and filtro.get('fecha_fin') and filtro.get('fecha_inicio') != filtro.get('fecha_fin'):
         periodo = f"{_formatear_fecha(date.fromisoformat(filtro.get('fecha_inicio')))} al {_formatear_fecha(date.fromisoformat(filtro.get('fecha_fin')))}"
 
-    filas_resumen = [
-        ['Reporte diario operativo', ''],
-        ['Fecha de exportacion', fecha_exportacion.strftime('%d/%m/%Y %H:%M:%S')],
-        ['Casino', sucursal_nombre],
-        ['Periodo', periodo],
-        ['', ''],
-        ['Indicador', 'Valor'],
-        ['Saldo inicial del rango', _a_flotante(resumen.get('saldo_inicial'))],
-        ['Total ingresos', _a_flotante(resumen.get('total_ingresos'))],
-        ['Total egresos', _a_flotante(resumen.get('total_egresos'))],
-        ['Saldo final', _a_flotante(resumen.get('saldo_final'))],
-        ['Dias consultados', int(resumen.get('dias_consultados') or 0)],
-        ['Dias con reporte', int(resumen.get('dias_con_reporte') or 0)],
+    fila_actual = 1
+    hoja_principal.cell(row=fila_actual, column=1, value='Reporte diario operativo').font = Font(
+        name='Calibri', size=14, bold=True, color='0F172A'
+    )
+    fila_actual += 1
+
+    encabezado_meta = [
+        ('Fecha de exportacion', fecha_exportacion.strftime('%d/%m/%Y %H:%M:%S')),
+        ('Casino', sucursal_nombre),
+        ('Periodo', periodo),
+    ]
+    for etiqueta, valor in encabezado_meta:
+        hoja_principal.cell(row=fila_actual, column=1, value=etiqueta).font = Font(
+            name='Calibri', size=11, bold=True, color='0F172A'
+        )
+        hoja_principal.cell(row=fila_actual, column=2, value=valor)
+        fila_actual += 1
+
+    fila_actual += 1
+    celda_indicador = hoja_principal.cell(row=fila_actual, column=1, value='Indicador')
+    celda_valor = hoja_principal.cell(row=fila_actual, column=2, value='Valor')
+    _estilizar_encabezado_excel(celda_indicador)
+    _estilizar_encabezado_excel(celda_valor)
+    fila_actual += 1
+
+    indicadores = [
+        ('Saldo inicial del rango', _a_flotante(resumen.get('saldo_inicial')), True),
+        ('Total ingresos', _a_flotante(resumen.get('total_ingresos')), True),
+        ('Total egresos', _a_flotante(resumen.get('total_egresos')), True),
+        ('Saldo final', _a_flotante(resumen.get('saldo_final')), True),
+        ('Dias consultados', int(resumen.get('dias_consultados') or 0), False),
+        ('Dias con reporte', int(resumen.get('dias_con_reporte') or 0), False),
+    ]
+    for etiqueta, valor, es_moneda in indicadores:
+        hoja_principal.cell(row=fila_actual, column=1, value=etiqueta).font = Font(
+            name='Calibri', size=11, bold=True, color='0F172A'
+        )
+        celda_valor = hoja_principal.cell(row=fila_actual, column=2, value=valor)
+        celda_valor.number_format = '#,##0.00' if es_moneda else '0'
+        celda_valor.alignment = Alignment(horizontal='right', vertical='center')
+        fila_actual += 1
+
+    fila_actual += 1
+
+    nombres_bancos = {'BANORTE AHIS', 'BANORTE BAHIA', 'BBVA BAHIA'}
+    filas_libro = datos_libro.get('filas') or []
+    bancos = datos_libro.get('bancos_informativos') or []
+    detalle_categorias = datos_libro.get('detalle_categorias') or []
+
+    filas_principales = [
+        fila for fila in filas_libro
+        if str(fila.get('concepto') or '').strip().upper() not in nombres_bancos
+        and str(fila.get('tipo_fila') or '') != 'SEPARADOR_AJUSTES'
     ]
 
-    for fila in filas_resumen:
-        hoja_resumen.append(fila)
+    ultima_fila_tabla = _escribir_tabla_libro_excel(hoja_principal, filas_principales, fila_inicio=fila_actual)
+    fila_actual = ultima_fila_tabla + 2
 
-    hoja_resumen['A1'].font = Font(name='Calibri', size=14, bold=True, color='0F172A')
-    _estilizar_encabezado_excel(hoja_resumen['A6'])
-    _estilizar_encabezado_excel(hoja_resumen['B6'])
+    if bancos:
+        hoja_principal.cell(row=fila_actual, column=1, value='Bancos (Informativo)').font = Font(
+            name='Calibri', size=12, bold=True, color='0F172A'
+        )
+        fila_actual += 1
+        celda_concepto = hoja_principal.cell(row=fila_actual, column=2, value='Concepto')
+        celda_actual = hoja_principal.cell(row=fila_actual, column=3, value='Actual')
+        _estilizar_encabezado_excel(celda_concepto)
+        _estilizar_encabezado_excel(celda_actual)
+        fila_actual += 1
+        for fila in bancos:
+            monto = fila.get('ingreso') if fila.get('ingreso') is not None else fila.get('egreso')
+            hoja_principal.cell(row=fila_actual, column=2, value=str(fila.get('concepto') or ''))
+            celda_monto = hoja_principal.cell(
+                row=fila_actual,
+                column=3,
+                value=_a_flotante(monto) if monto is not None else None,
+            )
+            celda_monto.number_format = '#,##0.00'
+            celda_monto.alignment = Alignment(horizontal='right', vertical='center')
+            fila_actual += 1
 
-    for indice_fila in (7, 8, 9, 10):
-        hoja_resumen[f'B{indice_fila}'].number_format = '#,##0.00'
+    hoja_principal.column_dimensions['A'].width = 12
+    hoja_principal.column_dimensions['B'].width = 46
+    hoja_principal.column_dimensions['C'].width = 18
+    hoja_principal.column_dimensions['D'].width = 18
+    hoja_principal.column_dimensions['E'].width = 18
 
-    hoja_resumen.column_dimensions['A'].width = 36
-    hoja_resumen.column_dimensions['B'].width = 24
-
-    hoja_libro = libro.create_sheet('Libro_Operativo')
-    encabezados = ['Partida', 'Concepto', 'Ingreso', 'Egreso', 'Saldo', 'Tipo_fila']
-    hoja_libro.append(encabezados)
-
-    for columna in range(1, len(encabezados) + 1):
-        _estilizar_encabezado_excel(hoja_libro.cell(row=1, column=columna))
-
-    colores_tipo_fila = {
-        'SALDO_INICIAL': 'E0F2FE',
-        'TOTAL_PERIODO': 'FDE68A',
-        'EFECTIVO_FISICO': 'A7F3D0',
-    }
-
-    for indice, fila in enumerate(datos_libro.get('filas') or [], start=2):
-        hoja_libro.append([
-            str(fila.get('partida') or ''),
-            str(fila.get('concepto') or ''),
-            _a_flotante(fila.get('ingreso')) if fila.get('ingreso') is not None else None,
-            _a_flotante(fila.get('egreso')) if fila.get('egreso') is not None else None,
-            _a_flotante(fila.get('saldo')),
-            str(fila.get('tipo_fila') or ''),
-        ])
-
-        for columna in (3, 4, 5):
-            hoja_libro.cell(row=indice, column=columna).number_format = '#,##0.00'
-            hoja_libro.cell(row=indice, column=columna).alignment = Alignment(horizontal='right', vertical='center')
-
-        color_fondo = colores_tipo_fila.get(str(fila.get('tipo_fila') or ''))
-        if color_fondo:
-            for columna in range(1, 7):
-                hoja_libro.cell(row=indice, column=columna).fill = PatternFill(fill_type='solid', fgColor=color_fondo)
-                hoja_libro.cell(row=indice, column=columna).font = Font(name='Calibri', size=10, bold=True, color='111827')
-
-    hoja_libro.column_dimensions['A'].width = 18
-    hoja_libro.column_dimensions['B'].width = 46
-    hoja_libro.column_dimensions['C'].width = 18
-    hoja_libro.column_dimensions['D'].width = 18
-    hoja_libro.column_dimensions['E'].width = 18
-    hoja_libro.column_dimensions['F'].width = 22
+    nombres_existentes = set(libro.sheetnames)
+    for categoria in detalle_categorias:
+        nombre_categoria = str(categoria.get('categoria_nombre') or 'CATEGORIA').strip()
+        nombre_hoja = _nombre_hoja_categoria_excel(nombre_categoria, nombres_existentes)
+        nombres_existentes.add(nombre_hoja)
+        _escribir_hoja_libro_excel(
+            libro=libro,
+            nombre_hoja=nombre_hoja,
+            filas=categoria.get('filas') or [],
+            encabezado_extra=[
+                ('Captura operativa', nombre_categoria),
+                ('Saldo inicial del mes', _a_flotante(categoria.get('saldo_inicial_mes'))),
+                ('Total ingresos', _a_flotante(categoria.get('total_ingresos'))),
+                ('Total egresos', _a_flotante(categoria.get('total_egresos'))),
+                ('Saldo final', _a_flotante(categoria.get('saldo_final'))),
+                ('', ''),
+            ],
+        )
 
     salida = BytesIO()
     libro.save(salida)
     return salida.getvalue()
 
 
-# 1) Para que sirve: construir adjunto PDF del libro operativo diario completo.
-# 2) Como funciona: dibuja resumen y tabla detallada con estilos por tipo de fila.
-# 3) Que hace: permite revision formal del reporte sin depender del frontend.
-# 4) Como editarla: ajusta anchos de columna si cambian campos o tamano de letra.
+# 1) Para que sirve: generar nombre seguro para hoja Excel respetando 31 caracteres.
+# 2) Como funciona: limpia caracteres prohibidos y corta a longitud maxima.
+# 3) Que hace: evita errores de openpyxl al usar nombres de categoria con simbolos.
+# 4) Como editarla: ajusta lista de caracteres prohibidos si Microsoft amplia restricciones.
+def _nombre_hoja_categoria_excel(nombre_categoria, nombres_existentes):
+    prohibidos = '\\/?*[]:'
+    limpio = ''.join('_' if caracter in prohibidos else caracter for caracter in str(nombre_categoria))
+    base = limpio.strip()[:28] or 'CATEGORIA'
+    candidato = base
+    contador = 2
+    while candidato in nombres_existentes:
+        sufijo = f"_{contador}"
+        candidato = (base[: max(1, 31 - len(sufijo))] + sufijo)
+        contador += 1
+    return candidato
+
+
+# 1) Para que sirve: escribir una tabla de libro operativo en una hoja existente.
+# 2) Como funciona: dibuja encabezados, filas y aplica estilos por tipo_fila.
+# 3) Que hace: reutiliza el formato del reporte diario en varias hojas.
+# 4) Como editarla: ajusta anchos o colores si cambia el diseno.
+def _escribir_tabla_libro_excel(hoja, filas, fila_inicio=1):
+    encabezados = ['Fecha', 'Concepto', 'Ingreso', 'Egreso', 'Saldo']
+    for indice_columna, encabezado in enumerate(encabezados, start=1):
+        celda = hoja.cell(row=fila_inicio, column=indice_columna, value=encabezado)
+        _estilizar_encabezado_excel(celda)
+
+    fila_datos = fila_inicio + 1
+    ultima_fila = fila_inicio
+
+    paleta = {
+        'SALDO_INICIAL': 'E0F2FE',
+        'SEPARADOR_FECHA': 'DBEAFE',
+        'SEPARADOR_AJUSTES': 'FEF3C7',
+        'AJUSTE_CONTABLE': 'F8FAFC',
+        'TOTAL_PERIODO': 'FDE68A',
+        'EFECTIVO_FISICO': 'FECACA',
+    }
+
+    for indice, fila in enumerate(filas, start=fila_datos):
+        ingreso = fila.get('ingreso')
+        egreso = fila.get('egreso')
+        saldo = fila.get('saldo')
+
+        hoja.cell(row=indice, column=1, value=_formatear_fecha_corta(fila.get('fecha')))
+        hoja.cell(row=indice, column=2, value=str(fila.get('concepto') or ''))
+        hoja.cell(row=indice, column=3, value=_a_flotante(ingreso) if ingreso is not None else None)
+        hoja.cell(row=indice, column=4, value=_a_flotante(egreso) if egreso is not None else None)
+        hoja.cell(row=indice, column=5, value=_a_flotante(saldo) if saldo is not None else None)
+
+        for columna in (3, 4, 5):
+            celda = hoja.cell(row=indice, column=columna)
+            celda.number_format = '#,##0.00'
+            celda.alignment = Alignment(horizontal='right', vertical='center')
+
+        color_fondo = paleta.get(str(fila.get('tipo_fila') or ''))
+        if color_fondo:
+            for columna in range(1, 6):
+                celda = hoja.cell(row=indice, column=columna)
+                celda.fill = PatternFill(fill_type='solid', fgColor=color_fondo)
+                celda.font = Font(name='Calibri', size=10, bold=True, color='111827')
+
+        ultima_fila = indice
+
+    hoja.column_dimensions['A'].width = 12
+    hoja.column_dimensions['B'].width = 46
+    hoja.column_dimensions['C'].width = 18
+    hoja.column_dimensions['D'].width = 18
+    hoja.column_dimensions['E'].width = 18
+    return ultima_fila
+
+
+# 1) Para que sirve: escribir una hoja Excel completa con encabezado, filas y formato.
+# 2) Como funciona: arma encabezado opcional, fila de columnas y aplica colores por tipo_fila.
+# 3) Que hace: garantiza que todas las hojas del reporte usen el mismo lenguaje visual.
+# 4) Como editarla: agrega columnas o estilos centralizados aqui.
+def _escribir_hoja_libro_excel(libro, nombre_hoja, filas, encabezado_extra=None):
+    hoja = libro.create_sheet(nombre_hoja)
+    fila_actual = 1
+
+    if encabezado_extra:
+        for etiqueta, valor in encabezado_extra:
+            hoja.cell(row=fila_actual, column=1, value=etiqueta).font = Font(name='Calibri', size=11, bold=True, color='0F172A')
+            celda_valor = hoja.cell(row=fila_actual, column=2, value=valor)
+            if isinstance(valor, (int, float)):
+                celda_valor.number_format = '#,##0.00'
+                celda_valor.alignment = Alignment(horizontal='right', vertical='center')
+            fila_actual += 1
+
+    _escribir_tabla_libro_excel(hoja, filas, fila_inicio=fila_actual)
+
+
+# 1) Para que sirve: construir adjunto PDF fiel a la vista del Reporte Diario.
+# 2) Como funciona: replica encabezado, KPIs, libro detallado, bancos y agrega pagina por categoria.
+# 3) Que hace: permite revision formal sin depender del frontend, mostrando cada captura completa.
+# 4) Como editarla: ajusta paleta, anchos o secciones nuevas en el dibujo del documento.
 def generar_pdf_libro_operativo(datos_libro):
     salida = BytesIO()
     documento = SimpleDocTemplate(
@@ -801,6 +897,7 @@ def generar_pdf_libro_operativo(datos_libro):
         topMargin=24,
         bottomMargin=24,
     )
+    ancho_contenido = documento.width
 
     estilos = getSampleStyleSheet()
     elementos = []
@@ -808,83 +905,91 @@ def generar_pdf_libro_operativo(datos_libro):
     sucursal_nombre = (datos_libro.get('sucursal') or {}).get('nombre') or 'SIN SUCURSAL'
     filtro = datos_libro.get('filtro_aplicado') or {}
     resumen = datos_libro.get('resumen') or {}
+    bancos = datos_libro.get('bancos_informativos') or []
+    detalle_categorias = datos_libro.get('detalle_categorias') or []
+    filas_libro = datos_libro.get('filas') or []
+
+    nombres_bancos = {'BANORTE AHIS', 'BANORTE BAHIA', 'BBVA BAHIA'}
+    filas_principales = [
+        fila for fila in filas_libro
+        if str(fila.get('concepto') or '').strip().upper() not in nombres_bancos
+        and str(fila.get('tipo_fila') or '') != 'SEPARADOR_AJUSTES'
+    ]
 
     fecha_inicio = date.fromisoformat(filtro.get('fecha_inicio')) if filtro.get('fecha_inicio') else None
     fecha_fin = date.fromisoformat(filtro.get('fecha_fin')) if filtro.get('fecha_fin') else None
-
     periodo_texto = _formatear_fecha(fecha_inicio) if fecha_inicio else '-'
     if fecha_inicio and fecha_fin and fecha_inicio != fecha_fin:
         periodo_texto = f"{_formatear_fecha(fecha_inicio)} al {_formatear_fecha(fecha_fin)}"
 
     elementos.append(Paragraph('Reporte Diario Operativo', estilos['Heading2']))
-    elementos.append(Paragraph(f"Casino: {sucursal_nombre}", estilos['BodyText']))
-    elementos.append(Paragraph(f"Periodo: {periodo_texto}", estilos['BodyText']))
-    elementos.append(Paragraph(f"Fecha de exportacion: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}", estilos['BodyText']))
+    elementos.append(Paragraph(f"Casino: <b>{sucursal_nombre}</b>", estilos['BodyText']))
+    elementos.append(Paragraph(f"Dia contable: <b>{periodo_texto}</b>", estilos['BodyText']))
+    elementos.append(Paragraph(
+        f"Fecha de exportacion: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}",
+        estilos['BodyText'],
+    ))
+    elementos.append(Spacer(1, 8))
+
+    elementos.append(_construir_tarjetas_kpi_pdf(
+        saldo_inicial=resumen.get('saldo_inicial'),
+        total_ingresos=resumen.get('total_ingresos'),
+        total_egresos=resumen.get('total_egresos'),
+        saldo_final=resumen.get('saldo_final'),
+        ancho_total=ancho_contenido,
+    ))
+
+    elementos.append(Paragraph(
+        f"Movimientos registrados: {len([f for f in filas_principales if f.get('tipo_fila') == 'MOVIMIENTO_ADMIN'])} "
+        f"| Dias consultados: {int(resumen.get('dias_consultados') or 0)} "
+        f"| Dias con reporte: {int(resumen.get('dias_con_reporte') or 0)}",
+        estilos['BodyText'],
+    ))
     elementos.append(Spacer(1, 10))
 
-    tabla_resumen_datos = [
-        ['Indicador', 'Valor'],
-        ['Saldo inicial del rango', _formatear_moneda(resumen.get('saldo_inicial'))],
-        ['Total ingresos', _formatear_moneda(resumen.get('total_ingresos'))],
-        ['Total egresos', _formatear_moneda(resumen.get('total_egresos'))],
-        ['Saldo final', _formatear_moneda(resumen.get('saldo_final'))],
-        ['Dias consultados', str(int(resumen.get('dias_consultados') or 0))],
-        ['Dias con reporte', str(int(resumen.get('dias_con_reporte') or 0))],
-    ]
+    elementos.append(_construir_tabla_libro_pdf(filas_principales, ancho_total=ancho_contenido))
 
-    tabla_resumen = Table(tabla_resumen_datos, colWidths=[220, 160], repeatRows=1)
-    tabla_resumen.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0F172A')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#CBD5E1')),
-        ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-    ]))
+    if bancos:
+        elementos.append(Spacer(1, 14))
+        elementos.append(Paragraph('Bancos (Informativo)', estilos['Heading3']))
+        bancos_data = [['Concepto', 'Actual']]
+        for fila in bancos:
+            monto = fila.get('ingreso') if fila.get('ingreso') is not None else fila.get('egreso')
+            bancos_data.append([
+                str(fila.get('concepto') or ''),
+                _formatear_moneda(monto) if monto is not None else '-',
+            ])
+        ancho_concepto = int(ancho_contenido * 0.6)
+        tabla_bancos = Table(bancos_data, colWidths=[ancho_concepto, ancho_contenido - ancho_concepto], repeatRows=1)
+        tabla_bancos.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0F172A')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#CBD5E1')),
+            ('ALIGN', (1, 1), (1, -1), 'RIGHT'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+        ]))
+        elementos.append(tabla_bancos)
 
-    elementos.append(tabla_resumen)
-    elementos.append(Spacer(1, 12))
-
-    filas_detalle = [['Partida', 'Concepto', 'Ingreso', 'Egreso', 'Saldo']]
-    tipos_fila = []
-    for fila in datos_libro.get('filas') or []:
-        filas_detalle.append([
-            str(fila.get('partida') or ''),
-            str(fila.get('concepto') or ''),
-            _formatear_moneda(fila.get('ingreso')) if fila.get('ingreso') is not None else '-',
-            _formatear_moneda(fila.get('egreso')) if fila.get('egreso') is not None else '-',
-            _formatear_moneda(fila.get('saldo')),
-        ])
-        tipos_fila.append(str(fila.get('tipo_fila') or ''))
-
-    tabla_detalle = Table(filas_detalle, colWidths=[60, 200, 88, 88, 88], repeatRows=1)
-    estilo_detalle = TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0F172A')),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#CBD5E1')),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('ALIGN', (2, 1), (4, -1), 'RIGHT'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-    ])
-
-    colores_tipo_fila = {
-        'SALDO_INICIAL': colors.HexColor('#E0F2FE'),
-        'TOTAL_PERIODO': colors.HexColor('#FDE68A'),
-        'EFECTIVO_FISICO': colors.HexColor('#A7F3D0'),
-    }
-
-    for indice_tabla, tipo_fila in enumerate(tipos_fila, start=1):
-        color = colores_tipo_fila.get(tipo_fila)
-        if color is None:
-            continue
-        estilo_detalle.add('BACKGROUND', (0, indice_tabla), (-1, indice_tabla), color)
-        estilo_detalle.add('FONTNAME', (0, indice_tabla), (-1, indice_tabla), 'Helvetica-Bold')
-
-    tabla_detalle.setStyle(estilo_detalle)
-    elementos.append(tabla_detalle)
+    for categoria in detalle_categorias:
+        elementos.append(PageBreak())
+        nombre_categoria = str(categoria.get('categoria_nombre') or 'CATEGORIA').strip()
+        elementos.append(Paragraph(f"Captura: {nombre_categoria}", estilos['Heading2']))
+        elementos.append(Paragraph(
+            f"Casino: <b>{sucursal_nombre}</b> &nbsp;&nbsp;|&nbsp;&nbsp; Periodo: <b>{periodo_texto}</b>",
+            estilos['BodyText'],
+        ))
+        elementos.append(Spacer(1, 6))
+        elementos.append(_construir_tarjetas_kpi_pdf(
+            saldo_inicial=categoria.get('saldo_inicial_mes'),
+            total_ingresos=categoria.get('total_ingresos'),
+            total_egresos=categoria.get('total_egresos'),
+            saldo_final=categoria.get('saldo_final'),
+            ancho_total=ancho_contenido,
+        ))
+        elementos.append(Spacer(1, 8))
+        elementos.append(_construir_tabla_libro_pdf(categoria.get('filas') or [], ancho_total=ancho_contenido))
 
     documento.build(elementos)
     return salida.getvalue()
@@ -1063,6 +1168,37 @@ def generar_pdf_cierre_mensual(datos_mensuales):
     return salida.getvalue()
 
 
+PALETA_TIPO_FILA_HTML = {
+    'SALDO_INICIAL': '#e0f2fe',
+    'SEPARADOR_FECHA': '#dbeafe',
+    'SEPARADOR_AJUSTES': '#fef3c7',
+    'AJUSTE_CONTABLE': '#f8fafc',
+    'TOTAL_PERIODO': '#fde68a',
+    'EFECTIVO_FISICO': '#fecaca',
+}
+
+
+# 1) Para que sirve: serializar una fila del libro operativo para plantillas HTML/TXT.
+# 2) Como funciona: aplica formateadores monetarios y precalcula colores de fondo.
+# 3) Que hace: evita logica en plantillas y mantiene la vista fiel al Reporte Diario.
+# 4) Como editarla: agrega campos derivados nuevos cuando se sumen variantes de fila.
+def _normalizar_fila_para_template(fila):
+    tipo_fila = str(fila.get('tipo_fila') or '')
+    return {
+        'fecha_texto': _formatear_fecha_corta(fila.get('fecha')),
+        'concepto': str(fila.get('concepto') or ''),
+        'ingreso_texto': _formatear_moneda(fila.get('ingreso')) if fila.get('ingreso') is not None else '-',
+        'egreso_texto': _formatear_moneda(fila.get('egreso')) if fila.get('egreso') is not None else '-',
+        'saldo_texto': _formatear_moneda(fila.get('saldo')) if fila.get('saldo') is not None else '-',
+        'tipo_fila': tipo_fila,
+        'color_fondo': PALETA_TIPO_FILA_HTML.get(tipo_fila, '#ffffff'),
+        'es_separador_ajustes': tipo_fila == 'SEPARADOR_AJUSTES',
+        'es_separador_fecha': tipo_fila == 'SEPARADOR_FECHA',
+        'es_total_periodo': tipo_fila == 'TOTAL_PERIODO',
+        'es_efectivo_fisico': tipo_fila == 'EFECTIVO_FISICO',
+    }
+
+
 # 1) Para que sirve: crear el paquete completo del correo diario ejecutivo por casino.
 # 2) Como funciona: genera contexto HTML/TXT y adjuntos Excel/PDF del mismo corte diario.
 # 3) Que hace: deja listo el envio manual o programado sin duplicar logica.
@@ -1077,14 +1213,35 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
     if isinstance(fecha_objetivo, str):
         fecha_objetivo = date.fromisoformat(fecha_objetivo)
 
-    datos_libro = construir_datos_libro_operativo(
+    datos_libro = _construir_paquete_datos_diario_completo(
         sucursal_id=sucursal.id,
         fecha_inicio=fecha_objetivo,
         fecha_fin=fecha_objetivo,
-        crear_si_falta=True,
     )
 
     resumen = datos_libro.get('resumen') or {}
+    bancos_informativos = datos_libro.get('bancos_informativos') or []
+    detalle_categorias = datos_libro.get('detalle_categorias') or []
+    filas_libro_principal = [
+        fila for fila in (datos_libro.get('filas') or [])
+        if str(fila.get('concepto') or '').strip().upper() not in {'BANORTE AHIS', 'BANORTE BAHIA', 'BBVA BAHIA'}
+        and str(fila.get('tipo_fila') or '') != 'SEPARADOR_AJUSTES'
+    ]
+
+    filas_template = [_normalizar_fila_para_template(fila) for fila in filas_libro_principal]
+    bancos_template = [_normalizar_fila_para_template(fila) for fila in bancos_informativos]
+    detalle_categorias_template = [
+        {
+            **categoria,
+            'saldo_inicial_mes_texto': _formatear_moneda(categoria.get('saldo_inicial_mes')),
+            'total_ingresos_texto': _formatear_moneda(categoria.get('total_ingresos')),
+            'total_egresos_texto': _formatear_moneda(categoria.get('total_egresos')),
+            'saldo_final_texto': _formatear_moneda(categoria.get('saldo_final')),
+            'filas_template': [_normalizar_fila_para_template(fila) for fila in (categoria.get('filas') or [])],
+        }
+        for categoria in detalle_categorias
+    ]
+
     categorias_destacadas = _obtener_categorias_destacadas_dia(sucursal.id, fecha_objetivo)
     total_movimientos = MovimientoDiario.objects.filter(
         reporte__sucursal_id=sucursal.id,
@@ -1106,6 +1263,9 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
         'dias_con_reporte': int(resumen.get('dias_con_reporte') or 0),
         'total_movimientos': int(total_movimientos),
         'categorias_destacadas': categorias_destacadas,
+        'filas_libro': filas_template,
+        'bancos_informativos': bancos_template,
+        'detalle_categorias': detalle_categorias_template,
     }
 
     cuerpo_html = render_to_string('reportes_diarios/correos/resumen_diario_ejecutivo.html', contexto)

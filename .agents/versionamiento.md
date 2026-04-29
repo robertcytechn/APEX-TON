@@ -1,4 +1,22 @@
-version_actual: v0.0.12
+version_actual: v0.0.15
+
+## v0.0.15 — 2026-04-28
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se ajusto el formato del correo diario y sus adjuntos: cuerpo con resumen ejecutivo, Excel con hoja principal que replica el reporte diario y bancos al final, y hojas posteriores por categoria.
+**Capa(s):** backend
+**Detalle:** `.agents/memory/fix_20260428_backend_correo_reporte_diario_formato.md`
+
+## v0.0.14 — 2026-04-28
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se corrigió descuadre en TOTAL DEL PERIODO del correo diario: el ajuste contable "ARRASTRE DE MOVIMIENTOS PREVIOS" no sumaba su monto a total_ingresos_rango / total_egresos_rango, haciendo que el resumen del email desfilara vs las filas individuales.
+**Capa(s):** backend
+**Detalle:** `.agents/memory/fix_20260428_backend_ajuste_arrastre_total_periodo.md`
+
+## v0.0.13 — 2026-04-28
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Refactor completo del sistema de generacion de correos de resumen diario ejecutivo: helpers reutilizables para libro operativo detallado, nuevos generadores PDF/Excel multi-pagina/hoja con detalle por categoria y bancos, plantillas HTML/TXT enriquecidas, y modo --solo-generar para revision sin envio SMTP.
+**Capa(s):** ambas
+**Detalle:** `.agents/memory/refactor_20260428_ambas_correo_diario_libro_detallado.md`
 
 ## v0.0.12 — 2026-04-28
 **Autor:** Jose Roberto Tamayo Montejano

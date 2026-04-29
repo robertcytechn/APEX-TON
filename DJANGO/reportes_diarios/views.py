@@ -992,6 +992,466 @@ def _construir_datos_movimiento(request, reporte_id):
 #  REPORTE DIARIO
 # ─────────────────────────────────────────────────────────────────────────────
 
+
+# 1) Para qué sirve: construir el payload completo del libro operativo (idéntico al endpoint).
+# 2) Cómo funciona: replica la lógica de la acción `libro_operativo` sin depender de request.
+# 3) Qué hace: deja un único punto de verdad reutilizable por la API y por los correos de cierre.
+# 4) Cómo editarla: cualquier ajuste de filas, ajustes contables o bancos vive aquí.
+def _construir_datos_libro_operativo_detallado(sucursal_id, fecha_inicio, fecha_fin, filtro_forzado=False, crear_si_falta=True):
+    sucursal = Sucursal.objects.filter(id=sucursal_id).first()
+    if not sucursal:
+        raise ValueError('No existe la sucursal solicitada para el libro operativo.')
+
+    reportes_qs = ReporteDiario.objects.filter(
+        sucursal_id=sucursal_id,
+        fecha_contable__range=(fecha_inicio, fecha_fin),
+    ).order_by('fecha_contable')
+
+    if crear_si_falta and filtro_forzado and fecha_inicio == fecha_fin and not reportes_qs.exists():
+        reporte_hoy, _ = _obtener_o_crear_reporte_del_dia(sucursal_id, fecha_inicio)
+        reportes_qs = ReporteDiario.objects.filter(pk=reporte_hoy.pk)
+
+    reportes = list(reportes_qs)
+    reportes_por_fecha = {reporte.fecha_contable: reporte for reporte in reportes}
+    ids_reportes = [reporte.id for reporte in reportes]
+
+    movimientos = list(
+        MovimientoDiario.objects.filter(
+            reporte_id__in=ids_reportes,
+            eliminado_en__isnull=True,
+        ).select_related('reporte', 'concepto__categoria').order_by('reporte__fecha_contable', 'creado_en', 'id')
+    )
+
+    totales_por_fecha = defaultdict(lambda: {'ingreso': Decimal('0'), 'egreso': Decimal('0')})
+    for movimiento in movimientos:
+        fecha_movimiento = movimiento.reporte.fecha_contable
+        monto_movimiento = _a_decimal(movimiento.monto)
+        tipo_movimiento = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
+        if tipo_movimiento == 'INGRESO':
+            totales_por_fecha[fecha_movimiento]['ingreso'] += monto_movimiento
+        else:
+            totales_por_fecha[fecha_movimiento]['egreso'] += monto_movimiento
+
+    categorias_especiales = _resolver_categorias_especiales_saldo_administracion()
+    categoria_administracion_id = categorias_especiales.get('administracion_id')
+    movimientos_admin_por_fecha = defaultdict(list)
+    if categoria_administracion_id:
+        for movimiento in movimientos:
+            categoria_id_movimiento = getattr(getattr(movimiento, 'concepto', None), 'categoria_id', None)
+            if categoria_id_movimiento == categoria_administracion_id:
+                movimientos_admin_por_fecha[movimiento.reporte.fecha_contable].append(movimiento)
+
+    saldo_inicial_rango = _calcular_saldo_inicial_libro_operativo(
+        sucursal_id=sucursal_id,
+        fecha_inicio=fecha_inicio,
+    )
+    saldo_arrastre_actual = saldo_inicial_rango
+    dias_con_reporte = 0
+
+    fecha_cursor = fecha_inicio
+    while fecha_cursor <= fecha_fin:
+        reporte_dia = reportes_por_fecha.get(fecha_cursor)
+        if reporte_dia:
+            dias_con_reporte += 1
+
+        saldo_inicial_dia = saldo_arrastre_actual
+        ingreso_dia = _a_decimal(totales_por_fecha[fecha_cursor]['ingreso'])
+        egreso_dia = _a_decimal(totales_por_fecha[fecha_cursor]['egreso'])
+        neto_dia = ingreso_dia - egreso_dia
+
+        if reporte_dia and reporte_dia.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO:
+            saldo_fin_dia = saldo_inicial_dia + neto_dia
+            requiere_actualizacion = any([
+                _a_decimal(reporte_dia.saldo_arrastre_inicio) != saldo_inicial_dia,
+                _a_decimal(reporte_dia.total_ingresos) != ingreso_dia,
+                _a_decimal(reporte_dia.total_egresos) != egreso_dia,
+                _a_decimal(reporte_dia.resultado_neto) != neto_dia,
+                _a_decimal(reporte_dia.saldo_arrastre_fin) != saldo_fin_dia,
+            ])
+            if requiere_actualizacion:
+                reporte_dia.saldo_arrastre_inicio = saldo_inicial_dia
+                reporte_dia.total_ingresos = ingreso_dia
+                reporte_dia.total_egresos = egreso_dia
+                reporte_dia.resultado_neto = neto_dia
+                reporte_dia.saldo_arrastre_fin = saldo_fin_dia
+                reporte_dia.save()
+
+        saldo_arrastre_actual = saldo_inicial_dia + neto_dia
+        fecha_cursor += timedelta(days=1)
+
+    fondos_fijos_sucursal = _obtener_total_fondos_fijos_sucursal(sucursal_id)
+
+    categoria_sobrantes_id = categorias_especiales.get('sobrantes_id')
+    categoria_perdidas_id = categorias_especiales.get('perdidas_id')
+    categoria_por_comprobar_id = categorias_especiales.get('por_comprobar_id')
+    categoria_dolares_id = categorias_especiales.get('dolares_id')
+    categoria_banorte_ahis_id = categorias_especiales.get('banorte_ahis_id')
+    categoria_banorte_bahia_id = categorias_especiales.get('banorte_bahia_id')
+    categoria_bbva_bahia_id = categorias_especiales.get('bbva_bahia_id')
+
+    anio_fin = fecha_fin.year
+    mes_fin = fecha_fin.month
+    fecha_inicio_mes = datetime(anio_fin, mes_fin, 1).date()
+
+    _, _, resultado_sobrantes = _calcular_totales_categoria_rango(
+        sucursal_id=sucursal_id, categoria_id=categoria_sobrantes_id,
+        fecha_inicio=fecha_inicio_mes, fecha_fin=fecha_fin,
+    ) if categoria_sobrantes_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+    ingresos_perdidas, egresos_perdidas, _ = _calcular_totales_categoria_rango(
+        sucursal_id=sucursal_id, categoria_id=categoria_perdidas_id,
+        fecha_inicio=fecha_inicio_mes, fecha_fin=fecha_fin,
+    ) if categoria_perdidas_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+    _, egresos_por_comprobar, _ = _calcular_totales_categoria_rango(
+        sucursal_id=sucursal_id, categoria_id=categoria_por_comprobar_id,
+        fecha_inicio=fecha_inicio_mes, fecha_fin=fecha_fin,
+    ) if categoria_por_comprobar_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+    _, _, resultado_dolares = _calcular_totales_categoria_rango(
+        sucursal_id=sucursal_id, categoria_id=categoria_dolares_id,
+        fecha_inicio=fecha_inicio_mes, fecha_fin=fecha_fin,
+    ) if categoria_dolares_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+    saldo_inicial_sobrantes = _obtener_saldo_inicial_categoria_mes(
+        sucursal_id=sucursal_id, categoria_id=categoria_sobrantes_id, anio=anio_fin, mes=mes_fin,
+    ) if categoria_sobrantes_id else Decimal('0')
+    saldo_inicial_perdidas = _obtener_saldo_inicial_categoria_mes(
+        sucursal_id=sucursal_id, categoria_id=categoria_perdidas_id, anio=anio_fin, mes=mes_fin,
+    ) if categoria_perdidas_id else Decimal('0')
+    saldo_inicial_por_comprobar = _obtener_saldo_inicial_categoria_mes(
+        sucursal_id=sucursal_id, categoria_id=categoria_por_comprobar_id, anio=anio_fin, mes=mes_fin,
+    ) if categoria_por_comprobar_id else Decimal('0')
+    saldo_inicial_dolares = _obtener_saldo_inicial_categoria_mes(
+        sucursal_id=sucursal_id, categoria_id=categoria_dolares_id, anio=anio_fin, mes=mes_fin,
+    ) if categoria_dolares_id else Decimal('0')
+
+    total_acumulado_sobrantes = saldo_inicial_sobrantes + resultado_sobrantes
+    total_acumulado_perdidas = saldo_inicial_perdidas + (egresos_perdidas - ingresos_perdidas)
+    total_acumulado_por_comprobar = saldo_inicial_por_comprobar + egresos_por_comprobar
+    total_acumulado_dolares = saldo_inicial_dolares + resultado_dolares
+
+    anio_inicio = fecha_inicio.year
+    mes_inicio = fecha_inicio.month
+    fecha_inicio_mes_rango = datetime(anio_inicio, mes_inicio, 1).date()
+    if fecha_inicio > fecha_inicio_mes_rango:
+        ingresos_admin_previos, egresos_admin_previos, _ = _calcular_totales_categoria_rango(
+            sucursal_id=sucursal_id, categoria_id=categoria_administracion_id,
+            fecha_inicio=fecha_inicio_mes_rango, fecha_fin=fecha_inicio - timedelta(days=1),
+        ) if categoria_administracion_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+    else:
+        ingresos_admin_previos = Decimal('0')
+        egresos_admin_previos = Decimal('0')
+    neto_admin_previo = ingresos_admin_previos - egresos_admin_previos
+
+    _, _, resultado_banorte_ahis = _calcular_totales_categoria_rango(
+        sucursal_id=sucursal_id, categoria_id=categoria_banorte_ahis_id,
+        fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+    ) if categoria_banorte_ahis_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+    _, _, resultado_banorte_bahia = _calcular_totales_categoria_rango(
+        sucursal_id=sucursal_id, categoria_id=categoria_banorte_bahia_id,
+        fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+    ) if categoria_banorte_bahia_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+    _, _, resultado_bbva_bahia = _calcular_totales_categoria_rango(
+        sucursal_id=sucursal_id, categoria_id=categoria_bbva_bahia_id,
+        fecha_inicio=fecha_inicio, fecha_fin=fecha_fin,
+    ) if categoria_bbva_bahia_id else (Decimal('0'), Decimal('0'), Decimal('0'))
+
+    filas = []
+    saldo_acumulado = saldo_inicial_rango
+    total_ingresos_rango = Decimal('0')
+    total_egresos_rango = Decimal('0')
+
+    filas.append({
+        'fecha': None, 'concepto': 'SALDO INICIAL',
+        'ingreso': None, 'egreso': None,
+        'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': 'SALDO_INICIAL',
+    })
+
+    if neto_admin_previo != 0:
+        saldo_acumulado += neto_admin_previo
+        if neto_admin_previo > 0:
+            total_ingresos_rango += neto_admin_previo
+        else:
+            total_egresos_rango += abs(neto_admin_previo)
+        filas.append({
+            'fecha': None, 'concepto': 'ARRASTRE DE MOVIMIENTOS PREVIOS',
+            'ingreso': _a_flotante(neto_admin_previo) if neto_admin_previo > 0 else None,
+            'egreso': _a_flotante(abs(neto_admin_previo)) if neto_admin_previo < 0 else None,
+            'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': 'AJUSTE_CONTABLE',
+        })
+
+    def _agregar_fila_operacion(concepto, monto, naturaleza='INGRESO', tipo_fila='MOVIMIENTO_ADMIN', fecha=None):
+        nonlocal saldo_acumulado, total_ingresos_rango, total_egresos_rango
+        monto_decimal = _a_decimal(monto)
+        naturaleza_normalizada = str(naturaleza or 'INGRESO').upper()
+        ingreso = None
+        egreso = None
+        if monto_decimal == 0:
+            filas.append({
+                'fecha': fecha, 'concepto': str(concepto or 'SIN CONCEPTO').upper(),
+                'ingreso': None, 'egreso': None,
+                'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': tipo_fila,
+            })
+            return
+        if naturaleza_normalizada == 'EGRESO':
+            if monto_decimal >= 0:
+                egreso = monto_decimal
+                total_egresos_rango += monto_decimal
+                saldo_acumulado -= monto_decimal
+            else:
+                ingreso = abs(monto_decimal)
+                total_ingresos_rango += abs(monto_decimal)
+                saldo_acumulado += abs(monto_decimal)
+        else:
+            if monto_decimal >= 0:
+                ingreso = monto_decimal
+                total_ingresos_rango += monto_decimal
+                saldo_acumulado += monto_decimal
+            else:
+                egreso = abs(monto_decimal)
+                total_egresos_rango += abs(monto_decimal)
+                saldo_acumulado -= abs(monto_decimal)
+        filas.append({
+            'fecha': fecha, 'concepto': str(concepto or 'SIN CONCEPTO').upper(),
+            'ingreso': _a_flotante(ingreso) if ingreso is not None else None,
+            'egreso': _a_flotante(egreso) if egreso is not None else None,
+            'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': tipo_fila,
+        })
+
+    for fecha_movimiento in sorted(movimientos_admin_por_fecha.keys()):
+        filas.append({
+            'fecha': fecha_movimiento.isoformat(), 'concepto': '',
+            'ingreso': None, 'egreso': None,
+            'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': 'SEPARADOR_FECHA',
+        })
+        for movimiento in movimientos_admin_por_fecha[fecha_movimiento]:
+            tipo_movimiento = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
+            _agregar_fila_operacion(
+                concepto=getattr(movimiento.concepto, 'nombre', 'SIN CONCEPTO'),
+                monto=movimiento.monto,
+                naturaleza=tipo_movimiento,
+                tipo_fila='MOVIMIENTO_ADMIN',
+            )
+
+    filas.append({
+        'fecha': None, 'concepto': 'AJUSTES CONTABLES',
+        'ingreso': None, 'egreso': None,
+        'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': 'SEPARADOR_AJUSTES',
+    })
+
+    ajustes_contables = [
+        ('FONDOS FIJOS', fondos_fijos_sucursal, 'EGRESO'),
+        ('FALTANTES', total_acumulado_perdidas, 'EGRESO'),
+        ('SOBRANTES', total_acumulado_sobrantes, 'INGRESO'),
+        ('POR COMPROBAR', total_acumulado_por_comprobar, 'EGRESO'),
+        ('DOLARES', total_acumulado_dolares, 'EGRESO'),
+    ]
+    for concepto_ajuste, monto_ajuste, naturaleza_ajuste in ajustes_contables:
+        monto_decimal = _a_decimal(monto_ajuste)
+        ingreso_ajuste = None
+        egreso_ajuste = None
+        naturaleza_normalizada = str(naturaleza_ajuste or 'INGRESO').upper()
+        if monto_decimal == 0:
+            filas.append({
+                'fecha': None, 'concepto': concepto_ajuste,
+                'ingreso': None, 'egreso': None,
+                'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': 'AJUSTE_CONTABLE',
+            })
+            continue
+        if naturaleza_normalizada == 'EGRESO':
+            if monto_decimal >= 0:
+                egreso_ajuste = monto_decimal
+                total_egresos_rango += monto_decimal
+                saldo_acumulado -= monto_decimal
+            else:
+                ingreso_ajuste = abs(monto_decimal)
+                total_ingresos_rango += abs(monto_decimal)
+                saldo_acumulado += abs(monto_decimal)
+        else:
+            if monto_decimal >= 0:
+                ingreso_ajuste = monto_decimal
+                total_ingresos_rango += monto_decimal
+                saldo_acumulado += monto_decimal
+            else:
+                egreso_ajuste = abs(monto_decimal)
+                total_egresos_rango += abs(monto_decimal)
+                saldo_acumulado -= abs(monto_decimal)
+        filas.append({
+            'fecha': None, 'concepto': concepto_ajuste,
+            'ingreso': _a_flotante(ingreso_ajuste) if ingreso_ajuste is not None else None,
+            'egreso': _a_flotante(egreso_ajuste) if egreso_ajuste is not None else None,
+            'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': 'AJUSTE_CONTABLE',
+        })
+
+    filas.append({
+        'fecha': None, 'concepto': 'TOTAL DEL PERIODO',
+        'ingreso': _a_flotante(total_ingresos_rango),
+        'egreso': _a_flotante(total_egresos_rango),
+        'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': 'TOTAL_PERIODO',
+    })
+    filas.append({
+        'fecha': None, 'concepto': 'EFECTIVO FISICO ESPERADO EN SALA',
+        'ingreso': None, 'egreso': None,
+        'saldo': _a_flotante(saldo_acumulado), 'tipo_fila': 'EFECTIVO_FISICO',
+    })
+
+    bancos_informativos_filas = []
+    bancos_informativos = [
+        ('BANORTE AHIS', resultado_banorte_ahis, 'INGRESO'),
+        ('BANORTE BAHIA', resultado_banorte_bahia, 'INGRESO'),
+        ('BBVA BAHIA', resultado_bbva_bahia, 'INGRESO'),
+    ]
+    for concepto_banco, monto_banco, naturaleza_banco in bancos_informativos:
+        monto_decimal = _a_decimal(monto_banco)
+        ingreso_banco = _a_flotante(monto_decimal) if naturaleza_banco == 'INGRESO' else None
+        egreso_banco = _a_flotante(monto_decimal) if naturaleza_banco == 'EGRESO' else None
+        fila_banco = {
+            'fecha': None, 'concepto': concepto_banco,
+            'ingreso': ingreso_banco, 'egreso': egreso_banco,
+            'saldo': None, 'tipo_fila': 'AJUSTE_CONTABLE',
+        }
+        filas.append(fila_banco)
+        bancos_informativos_filas.append(fila_banco)
+
+    resumen = {
+        'saldo_inicial': _a_flotante(saldo_inicial_rango),
+        'total_ingresos': _a_flotante(total_ingresos_rango),
+        'total_egresos': _a_flotante(total_egresos_rango),
+        'saldo_final': _a_flotante(saldo_acumulado),
+        'dias_consultados': int((fecha_fin - fecha_inicio).days) + 1,
+        'dias_con_reporte': dias_con_reporte,
+    }
+
+    return {
+        'sucursal': {'id': sucursal.id, 'nombre': sucursal.nombre},
+        'filtro_aplicado': {
+            'sucursal_id': sucursal_id,
+            'fecha_inicio': fecha_inicio.isoformat(),
+            'fecha_fin': fecha_fin.isoformat(),
+            'filtro_forzado': bool(filtro_forzado),
+        },
+        'resumen': resumen,
+        'filas': filas,
+        'bancos_informativos': bancos_informativos_filas,
+    }
+
+
+# 1) Para qué sirve: construir el detalle de movimientos por categoría operativa.
+# 2) Cómo funciona: recorre todas las categorías activas y agrupa movimientos del rango.
+# 3) Qué hace: alimenta páginas/hojas dedicadas por captura (administración, dólares, billpoket, etc).
+# 4) Cómo editarla: ajusta orden, filtrado o saldos iniciales si negocio cambia el desglose.
+def _construir_detalle_capturas_por_categoria(sucursal_id, fecha_inicio, fecha_fin):
+    categorias = list(
+        CategoriaOperativa.objects.filter(eliminado_en__isnull=True)
+        .order_by('orden', 'nombre')
+    )
+
+    movimientos = list(
+        MovimientoDiario.objects.filter(
+            reporte__sucursal_id=sucursal_id,
+            reporte__fecha_contable__range=(fecha_inicio, fecha_fin),
+            eliminado_en__isnull=True,
+        )
+        .select_related('reporte', 'concepto', 'concepto__categoria')
+        .order_by('reporte__fecha_contable', 'creado_en', 'id')
+    )
+
+    movimientos_por_categoria = defaultdict(list)
+    for movimiento in movimientos:
+        categoria = getattr(getattr(movimiento, 'concepto', None), 'categoria', None)
+        if categoria:
+            movimientos_por_categoria[categoria.id].append(movimiento)
+
+    anio = fecha_fin.year
+    mes = fecha_fin.month
+
+    detalle = []
+    for categoria in categorias:
+        movs = movimientos_por_categoria.get(categoria.id, [])
+        if not movs:
+            # Solo emitir bloques con movimientos en el rango para evitar ruido.
+            continue
+
+        saldo_inicial_mes = _obtener_saldo_inicial_categoria_mes(
+            sucursal_id=sucursal_id, categoria_id=categoria.id, anio=anio, mes=mes,
+        )
+
+        filas_mov = []
+        ingresos_total = Decimal('0')
+        egresos_total = Decimal('0')
+        saldo_acumulado = _a_decimal(saldo_inicial_mes)
+
+        filas_mov.append({
+            'fecha': None,
+            'concepto': 'SALDO INICIAL',
+            'ingreso': None,
+            'egreso': None,
+            'saldo': _a_flotante(saldo_acumulado),
+            'tipo_fila': 'SALDO_INICIAL',
+        })
+
+        fecha_actual = None
+        for movimiento in movs:
+            fecha_mov = movimiento.reporte.fecha_contable
+            if fecha_mov != fecha_actual:
+                fecha_actual = fecha_mov
+                filas_mov.append({
+                    'fecha': fecha_mov.isoformat(),
+                    'concepto': '',
+                    'ingreso': None,
+                    'egreso': None,
+                    'saldo': _a_flotante(saldo_acumulado),
+                    'tipo_fila': 'SEPARADOR_FECHA',
+                })
+
+            tipo_mov = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
+            monto = _a_decimal(movimiento.monto)
+            ingreso_val = None
+            egreso_val = None
+            if tipo_mov == 'INGRESO':
+                ingreso_val = monto
+                ingresos_total += monto
+                saldo_acumulado += monto
+            else:
+                egreso_val = monto
+                egresos_total += monto
+                saldo_acumulado -= monto
+
+            filas_mov.append({
+                'fecha': fecha_mov.isoformat(),
+                'concepto': str(getattr(movimiento.concepto, 'nombre', '') or 'SIN CONCEPTO').upper(),
+                'ingreso': _a_flotante(ingreso_val) if ingreso_val is not None else None,
+                'egreso': _a_flotante(egreso_val) if egreso_val is not None else None,
+                'saldo': _a_flotante(saldo_acumulado),
+                'tipo_fila': 'MOVIMIENTO_CATEGORIA',
+            })
+
+        filas_mov.append({
+            'fecha': None,
+            'concepto': 'TOTAL DEL PERIODO',
+            'ingreso': _a_flotante(ingresos_total),
+            'egreso': _a_flotante(egresos_total),
+            'saldo': _a_flotante(saldo_acumulado),
+            'tipo_fila': 'TOTAL_PERIODO',
+        })
+
+        detalle.append({
+            'categoria_id': categoria.id,
+            'categoria_clave': categoria.clave,
+            'categoria_nombre': categoria.nombre,
+            'saldo_inicial_mes': _a_flotante(saldo_inicial_mes),
+            'total_ingresos': _a_flotante(ingresos_total),
+            'total_egresos': _a_flotante(egresos_total),
+            'resultado_neto': _a_flotante(ingresos_total - egresos_total),
+            'saldo_final': _a_flotante(saldo_acumulado),
+            'movimientos_cantidad': len(movs),
+            'filas': filas_mov,
+        })
+
+    return detalle
+
+
 # 1) Para qué sirve: exponer API de encabezado del día contable (reporte diario).
 # 2) Cómo funciona: combina permisos, filtros, cierres y reaperturas sobre ReporteDiario.
 # 3) Qué hace: gobierna ciclo de vida ABIERTO/CERRADO de cada jornada por sucursal.
@@ -1064,443 +1524,28 @@ class ReporteDiarioViewSet(viewsets.ViewSet):
         except ValueError as error:
             return respuesta_estandar(mensaje=str(error), estado='error', codigo=status.HTTP_400_BAD_REQUEST)
 
-        sucursal = Sucursal.objects.filter(id=filtros['sucursal_id']).first()
-        if not sucursal:
+        try:
+            datos_libro = _construir_datos_libro_operativo_detallado(
+                sucursal_id=filtros['sucursal_id'],
+                fecha_inicio=filtros['fecha_inicio'],
+                fecha_fin=filtros['fecha_fin'],
+                filtro_forzado=filtros['filtro_forzado'],
+                crear_si_falta=True,
+            )
+        except ValueError as error:
             return respuesta_estandar(
-                mensaje='No existe la sucursal solicitada para esta consulta.',
+                mensaje=str(error),
                 estado='error',
-                codigo=status.HTTP_404_NOT_FOUND
+                codigo=status.HTTP_404_NOT_FOUND,
             )
 
-        fecha_inicio = filtros['fecha_inicio']
-        fecha_fin = filtros['fecha_fin']
-
-        reportes_qs = ReporteDiario.objects.filter(
-            sucursal_id=filtros['sucursal_id'],
-            fecha_contable__range=(fecha_inicio, fecha_fin),
-        ).order_by('fecha_contable')
-
-        if filtros['filtro_forzado'] and fecha_inicio == fecha_fin and not reportes_qs.exists():
-            reporte_hoy, _ = _obtener_o_crear_reporte_del_dia(filtros['sucursal_id'], fecha_inicio)
-            reportes_qs = ReporteDiario.objects.filter(pk=reporte_hoy.pk)
-
-        reportes = list(reportes_qs)
-        reportes_por_fecha = {reporte.fecha_contable: reporte for reporte in reportes}
-        ids_reportes = [reporte.id for reporte in reportes]
-
-        movimientos = list(
-            MovimientoDiario.objects.filter(
-                reporte_id__in=ids_reportes,
-                eliminado_en__isnull=True,
-            ).select_related('reporte', 'concepto__categoria').order_by('reporte__fecha_contable', 'creado_en', 'id')
-        )
-
-        totales_por_fecha = defaultdict(lambda: {'ingreso': Decimal('0'), 'egreso': Decimal('0')})
-
-        for movimiento in movimientos:
-            fecha_movimiento = movimiento.reporte.fecha_contable
-            monto_movimiento = _a_decimal(movimiento.monto)
-            tipo_movimiento = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
-
-            if tipo_movimiento == 'INGRESO':
-                totales_por_fecha[fecha_movimiento]['ingreso'] += monto_movimiento
-            else:
-                totales_por_fecha[fecha_movimiento]['egreso'] += monto_movimiento
-
-        categorias_especiales = _resolver_categorias_especiales_saldo_administracion()
-        categoria_administracion_id = categorias_especiales.get('administracion_id')
-        movimientos_admin_por_fecha = defaultdict(list)
-
-        if categoria_administracion_id:
-            for movimiento in movimientos:
-                categoria_id_movimiento = getattr(getattr(movimiento, 'concepto', None), 'categoria_id', None)
-                if categoria_id_movimiento == categoria_administracion_id:
-                    movimientos_admin_por_fecha[movimiento.reporte.fecha_contable].append(movimiento)
-
-        saldo_inicial_rango = _calcular_saldo_inicial_libro_operativo(
-            sucursal_id=filtros['sucursal_id'],
-            fecha_inicio=fecha_inicio,
-        )
-        saldo_arrastre_actual = saldo_inicial_rango
-        dias_con_reporte = 0
-
-        # Recalcular y sincronizar totales por día para reportes abiertos del rango.
-        fecha_cursor = fecha_inicio
-        while fecha_cursor <= fecha_fin:
-            reporte_dia = reportes_por_fecha.get(fecha_cursor)
-            if reporte_dia:
-                dias_con_reporte += 1
-
-            saldo_inicial_dia = saldo_arrastre_actual
-            ingreso_dia = _a_decimal(totales_por_fecha[fecha_cursor]['ingreso'])
-            egreso_dia = _a_decimal(totales_por_fecha[fecha_cursor]['egreso'])
-            neto_dia = ingreso_dia - egreso_dia
-
-            if reporte_dia and reporte_dia.estado_reporte == ReporteDiario.EstadoReporte.ABIERTO:
-                saldo_fin_dia = saldo_inicial_dia + neto_dia
-                requiere_actualizacion = any([
-                    _a_decimal(reporte_dia.saldo_arrastre_inicio) != saldo_inicial_dia,
-                    _a_decimal(reporte_dia.total_ingresos) != ingreso_dia,
-                    _a_decimal(reporte_dia.total_egresos) != egreso_dia,
-                    _a_decimal(reporte_dia.resultado_neto) != neto_dia,
-                    _a_decimal(reporte_dia.saldo_arrastre_fin) != saldo_fin_dia,
-                ])
-                if requiere_actualizacion:
-                    reporte_dia.saldo_arrastre_inicio = saldo_inicial_dia
-                    reporte_dia.total_ingresos = ingreso_dia
-                    reporte_dia.total_egresos = egreso_dia
-                    reporte_dia.resultado_neto = neto_dia
-                    reporte_dia.saldo_arrastre_fin = saldo_fin_dia
-                    reporte_dia.save()
-
-            saldo_arrastre_actual = saldo_inicial_dia + neto_dia
-            fecha_cursor += timedelta(days=1)
-
-        fondos_fijos_sucursal = _obtener_total_fondos_fijos_sucursal(filtros['sucursal_id'])
-
-        categoria_sobrantes_id = categorias_especiales.get('sobrantes_id')
-        categoria_perdidas_id = categorias_especiales.get('perdidas_id')
-        categoria_por_comprobar_id = categorias_especiales.get('por_comprobar_id')
-        categoria_dolares_id = categorias_especiales.get('dolares_id')
-        categoria_banorte_ahis_id = categorias_especiales.get('banorte_ahis_id')
-        categoria_banorte_bahia_id = categorias_especiales.get('banorte_bahia_id')
-        categoria_bbva_bahia_id = categorias_especiales.get('bbva_bahia_id')
-
-        # Los ajustes contables (sobrantes, pérdidas, por comprobar, dólares) deben reflejar
-        # el acumulado desde el día 1 del mes hasta fecha_fin para alinearse con la fórmula
-        # de Captura Operativa Detallada. Esto evita que cuando el rango consultado no inicie
-        # en el día 1 del mes se "pierdan" los ajustes ocurridos antes de fecha_inicio.
-        anio_fin = fecha_fin.year
-        mes_fin = fecha_fin.month
-        fecha_inicio_mes = datetime(anio_fin, mes_fin, 1).date()
-
-        _, _, resultado_sobrantes = _calcular_totales_categoria_rango(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_sobrantes_id,
-            fecha_inicio=fecha_inicio_mes,
-            fecha_fin=fecha_fin,
-        ) if categoria_sobrantes_id else (Decimal('0'), Decimal('0'), Decimal('0'))
-
-        ingresos_perdidas, egresos_perdidas, _ = _calcular_totales_categoria_rango(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_perdidas_id,
-            fecha_inicio=fecha_inicio_mes,
-            fecha_fin=fecha_fin,
-        ) if categoria_perdidas_id else (Decimal('0'), Decimal('0'), Decimal('0'))
-
-        _, egresos_por_comprobar, _ = _calcular_totales_categoria_rango(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_por_comprobar_id,
-            fecha_inicio=fecha_inicio_mes,
-            fecha_fin=fecha_fin,
-        ) if categoria_por_comprobar_id else (Decimal('0'), Decimal('0'), Decimal('0'))
-
-        _, _, resultado_dolares = _calcular_totales_categoria_rango(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_dolares_id,
-            fecha_inicio=fecha_inicio_mes,
-            fecha_fin=fecha_fin,
-        ) if categoria_dolares_id else (Decimal('0'), Decimal('0'), Decimal('0'))
-
-        # Saldos iniciales mensuales de las categorías especiales (mes de fecha_fin).
-        saldo_inicial_sobrantes = _obtener_saldo_inicial_categoria_mes(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_sobrantes_id,
-            anio=anio_fin,
-            mes=mes_fin,
-        ) if categoria_sobrantes_id else Decimal('0')
-
-        saldo_inicial_perdidas = _obtener_saldo_inicial_categoria_mes(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_perdidas_id,
-            anio=anio_fin,
-            mes=mes_fin,
-        ) if categoria_perdidas_id else Decimal('0')
-
-        saldo_inicial_por_comprobar = _obtener_saldo_inicial_categoria_mes(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_por_comprobar_id,
-            anio=anio_fin,
-            mes=mes_fin,
-        ) if categoria_por_comprobar_id else Decimal('0')
-
-        saldo_inicial_dolares = _obtener_saldo_inicial_categoria_mes(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_dolares_id,
-            anio=anio_fin,
-            mes=mes_fin,
-        ) if categoria_dolares_id else Decimal('0')
-
-        # Total acumulado mensual hasta fecha_fin = saldo inicial del mes + movimientos del mes
-        # hasta fecha_fin. Es la cifra que cada fila de ajuste muestra y aplica al saldo.
-        total_acumulado_sobrantes = saldo_inicial_sobrantes + resultado_sobrantes
-        total_acumulado_perdidas = saldo_inicial_perdidas + (egresos_perdidas - ingresos_perdidas)
-        total_acumulado_por_comprobar = saldo_inicial_por_comprobar + egresos_por_comprobar
-        total_acumulado_dolares = saldo_inicial_dolares + resultado_dolares
-
-        # Movimientos de la categoría Administración ocurridos antes del rango (día 1 del mes
-        # del rango → fecha_inicio − 1). Se mostrarán como una fila previa que ajusta el saldo
-        # antes de las filas del rango, manteniendo la narrativa visual.
-        anio_inicio = fecha_inicio.year
-        mes_inicio = fecha_inicio.month
-        fecha_inicio_mes_rango = datetime(anio_inicio, mes_inicio, 1).date()
-        if fecha_inicio > fecha_inicio_mes_rango:
-            ingresos_admin_previos, egresos_admin_previos, _ = _calcular_totales_categoria_rango(
-                sucursal_id=filtros['sucursal_id'],
-                categoria_id=categoria_administracion_id,
-                fecha_inicio=fecha_inicio_mes_rango,
-                fecha_fin=fecha_inicio - timedelta(days=1),
-            ) if categoria_administracion_id else (Decimal('0'), Decimal('0'), Decimal('0'))
-        else:
-            ingresos_admin_previos = Decimal('0')
-            egresos_admin_previos = Decimal('0')
-        neto_admin_previo = ingresos_admin_previos - egresos_admin_previos
-
-        _, _, resultado_banorte_ahis = _calcular_totales_categoria_rango(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_banorte_ahis_id,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-        ) if categoria_banorte_ahis_id else (Decimal('0'), Decimal('0'), Decimal('0'))
-
-        _, _, resultado_banorte_bahia = _calcular_totales_categoria_rango(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_banorte_bahia_id,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-        ) if categoria_banorte_bahia_id else (Decimal('0'), Decimal('0'), Decimal('0'))
-
-        _, _, resultado_bbva_bahia = _calcular_totales_categoria_rango(
-            sucursal_id=filtros['sucursal_id'],
-            categoria_id=categoria_bbva_bahia_id,
-            fecha_inicio=fecha_inicio,
-            fecha_fin=fecha_fin,
-        ) if categoria_bbva_bahia_id else (Decimal('0'), Decimal('0'), Decimal('0'))
-
-        resultado_perdidas = egresos_perdidas - ingresos_perdidas
-
-        filas = []
-        saldo_acumulado = saldo_inicial_rango
-        total_ingresos_rango = Decimal('0')
-        total_egresos_rango = Decimal('0')
-
-        filas.append({
-            'fecha': None,
-            'concepto': 'SALDO INICIAL',
-            'ingreso': None,
-            'egreso': None,
-            'saldo': _a_flotante(saldo_acumulado),
-            'tipo_fila': 'SALDO_INICIAL',
-        })
-
-        # Fila opcional: aplica al saldo los movimientos de Administración que ocurrieron entre
-        # el día 1 del mes y fecha_inicio - 1. Mantiene la narrativa visual cuando el rango no
-        # arranca el día 1 del mes y evita perder ese acumulado al pasar al rango consultado.
-        # No se incluye en total_ingresos_rango / total_egresos_rango porque no es del rango.
-        if neto_admin_previo != 0:
-            saldo_acumulado += neto_admin_previo
-            filas.append({
-                'fecha': None,
-                'concepto': 'ARRASTRE DE MOVIMIENTOS PREVIOS',
-                'ingreso': _a_flotante(neto_admin_previo) if neto_admin_previo > 0 else None,
-                'egreso': _a_flotante(abs(neto_admin_previo)) if neto_admin_previo < 0 else None,
-                'saldo': _a_flotante(saldo_acumulado),
-                'tipo_fila': 'AJUSTE_CONTABLE',
-            })
-
-        def _agregar_fila_operacion(concepto, monto, naturaleza='INGRESO', tipo_fila='MOVIMIENTO_ADMIN', fecha=None):
-            nonlocal saldo_acumulado, total_ingresos_rango, total_egresos_rango
-
-            monto_decimal = _a_decimal(monto)
-            naturaleza_normalizada = str(naturaleza or 'INGRESO').upper()
-            ingreso = None
-            egreso = None
-
-            if monto_decimal == 0:
-                filas.append({
-                    'fecha': fecha,
-                    'concepto': str(concepto or 'SIN CONCEPTO').upper(),
-                    'ingreso': None,
-                    'egreso': None,
-                    'saldo': _a_flotante(saldo_acumulado),
-                    'tipo_fila': tipo_fila,
-                })
-                return
-
-            if naturaleza_normalizada == 'EGRESO':
-                if monto_decimal >= 0:
-                    egreso = monto_decimal
-                    total_egresos_rango += monto_decimal
-                    saldo_acumulado -= monto_decimal
-                else:
-                    ingreso = abs(monto_decimal)
-                    total_ingresos_rango += abs(monto_decimal)
-                    saldo_acumulado += abs(monto_decimal)
-            else:
-                if monto_decimal >= 0:
-                    ingreso = monto_decimal
-                    total_ingresos_rango += monto_decimal
-                    saldo_acumulado += monto_decimal
-                else:
-                    egreso = abs(monto_decimal)
-                    total_egresos_rango += abs(monto_decimal)
-                    saldo_acumulado -= abs(monto_decimal)
-
-            filas.append({
-                'fecha': fecha,
-                'concepto': str(concepto or 'SIN CONCEPTO').upper(),
-                'ingreso': _a_flotante(ingreso) if ingreso is not None else None,
-                'egreso': _a_flotante(egreso) if egreso is not None else None,
-                'saldo': _a_flotante(saldo_acumulado),
-                'tipo_fila': tipo_fila,
-            })
-
-        for fecha_movimiento in sorted(movimientos_admin_por_fecha.keys()):
-            filas.append({
-                'fecha': fecha_movimiento.isoformat(),
-                'concepto': '',
-                'ingreso': None,
-                'egreso': None,
-                'saldo': _a_flotante(saldo_acumulado),
-                'tipo_fila': 'SEPARADOR_FECHA',
-            })
-
-            for movimiento in movimientos_admin_por_fecha[fecha_movimiento]:
-                tipo_movimiento = str(getattr(movimiento.concepto, 'tipo', '') or '').upper()
-                _agregar_fila_operacion(
-                    concepto=getattr(movimiento.concepto, 'nombre', 'SIN CONCEPTO'),
-                    monto=movimiento.monto,
-                    naturaleza=tipo_movimiento,
-                    tipo_fila='MOVIMIENTO_ADMIN',
-                )
-
-        filas.append({
-            'fecha': None,
-            'concepto': 'AJUSTES CONTABLES',
-            'ingreso': None,
-            'egreso': None,
-            'saldo': _a_flotante(saldo_acumulado),
-            'tipo_fila': 'SEPARADOR_AJUSTES',
-        })
-
-        # Ajustes contables aplicados al saldo. Los montos representan el ACUMULADO MENSUAL
-        # hasta fecha_fin (saldo inicial del mes + movimientos del mes hasta fecha_fin), por lo
-        # que conservan la narrativa "FONDOS FIJOS reduce el saldo, SOBRANTES lo aumenta, etc."
-        # y al mismo tiempo coinciden con el saldo final mostrado en Captura Operativa Detallada.
-        # No se suman a total_ingresos_rango / total_egresos_rango porque no son movimientos
-        # del rango consultado, sino agregados de control mensual.
-        ajustes_contables = [
-            ('FONDOS FIJOS', fondos_fijos_sucursal, 'EGRESO'),
-            ('FALTANTES', total_acumulado_perdidas, 'EGRESO'),
-            ('SOBRANTES', total_acumulado_sobrantes, 'INGRESO'),
-            ('POR COMPROBAR', total_acumulado_por_comprobar, 'EGRESO'),
-            ('DOLARES', total_acumulado_dolares, 'EGRESO'),
-        ]
-
-        for concepto_ajuste, monto_ajuste, naturaleza_ajuste in ajustes_contables:
-            monto_decimal = _a_decimal(monto_ajuste)
-            ingreso_ajuste = None
-            egreso_ajuste = None
-            naturaleza_normalizada = str(naturaleza_ajuste or 'INGRESO').upper()
-
-            if monto_decimal == 0:
-                filas.append({
-                    'fecha': None,
-                    'concepto': concepto_ajuste,
-                    'ingreso': None,
-                    'egreso': None,
-                    'saldo': _a_flotante(saldo_acumulado),
-                    'tipo_fila': 'AJUSTE_CONTABLE',
-                })
-                continue
-
-            if naturaleza_normalizada == 'EGRESO':
-                if monto_decimal >= 0:
-                    egreso_ajuste = monto_decimal
-                    saldo_acumulado -= monto_decimal
-                else:
-                    ingreso_ajuste = abs(monto_decimal)
-                    saldo_acumulado += abs(monto_decimal)
-            else:
-                if monto_decimal >= 0:
-                    ingreso_ajuste = monto_decimal
-                    saldo_acumulado += monto_decimal
-                else:
-                    egreso_ajuste = abs(monto_decimal)
-                    saldo_acumulado -= abs(monto_decimal)
-
-            filas.append({
-                'fecha': None,
-                'concepto': concepto_ajuste,
-                'ingreso': _a_flotante(ingreso_ajuste) if ingreso_ajuste is not None else None,
-                'egreso': _a_flotante(egreso_ajuste) if egreso_ajuste is not None else None,
-                'saldo': _a_flotante(saldo_acumulado),
-                'tipo_fila': 'AJUSTE_CONTABLE',
-            })
-
-        filas.append({
-            'fecha': None,
-            'concepto': 'TOTAL DEL PERIODO',
-            'ingreso': _a_flotante(total_ingresos_rango),
-            'egreso': _a_flotante(total_egresos_rango),
-            'saldo': _a_flotante(saldo_acumulado),
-            'tipo_fila': 'TOTAL_PERIODO',
-        })
-
-        filas.append({
-            'fecha': None,
-            'concepto': 'EFECTIVO FISICO ESPERADO EN SALA',
-            'ingreso': None,
-            'egreso': None,
-            'saldo': _a_flotante(saldo_acumulado),
-            'tipo_fila': 'EFECTIVO_FISICO',
-        })
-
-        bancos_informativos = [
-            ('BANORTE AHIS', resultado_banorte_ahis, 'INGRESO'),
-            ('BANORTE BAHIA', resultado_banorte_bahia, 'INGRESO'),
-            ('BBVA BAHIA', resultado_bbva_bahia, 'INGRESO'),
-        ]
-
-        for concepto_banco, monto_banco, naturaleza_banco in bancos_informativos:
-            monto_decimal = _a_decimal(monto_banco)
-            ingreso_banco = _a_flotante(monto_decimal) if naturaleza_banco == 'INGRESO' else None
-            egreso_banco = _a_flotante(monto_decimal) if naturaleza_banco == 'EGRESO' else None
-            filas.append({
-                'fecha': None,
-                'concepto': concepto_banco,
-                'ingreso': ingreso_banco,
-                'egreso': egreso_banco,
-                'saldo': None,
-                'tipo_fila': 'AJUSTE_CONTABLE',
-            })
-
-        resumen = {
-            'saldo_inicial': _a_flotante(saldo_inicial_rango),
-            'total_ingresos': _a_flotante(total_ingresos_rango),
-            'total_egresos': _a_flotante(total_egresos_rango),
-            'saldo_final': _a_flotante(saldo_acumulado),
-            'dias_consultados': int((fecha_fin - fecha_inicio).days) + 1,
-            'dias_con_reporte': dias_con_reporte,
-        }
-
+        # Compatibilidad con el contrato anterior: el endpoint NO regresa bancos en una clave aparte.
+        datos_libro.pop('bancos_informativos', None)
         return respuesta_estandar(
-            data={
-                'sucursal': {
-                    'id': sucursal.id,
-                    'nombre': sucursal.nombre,
-                },
-                'filtro_aplicado': {
-                    'sucursal_id': filtros['sucursal_id'],
-                    'fecha_inicio': fecha_inicio.isoformat(),
-                    'fecha_fin': fecha_fin.isoformat(),
-                    'filtro_forzado': filtros['filtro_forzado'],
-                },
-                'resumen': resumen,
-                'filas': filas,
-            },
+            data=datos_libro,
             mensaje='Libro operativo diario obtenido correctamente.'
         )
+
 
     @action(detail=False, methods=['get'], url_path='saldo-inicial-categoria')
     def saldo_inicial_categoria(self, request):

@@ -129,6 +129,8 @@ Rutas anidadas en el router bajo `/api/reportes_diarios/`.
   - Cierre automático diario (`cerrar_dia_contable`).
   - Cierre automático con gracia (`auto_cerrar_dias_con_gracia`).
 - La tarea `enviar_correo_cierre_reporte` conserva anti-duplicado con `correo_enviado`, pero ya no marca el correo como enviado cuando faltan destinatarios; así se permite reintento posterior tras corregir configuración.
+- El cuerpo del correo diario contiene solo el resumen del reporte (saldo inicial, ingresos, egresos, saldo final y conteos).
+- Los adjuntos PDF/Excel incluyen en la primera pagina/hoja la tabla del reporte diario con la tabla de bancos informativos al final, y en paginas/hojas siguientes el detalle por cada categoria operativa.
 
 ### 5.3 Logging Operativo
 - Las tareas registran eventos por etapa: inicio, selección de candidatos, evaluación por reporte, criterio de omisión, cierre exitoso, programación de correo y errores.

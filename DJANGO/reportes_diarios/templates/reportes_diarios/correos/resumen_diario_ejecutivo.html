@@ -63,34 +63,8 @@
           </tr>
 
           <tr>
-            <td style="padding:8px 24px 6px 24px;">
-              <h2 style="margin:0 0 10px 0;font-family:Segoe UI, Tahoma, sans-serif;font-size:18px;color:#0f172a;">Categorias destacadas del dia</h2>
-              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;">
-                <tr style="background:#0f172a;">
-                  <th align="left" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Categoria</th>
-                  <th align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Ingresos</th>
-                  <th align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Egresos</th>
-                  <th align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:12px;color:#ffffff;">Neto</th>
-                </tr>
-                {% for categoria in categorias_destacadas %}
-                <tr style="border-top:1px solid #e2e8f0;">
-                  <td style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#0f172a;">{{ categoria.nombre }}</td>
-                  <td align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#166534;">{{ categoria.ingresos_texto }}</td>
-                  <td align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#9f1239;">{{ categoria.egresos_texto }}</td>
-                  <td align="right" style="padding:10px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#0f172a;">{{ categoria.neto_texto }}</td>
-                </tr>
-                {% empty %}
-                <tr>
-                  <td colspan="4" style="padding:14px 12px;font-family:Segoe UI, Tahoma, sans-serif;font-size:13px;color:#64748b;">No hay movimientos capturados para este dia contable.</td>
-                </tr>
-                {% endfor %}
-              </table>
-            </td>
-          </tr>
-
-          <tr>
             <td style="padding:8px 24px 10px 24px;font-family:Segoe UI, Tahoma, sans-serif;color:#475569;font-size:13px;line-height:1.6;">
-              Se adjunta el reporte completo en <strong>PDF</strong> y <strong>Excel</strong> para revision detallada.
+              Se adjunta el reporte completo en <strong>PDF</strong> y <strong>Excel</strong> para revision detallada, con una pagina/hoja por cada captura operativa.
             </td>
           </tr>
 

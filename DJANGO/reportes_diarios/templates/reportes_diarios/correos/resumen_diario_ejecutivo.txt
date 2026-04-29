@@ -11,16 +11,9 @@ Movimientos registrados: {{ total_movimientos }}
 Dias consultados: {{ dias_consultados }}
 Dias con reporte: {{ dias_con_reporte }}
 
-Categorias destacadas:
-{% for categoria in categorias_destacadas %}
-- {{ categoria.nombre }} | Ingresos: {{ categoria.ingresos_texto }} | Egresos: {{ categoria.egresos_texto }} | Neto: {{ categoria.neto_texto }}
-{% empty %}
-- Sin movimientos capturados para este dia contable.
-{% endfor %}
-
 Adjuntos:
-- Reporte diario completo en PDF
-- Reporte diario completo en Excel
+- Reporte diario completo en PDF (incluye una pagina por captura operativa)
+- Reporte diario completo en Excel (incluye una hoja por captura operativa)
 
 Este correo fue generado automaticamente por el sistema BinsurMX.
 Por favor no respondas a este mensaje, ya que este buzon solo procesa envios automatizados.
