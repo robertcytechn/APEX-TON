@@ -1,7 +1,7 @@
 Resumen diario ejecutivo - {{ marca_nombre }}
 
 Casino: {{ sucursal_nombre }}
-Dia contable: {{ fecha_contable_texto }}
+Periodo contable: {{ periodo_contable_texto }}
 
 Saldo inicial: {{ saldo_inicial_texto }}
 Total ingresos: {{ ingresos_texto }}

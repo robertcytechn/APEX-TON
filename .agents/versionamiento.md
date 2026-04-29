@@ -1,4 +1,10 @@
-version_actual: v0.0.15
+version_actual: v0.0.16
+
+## v0.0.16 — 2026-04-29
+**Autor:** Jose Roberto Tamayo Montejano
+**Resumen:** Se ajusto el correo diario para adjuntar reportes del mes en curso (dia 1 al dia contable) y se actualizo el texto de periodo en correo/PDF.
+**Capa(s):** backend
+**Detalle:** `.agents/memory/feat_20260429_backend_correo_diario_mes_corriente.md`
 
 ## v0.0.15 — 2026-04-28
 **Autor:** Jose Roberto Tamayo Montejano

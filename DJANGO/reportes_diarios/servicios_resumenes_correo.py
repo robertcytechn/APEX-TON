@@ -924,7 +924,7 @@ def generar_pdf_libro_operativo(datos_libro):
 
     elementos.append(Paragraph('Reporte Diario Operativo', estilos['Heading2']))
     elementos.append(Paragraph(f"Casino: <b>{sucursal_nombre}</b>", estilos['BodyText']))
-    elementos.append(Paragraph(f"Dia contable: <b>{periodo_texto}</b>", estilos['BodyText']))
+    elementos.append(Paragraph(f"Periodo contable: <b>{periodo_texto}</b>", estilos['BodyText']))
     elementos.append(Paragraph(
         f"Fecha de exportacion: {timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S')}",
         estilos['BodyText'],
@@ -1213,9 +1213,14 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
     if isinstance(fecha_objetivo, str):
         fecha_objetivo = date.fromisoformat(fecha_objetivo)
 
+    fecha_inicio_mes = fecha_objetivo.replace(day=1)
+    periodo_contable_texto = _formatear_fecha(fecha_inicio_mes)
+    if fecha_inicio_mes != fecha_objetivo:
+        periodo_contable_texto = f"{_formatear_fecha(fecha_inicio_mes)} al {_formatear_fecha(fecha_objetivo)}"
+
     datos_libro = _construir_paquete_datos_diario_completo(
         sucursal_id=sucursal.id,
-        fecha_inicio=fecha_objetivo,
+        fecha_inicio=fecha_inicio_mes,
         fecha_fin=fecha_objetivo,
     )
 
@@ -1245,7 +1250,7 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
     categorias_destacadas = _obtener_categorias_destacadas_dia(sucursal.id, fecha_objetivo)
     total_movimientos = MovimientoDiario.objects.filter(
         reporte__sucursal_id=sucursal.id,
-        reporte__fecha_contable=fecha_objetivo,
+        reporte__fecha_contable__range=(fecha_inicio_mes, fecha_objetivo),
         eliminado_en__isnull=True,
     ).count()
 
@@ -1253,7 +1258,7 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
         'marca_nombre': NOMBRE_MARCA,
         'url_sistema': URL_SISTEMA,
         'sucursal_nombre': sucursal.nombre,
-        'fecha_contable_texto': _formatear_fecha(fecha_objetivo),
+        'periodo_contable_texto': periodo_contable_texto,
         'fecha_envio_texto': timezone.localtime(timezone.now()).strftime('%d/%m/%Y %H:%M:%S'),
         'saldo_inicial_texto': _formatear_moneda(resumen.get('saldo_inicial')),
         'ingresos_texto': _formatear_moneda(resumen.get('total_ingresos')),
@@ -1288,13 +1293,13 @@ def construir_paquete_correo_resumen_diario_ejecutivo(sucursal, fecha_contable=N
         },
     ]
 
-    asunto = f"[{NOMBRE_MARCA}] Reporte de cierre día contable {_formatear_fecha(fecha_objetivo)}"
+    asunto = f"[{NOMBRE_MARCA}] Reporte de cierre día contable {_formatear_fecha(fecha_objetivo)} (acumulado del mes)"
 
     return {
         'tipo': 'diario',
         'sucursal_id': sucursal.id,
         'sucursal_nombre': sucursal.nombre,
-        'periodo': fecha_objetivo.isoformat(),
+        'periodo': f"{fecha_inicio_mes.isoformat()}_al_{fecha_objetivo.isoformat()}",
         'marca_tiempo_archivo': marca_tiempo_archivo,
         'asunto': asunto,
         'texto': cuerpo_texto,
