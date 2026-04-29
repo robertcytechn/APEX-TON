@@ -1,0 +1,1 @@
+import{T as e}from"./router-BpAxj78P.js";function t(t={}){return e.post(`/usuarios/soporte-tecnico/solicitudes/`,t)}function n(t={}){return e.get(`/usuarios/soporte-tecnico/eventos/`,{params:t})}function r(t,n={}){return e.patch(`/usuarios/soporte-tecnico/eventos/${t}/`,n)}export{t as n,n as r,r as t};
